@@ -187,6 +187,3 @@ To use it:
 - Matchmaking beyond invite codes
 - Native Windows (C#/.NET) version
 - Webcam-based hit detection for standard steel-tip boards
-
-Let me know how the current 501 scoring and online matches behave with real
-boards, and we'll prioritize from there.
