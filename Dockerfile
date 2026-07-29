@@ -1,32 +1,43 @@
-# Serves the AIO Darts static files behind nginx.
+# AIO Darts - single image, single port.
 #
-# Note: Web Bluetooth still requires a secure context in the browser. If
-# you're accessing this over the network (not localhost), put it behind
-# HTTPS (e.g. a reverse proxy with a TLS cert) or Chrome/Edge will refuse
-# to expose navigator.bluetooth.
+# Serves the static front-end AND the signaling WebSocket from one Node
+# process on one port (see server/server.js for why). This replaces the old
+# split nginx-web + separate-signaling-container setup: it means a reverse
+# proxy only ever needs one proxy host, with WebSocket upgrades enabled, and
+# players never configure a signaling URL.
+#
+# Note: Web Bluetooth requires a secure context in the browser. Accessing
+# this over the network (not localhost) needs HTTPS - e.g. a reverse proxy
+# with a TLS cert - or Chrome/Edge will refuse to expose navigator.bluetooth.
 
-FROM nginx:alpine
+FROM node:20-alpine
 
-# Copies every file in the build context (minus what .dockerignore excludes)
-# rather than listing each .js file by hand - a new file added to the repo
-# now gets included automatically instead of silently 404ing until someone
-# remembers to add it here too.
-COPY . /usr/share/nginx/html/
+WORKDIR /app
 
-# Bakes the exact commit this image was built from into a version.json file,
-# so the running app can show a rolling version number that always matches
-# what's actually deployed - no manual version bumping. GitHub Actions
-# passes the real commit SHA at build time (see docker-build.yml); it
+# Dependencies first so this layer stays cached unless package*.json changes.
+COPY server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY server/server.js ./
+
+# Copies the front-end into public/. Copying the whole build context (minus
+# what .dockerignore excludes) rather than listing each .js file by hand means
+# a new file added to the repo is included automatically instead of silently
+# 404ing until someone remembers to update this line.
+COPY . ./public/
+
+# Bakes the exact commit this image was built from into version.json, so the
+# running app can show a rolling version number that always matches what's
+# actually deployed - no manual version bumping. GitHub Actions passes the
+# real commit SHA at build time (see .github/workflows/docker-build.yml); it
 # defaults to "dev" for local/manual builds that don't pass it.
 ARG GIT_SHA=dev
 ARG BUILD_DATE=unknown
-RUN echo "{\"sha\":\"${GIT_SHA}\",\"builtAt\":\"${BUILD_DATE}\"}" > /usr/share/nginx/html/version.json
+RUN echo "{\"sha\":\"${GIT_SHA}\",\"builtAt\":\"${BUILD_DATE}\"}" > /app/public/version.json
 
-# Writes config.json (currently just the signaling server URL) from an env
-# var at CONTAINER START, not build time - so the same image works for any
-# deployment, configured via docker-compose.yml's `environment:` rather than
-# needing a rebuild. See docker-entrypoint-config.sh for what it does.
-COPY docker-entrypoint-config.sh /docker-entrypoint.d/40-write-config.sh
-RUN chmod +x /docker-entrypoint.d/40-write-config.sh
+ENV PUBLIC_DIR=/app/public
+ENV PORT=8080
 
-EXPOSE 80
+EXPOSE 8080
+
+CMD ["node", "server.js"]
