@@ -1,63 +1,83 @@
-# Runs AIO Darts using the pre-built image published by GitHub Actions to
-# GHCR - no build step, no source needed, just:
-#   docker compose up -d
+# AIO Darts - single container, single port.
 #
-# One service, one port. The static site and the signaling WebSocket are
-# served by the same process on the same port (see server/server.js), which
-# is what makes this work behind any reverse proxy:
+#   docker compose up -d          # run it (pulls the pre-built image)
+#   docker compose pull           # update to the latest published image
+#   docker compose up -d --build  # build from THIS source instead of pulling
 #
-#   * Nothing to configure. Players never type a signaling URL - the
-#     front-end derives it from whatever address they loaded the page on.
-#   * No second subdomain, DNS record, or TLS cert for signaling.
-#   * No mixed-content errors: an https page automatically gets a wss
-#     socket, because it's the same origin.
+# There is deliberately only one compose file. Because the service declares
+# both `image:` and `build:`, the same file covers running a release and
+# building local changes - no separate dev file to drift out of sync. Git
+# history is the revert path.
 #
-# REVERSE PROXY: point your proxy host at this container's published port
-# (8887 below) exactly as you would for any static site, and turn ON
-# WebSocket support. In NGINX Proxy Manager that's the "Websockets Support"
-# toggle on the Proxy Host - that single checkbox is the whole requirement.
-# Other proxies call it something similar (forwarding the Upgrade /
-# Connection headers). Nothing else is special.
-#
-# If these are your first images and you want anyone to be able to run this
-# without logging in to GHCR first, make the package public: on GitHub,
-# go to your profile -> Packages -> select the package -> Package settings
-# -> Change visibility -> Public. Until then, `docker compose up` will fail
-# with an auth/pull error for anyone who hasn't run
-# `docker login ghcr.io` with access to the package.
-#
-# No bind mounts (yet): nothing is written to disk server-side right now.
-# Challenge rooms are intentionally in-memory/ephemeral - losing them on
-# restart is expected, not a bug, since a challenge code only needs to live
-# for the few seconds it takes two players to connect. This will change once
-# accounts/stat-tracking are built - that'll need a real database and a
-# bind-mounted (or named volume) data directory, added at that point.
+# The static site and the WebRTC signaling WebSocket are served by the same
+# process on the same port (see server/server.js). That's what keeps this to
+# one container and means a reverse proxy needs exactly one host with no path
+# rules, no second subdomain, and nothing for players to configure.
 
 services:
-  darts:
+  aiodarts:
+    # Distinct service and container names on purpose: this shares a Docker
+    # host with unrelated stacks, so a generic name like "web" or "darts"
+    # risks colliding with another stack's service.
+    container_name: aiodarts
     image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-web:latest
+
+    # Present so `docker compose up --build` builds from source and tags it as
+    # the image above. Ignored during a normal `up`/`pull`.
+    build:
+      context: .
+      dockerfile: Dockerfile
+
     restart: unless-stopped
+
     ports:
-      # Host port kept at 8887 so an existing reverse-proxy host pointing
-      # here keeps working unchanged. The container now listens on 8080
-      # (Node) instead of 80 (nginx), hence the mapping.
+      # host:container. Host port 8887 matches the existing reverse-proxy
+      # host so it needs no re-pointing. The container listens on 8080 (Node),
+      # where it previously listened on 80 (nginx) - hence the mapping.
       - "8887:8080"
-    # environment:
-      # Everything below is OPTIONAL. The defaults are correct for a normal
-      # deployment - you should not need to set any of these.
+
+    volumes:
+      # Persistent data. Nothing is written here yet - challenge rooms are
+      # intentionally in-memory and ephemeral - but the accounts/stat-tracking
+      # phase puts a SQLite file here, and SQLite is a plain file, so that
+      # phase does NOT add a second container. Mounted now so that change is
+      # a code deploy rather than a compose edit + downtime.
       #
+      # Default suits Unraid's appdata convention. Override elsewhere by
+      # setting DATA_PATH in a .env file next to this compose file, e.g.
+      #   DATA_PATH=./data
+      - ${DATA_PATH:-/mnt/user/appdata/aiodarts}:/data
+
+    environment:
+      # --- Paths (match the mounts above; change together or not at all) ---
+      - DATA_DIR=/data
+      - PORT=8080
+
+      # --- Everything below is OPTIONAL. Defaults are correct. ---
+
       # TURN relay, for players whose networks refuse direct peer-to-peer
-      # (symmetric NAT, strict corporate firewalls - roughly 10-20% of
-      # connections). Without it those players can't connect at all; with it
-      # their traffic is relayed. Darts traffic is a few bytes per throw, so
-      # self-hosting coturn alongside this is very cheap bandwidth-wise.
+      # (symmetric NAT, strict corporate/mobile firewalls). Without it those
+      # specific players can't connect at all; others are unaffected. Darts
+      # traffic is a few bytes per throw, so self-hosting coturn is cheap.
       # - TURN_URL=turn:turn.example.com:3478
-      # - TURN_USERNAME=darts
+      # - TURN_USERNAME=aiodarts
       # - TURN_CREDENTIAL=change-me
-      #
+
       # Override the STUN server(s) if you'd rather not use Google's.
       # - STUN_URLS=stun:stun.example.com:3478
-      #
-      # Only if you deliberately want players pointed at a signaling server
-      # somewhere else entirely. Leave unset for same-origin (recommended).
+
+      # Path the signaling WebSocket is served on. Only worth changing if it
+      # collides with something else behind the same proxy.
+      # - SIGNALING_PATH=/signaling
+
+      # Only to point players at a DIFFERENT signaling server entirely.
+      # Leave unset for same-origin, which is what you want.
       # - SIGNALING_URL=
+
+    healthcheck:
+      # Node is already in the image, so no curl/wget dependency needed.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
