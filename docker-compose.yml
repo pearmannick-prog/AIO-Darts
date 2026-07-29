@@ -1,15 +1,24 @@
-# Runs both pieces locally for testing:
-#   docker compose up --build
+# Runs AIO Darts using the pre-built images published by GitHub Actions to
+# GHCR - no build step, no source needed, just:
+#   docker compose up
+#
 # Then open http://localhost:8000 and point the app's "Signaling server URL"
 # at ws://localhost:8080
+#
+# If these are your first images and you want anyone to be able to run this
+# without logging in to GHCR first, make both packages public: on GitHub,
+# go to your profile -> Packages -> select the package -> Package settings
+# -> Change visibility -> Public. Until then, `docker compose up` will fail
+# with an auth/pull error for anyone who hasn't run
+# `docker login ghcr.io` with access to the packages.
 
 services:
   web:
-    build: .
+    image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-web:latest
     ports:
       - "8000:80"
 
   signaling:
-    build: ./signaling-server
+    image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-signaling:latest
     ports:
       - "8080:8080"
