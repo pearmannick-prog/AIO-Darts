@@ -9,8 +9,9 @@
 // in lockstep with no need for a rollback/replay system - see the
 // architecture notes in the top-level README.
 
-import { Granboard, SegmentID, createSegment } from "./granboard.js";
+import { Granboard, SegmentID, SegmentType, createSegment } from "./granboard.js";
 import { resolveThrow } from "./scoring.js";
+import { createQuickEntry } from "./quickentry.js";
 
 const STARTING_SCORE = 501;
 
@@ -60,6 +61,9 @@ const el = {
   connectionDot: document.getElementById("online-connection-dot"),
   connectionLabel: document.getElementById("online-connection-label"),
 
+  manualSection: document.getElementById("online-manual-section"),
+  manualPerdart: document.getElementById("online-manual-perdart"),
+  manualQuickTotal: document.getElementById("online-manual-quicktotal"),
   manualRing: document.getElementById("online-manual-ring"),
   manualSections: document.getElementById("online-manual-sections"),
   manualBull: document.getElementById("online-manual-bull"),
@@ -69,9 +73,24 @@ const el = {
   throwLog: document.getElementById("online-throw-log"),
 };
 
-// Remember the last signaling URL used, for convenience across sessions.
+// Signaling URL priority: the deployment's own config.json (set once via
+// SIGNALING_URL in docker-compose.yml - see docker-entrypoint-config.sh)
+// wins if present, since that's the correct address for THIS deployment.
+// Falls back to whatever this browser last used, then the hardcoded
+// localhost default already in the HTML - this keeps local/no-Docker
+// testing (start-granboard.bat) working exactly as before.
 const savedUrl = localStorage.getItem("granboard-signaling-url");
 if (savedUrl) el.signalingUrl.value = savedUrl;
+
+fetch("./config.json")
+  .then((res) => (res.ok ? res.json() : Promise.reject()))
+  .then(({ signalingUrl }) => {
+    if (signalingUrl) el.signalingUrl.value = signalingUrl;
+  })
+  .catch(() => {
+    // No config.json (e.g. running via start-granboard.bat, no Docker) -
+    // that's expected, just keep whatever value is already in the field.
+  });
 
 // ---------- Tab switching ----------
 el.tabLocal.addEventListener("click", () => switchTab("local"));
@@ -103,6 +122,17 @@ for (let section = 1; section <= 20; section++) {
 el.manualBull.addEventListener("click", () => onLocalHit(createSegment(SegmentID.BULL)));
 el.manualDblBull.addEventListener("click", () => onLocalHit(createSegment(SegmentID.DBL_BULL)));
 el.manualMiss.addEventListener("click", () => onLocalHit(createSegment(SegmentID.MISS)));
+
+el.manualSection.querySelectorAll(".entry-mode-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const mode = tab.dataset.mode;
+    el.manualSection.querySelectorAll(".entry-mode-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    el.manualPerdart.classList.toggle("hidden", mode !== "perdart");
+    el.manualQuickTotal.classList.toggle("hidden", mode !== "quicktotal");
+  });
+});
+
+createQuickEntry(el.manualQuickTotal, onLocalQuickTotal);
 
 // ---------- Create / Join ----------
 el.createBtn.addEventListener("click", async () => {
@@ -181,6 +211,8 @@ function wirePeerLink() {
         endTurn("opp");
         renderOnline();
       }
+    } else if (msg.type === "quick_total") {
+      applyQuickTotalThrow("opp", msg.value);
     }
   };
 }
@@ -217,7 +249,15 @@ function startOnlineGame(role) {
 // ---------- My physical board ----------
 el.connectBtn.addEventListener("click", async () => {
   if (!navigator.bluetooth) {
-    alert("This browser doesn't support Web Bluetooth. Use Chrome or Edge on desktop.");
+    if (!window.isSecureContext) {
+      alert(
+        "Web Bluetooth needs a secure context - it's blocked because this page is loaded over plain HTTP. " +
+        "This works on http://localhost, but NOT on a plain http://<ip-address> address like this one, even on your own network. " +
+        "Put the site behind HTTPS (e.g. a reverse proxy with a TLS cert) to fix this - see the README."
+      );
+    } else {
+      alert("This browser doesn't support Web Bluetooth. Use Chrome or Edge on desktop.");
+    }
     return;
   }
   try {
@@ -264,6 +304,57 @@ function onLocalEndTurn() {
   }
   peerLink?.sendGameMessage({ type: "end_turn" });
   endTurn("me");
+  renderOnline();
+}
+
+function onLocalQuickTotal(totalValue) {
+  if (!online.active || online.gameOver) return;
+  if (online.activeSide !== "me") {
+    console.warn("Ignored a turn total - it's not your turn.");
+    return;
+  }
+  peerLink?.sendGameMessage({ type: "quick_total", value: totalValue });
+  applyQuickTotalThrow("me", totalValue);
+}
+
+// DartConnect-style whole-turn-total entry. Unlike applyThrow, this always
+// finalizes the turn immediately regardless of dartsThisTurn count - see
+// quickentry.js for the double-out assumption this makes.
+function applyQuickTotalThrow(side, totalValue) {
+  if (online.gameOver) return;
+  if (online.activeSide !== side) {
+    console.warn(`Ignored an out-of-turn '${side}' turn total.`);
+    return;
+  }
+
+  const s = online[side];
+  const segment = {
+    value: totalValue,
+    type: SegmentType.Double, // exact-0 entries assume a valid double-out
+    longName: `Turn total: ${totalValue}`,
+  };
+  const { after, isBust, isWin } = resolveThrow(s.remaining, segment);
+
+  online.log.unshift({
+    side,
+    label: segment.longName,
+    remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
+    bust: isBust,
+  });
+
+  if (isBust) {
+    s.remaining = s.startOfTurn;
+    endTurn(side);
+  } else {
+    s.remaining = after;
+    if (isWin) {
+      online.gameOver = true;
+      online.iWon = side === "me";
+    } else {
+      endTurn(side); // always finalizes, regardless of dartsThisTurn count
+    }
+  }
+
   renderOnline();
 }
 
