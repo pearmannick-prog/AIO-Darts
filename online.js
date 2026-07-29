@@ -12,6 +12,7 @@
 import { Granboard, SegmentID, SegmentType, createSegment } from "./granboard.js";
 import { resolveThrow } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
+import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
 
 const STARTING_SCORE = 501;
 
@@ -62,6 +63,8 @@ const el = {
   connectionLabel: document.getElementById("online-connection-label"),
 
   manualSection: document.getElementById("online-manual-section"),
+  dartboardEl: document.querySelector("#online-mode .dartboard"),
+  dartboardMarker: document.getElementById("online-dartboard-marker"),
   manualPerdart: document.getElementById("online-manual-perdart"),
   manualQuickTotal: document.getElementById("online-manual-quicktotal"),
   manualRing: document.getElementById("online-manual-ring"),
@@ -178,6 +181,15 @@ el.manualSection.querySelectorAll(".entry-mode-tab").forEach((tab) => {
 });
 
 createQuickEntry(el.manualQuickTotal, onLocalQuickTotal);
+
+// ---------- Clickable dartboard ----------
+// Same board and same code path as local mode (see dartboard.js) - clicking a
+// segment routes through onLocalHit exactly like a real Bluetooth hit or a
+// manual-entry button, so turn enforcement, scoring, bust detection, and the
+// throw log all behave identically regardless of which input you use.
+renderDartboard(el.dartboardEl, (segmentId) => {
+  onLocalHit(createSegment(segmentId));
+});
 
 // ---------- Create / Join ----------
 el.createBtn.addEventListener("click", async () => {
@@ -395,6 +407,9 @@ function applyQuickTotalThrow(side, totalValue) {
   };
   const { after, isBust, isWin } = resolveThrow(s.remaining, segment);
 
+  // A whole-turn total has no single board position to point at.
+  if (side === "me") hideMarker(el.dartboardMarker);
+
   online.log.unshift({
     side,
     label: segment.longName,
@@ -430,6 +445,12 @@ function applyThrow(side, segment) {
 
   const s = online[side];
   const { after, isBust, isWin } = resolveThrow(s.remaining, segment);
+
+  // The board is this player's own input surface, so the marker tracks THEIR
+  // darts only - the opponent's throws still show in the throw log, but
+  // putting them on the same board would make it ambiguous whose last dart
+  // the marker represents.
+  if (side === "me") moveMarkerTo(el.dartboardMarker, segment);
 
   s.dartsThisTurn.push(segment);
   online.log.unshift({
