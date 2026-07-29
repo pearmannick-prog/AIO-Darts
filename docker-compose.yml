@@ -1,49 +1,63 @@
-# Runs AIO Darts using the pre-built images published by GitHub Actions to
+# Runs AIO Darts using the pre-built image published by GitHub Actions to
 # GHCR - no build step, no source needed, just:
-#   docker compose up
+#   docker compose up -d
 #
-# Set SIGNALING_URL below to your own deployment's address once and players
-# never have to type a signaling server URL in manually - the web-darts
-# container writes it into a config.json at startup that the page fetches
-# automatically (see docker-entrypoint-config.sh). It's still editable per
-# player from a collapsed "Signaling settings" section in the Online
-# Challenge tab, for local testing or overriding the default.
+# One service, one port. The static site and the signaling WebSocket are
+# served by the same process on the same port (see server/server.js), which
+# is what makes this work behind any reverse proxy:
+#
+#   * Nothing to configure. Players never type a signaling URL - the
+#     front-end derives it from whatever address they loaded the page on.
+#   * No second subdomain, DNS record, or TLS cert for signaling.
+#   * No mixed-content errors: an https page automatically gets a wss
+#     socket, because it's the same origin.
+#
+# REVERSE PROXY: point your proxy host at this container's published port
+# (8887 below) exactly as you would for any static site, and turn ON
+# WebSocket support. In NGINX Proxy Manager that's the "Websockets Support"
+# toggle on the Proxy Host - that single checkbox is the whole requirement.
+# Other proxies call it something similar (forwarding the Upgrade /
+# Connection headers). Nothing else is special.
 #
 # If these are your first images and you want anyone to be able to run this
-# without logging in to GHCR first, make both packages public: on GitHub,
+# without logging in to GHCR first, make the package public: on GitHub,
 # go to your profile -> Packages -> select the package -> Package settings
 # -> Change visibility -> Public. Until then, `docker compose up` will fail
 # with an auth/pull error for anyone who hasn't run
-# `docker login ghcr.io` with access to the packages.
+# `docker login ghcr.io` with access to the package.
 #
-# No bind mounts (yet): neither service writes anything to disk server-side
-# right now. The signaling server's challenge rooms are intentionally
-# in-memory/ephemeral by design (see signaling-server/server.js) - losing
-# them on restart is expected, not a bug, since a challenge code is only
-# meant to live for the few seconds it takes two players to connect. The
-# web service is just static files. This will change once accounts/
-# stat-tracking are built - that'll need a real database and a bind-mounted
-# (or named volume) data directory, added at that point.
+# No bind mounts (yet): nothing is written to disk server-side right now.
+# Challenge rooms are intentionally in-memory/ephemeral - losing them on
+# restart is expected, not a bug, since a challenge code only needs to live
+# for the few seconds it takes two players to connect. This will change once
+# accounts/stat-tracking are built - that'll need a real database and a
+# bind-mounted (or named volume) data directory, added at that point.
 
 services:
-  web-darts:
+  darts:
     image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-web:latest
+    restart: unless-stopped
     ports:
-      - "8887:80"
-    environment:
-      # Players' browsers connect to this directly - it can't be a Docker
-      # container name (e.g. "signaling-darts"), since that only resolves
-      # inside Docker's internal network, not from someone's own browser.
+      # Host port kept at 8887 so an existing reverse-proxy host pointing
+      # here keeps working unchanged. The container now listens on 8080
+      # (Node) instead of 80 (nginx), hence the mapping.
+      - "8887:8080"
+    # environment:
+      # Everything below is OPTIONAL. The defaults are correct for a normal
+      # deployment - you should not need to set any of these.
       #
-      # Routed through its own subdomain in the reverse proxy (NGINX Proxy
-      # Manager: a separate Proxy Host for signaling.aiodarts.spazcat.com,
-      # forwarding to 192.168.0.69:8886, with "Websockets Support" turned
-      # on) rather than a path on the main domain - subdomain routing is
-      # the simplest case for most proxies to get right, no custom
-      # location/path rewriting needed.
-      - SIGNALING_URL=wss://signaling.aiodarts.spazcat.com
-
-  signaling-darts:
-    image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-signaling:latest
-    ports:
-      - "8886:8080"
+      # TURN relay, for players whose networks refuse direct peer-to-peer
+      # (symmetric NAT, strict corporate firewalls - roughly 10-20% of
+      # connections). Without it those players can't connect at all; with it
+      # their traffic is relayed. Darts traffic is a few bytes per throw, so
+      # self-hosting coturn alongside this is very cheap bandwidth-wise.
+      # - TURN_URL=turn:turn.example.com:3478
+      # - TURN_USERNAME=darts
+      # - TURN_CREDENTIAL=change-me
+      #
+      # Override the STUN server(s) if you'd rather not use Google's.
+      # - STUN_URLS=stun:stun.example.com:3478
+      #
+      # Only if you deliberately want players pointed at a signaling server
+      # somewhere else entirely. Leave unset for same-origin (recommended).
+      # - SIGNALING_URL=
