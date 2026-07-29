@@ -34,9 +34,15 @@ services:
       # Players' browsers connect to this directly - it can't be a Docker
       # container name (e.g. "signaling-darts"), since that only resolves
       # inside Docker's internal network, not from someone's own browser.
-      # Use whatever address/port players can actually reach from outside:
-      # your server's LAN IP, a domain name, etc.
-      - SIGNALING_URL=ws://192.168.0.69:8886
+      #
+      # Since the site is served over https (aiodarts.spazcat.com), this
+      # has to be wss:// (encrypted), not ws:// - browsers block a plain
+      # ws:// connection from an https:// page as mixed content. Route it
+      # through the same reverse proxy that serves the site: add a rule
+      # forwarding this path to signaling-darts:8080 (internal) or
+      # 192.168.0.69:8886 (if the proxy sits outside this compose file),
+      # with WebSocket upgrade forwarding turned on.
+      - SIGNALING_URL=wss://aiodarts.spazcat.com/signaling
 
   signaling-darts:
     image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-signaling:latest
