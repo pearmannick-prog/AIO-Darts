@@ -73,24 +73,69 @@ const el = {
   throwLog: document.getElementById("online-throw-log"),
 };
 
-// Signaling URL priority: the deployment's own config.json (set once via
-// SIGNALING_URL in docker-compose.yml - see docker-entrypoint-config.sh)
-// wins if present, since that's the correct address for THIS deployment.
-// Falls back to whatever this browser last used, then the hardcoded
-// localhost default already in the HTML - this keeps local/no-Docker
-// testing (start-granboard.bat) working exactly as before.
+// ---------- Signaling / ICE configuration ----------
+// The signaling WebSocket is served by the SAME origin as this page (see
+// server/server.js), so the correct URL can just be derived from
+// window.location. That's why there's nothing to configure: whatever
+// hostname, port, and scheme the player loaded the page on is already the
+// right answer, and because the scheme is derived too (https -> wss), it can
+// never be blocked as mixed content.
+//
+// Priority: an explicit override this browser saved > an explicit
+// signalingUrl from the deployment's /config.json (only set if an operator
+// deliberately points players at some OTHER server) > this same origin.
+function sameOriginSignalingUrl(path = "/signaling") {
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${location.host}${path}`;
+}
+
+// ICE servers tell WebRTC how to punch through NAT. STUN (the default) lets
+// each browser learn its own public address so the two can connect directly.
+// TURN is a relay for networks that refuse direct P2P entirely - it's
+// optional, configured server-side, and arrives here via /config.json.
+let iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
+
+let signalingPath = "/signaling";
 const savedUrl = localStorage.getItem("granboard-signaling-url");
-if (savedUrl) el.signalingUrl.value = savedUrl;
+el.signalingUrl.value = savedUrl || sameOriginSignalingUrl();
+el.signalingUrl.placeholder = sameOriginSignalingUrl();
 
 fetch("./config.json")
   .then((res) => (res.ok ? res.json() : Promise.reject()))
-  .then(({ signalingUrl }) => {
-    if (signalingUrl) el.signalingUrl.value = signalingUrl;
+  .then((cfg) => {
+    if (Array.isArray(cfg.iceServers) && cfg.iceServers.length) {
+      iceServers = cfg.iceServers;
+    }
+    if (cfg.signalingPath) {
+      signalingPath = cfg.signalingPath;
+      el.signalingUrl.placeholder = sameOriginSignalingUrl(signalingPath);
+    }
+    // Only override the field if the deployment named a specific server AND
+    // this browser hasn't set its own override.
+    if (!savedUrl) {
+      el.signalingUrl.value = cfg.signalingUrl || sameOriginSignalingUrl(signalingPath);
+    }
   })
   .catch(() => {
-    // No config.json (e.g. running via start-granboard.bat, no Docker) -
-    // that's expected, just keep whatever value is already in the field.
+    // No config.json (e.g. opening index.html straight off disk) - the
+    // same-origin default is already in the field, so there's nothing to do.
   });
+
+// Remembers an override only when the player actually typed something
+// different from the derived default, so a saved value from an older version
+// can't get stuck overriding a perfectly good same-origin URL forever.
+function rememberSignalingOverride() {
+  const value = el.signalingUrl.value.trim();
+  if (!value || value === sameOriginSignalingUrl(signalingPath)) {
+    localStorage.removeItem("granboard-signaling-url");
+  } else {
+    localStorage.setItem("granboard-signaling-url", value);
+  }
+}
+
+function currentSignalingUrl() {
+  return el.signalingUrl.value.trim() || sameOriginSignalingUrl(signalingPath);
+}
 
 // ---------- Tab switching ----------
 el.tabLocal.addEventListener("click", () => switchTab("local"));
@@ -137,8 +182,8 @@ createQuickEntry(el.manualQuickTotal, onLocalQuickTotal);
 // ---------- Create / Join ----------
 el.createBtn.addEventListener("click", async () => {
   await ensurePeerLinkLoaded();
-  localStorage.setItem("granboard-signaling-url", el.signalingUrl.value);
-  peerLink = new PeerLink(el.signalingUrl.value);
+  rememberSignalingOverride();
+  peerLink = new PeerLink(currentSignalingUrl(), iceServers);
   wirePeerLink();
 
   el.setupPanel.classList.add("hidden");
@@ -159,8 +204,8 @@ el.joinBtn.addEventListener("click", async () => {
   if (!code) return;
 
   await ensurePeerLinkLoaded();
-  localStorage.setItem("granboard-signaling-url", el.signalingUrl.value);
-  peerLink = new PeerLink(el.signalingUrl.value);
+  rememberSignalingOverride();
+  peerLink = new PeerLink(currentSignalingUrl(), iceServers);
   wirePeerLink();
 
   el.setupPanel.classList.add("hidden");
