@@ -1,0 +1,21 @@
+# FOR DEVELOPMENT ONLY - builds the images from the source in this repo.
+# If you just want to run AIO Darts, use `docker-compose.yml` instead, which
+# pulls the pre-built images from GHCR and doesn't build anything.
+#
+# Use this file when you're actually changing the code and want to test
+# your changes:
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Then open http://localhost:8000 and point the app's "Signaling server URL"
+# at ws://localhost:8080
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:80"
+
+  signaling:
+    build: ./signaling-server
+    ports:
+      - "8080:8080"
