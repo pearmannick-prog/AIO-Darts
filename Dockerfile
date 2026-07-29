@@ -22,4 +22,11 @@ ARG GIT_SHA=dev
 ARG BUILD_DATE=unknown
 RUN echo "{\"sha\":\"${GIT_SHA}\",\"builtAt\":\"${BUILD_DATE}\"}" > /usr/share/nginx/html/version.json
 
+# Writes config.json (currently just the signaling server URL) from an env
+# var at CONTAINER START, not build time - so the same image works for any
+# deployment, configured via docker-compose.yml's `environment:` rather than
+# needing a rebuild. See docker-entrypoint-config.sh for what it does.
+COPY docker-entrypoint-config.sh /docker-entrypoint.d/40-write-config.sh
+RUN chmod +x /docker-entrypoint.d/40-write-config.sh
+
 EXPOSE 80
