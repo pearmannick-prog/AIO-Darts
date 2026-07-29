@@ -27,13 +27,36 @@
 // few seconds it takes two players to connect.
 
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdir, access } from "node:fs/promises";
+import { constants as FS } from "node:fs";
 import { extname, join, resolve, sep } from "node:path";
 import { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || "./public");
 const SIGNALING_PATH = process.env.SIGNALING_PATH || "/signaling";
+
+// Where anything persistent will live. Nothing is written here yet - challenge
+// rooms are deliberately in-memory - but the accounts/stat-tracking phase puts
+// a SQLite file here, and SQLite is just a file, so this stays a
+// single-container app. It's checked at startup rather than first-write so a
+// misconfigured bind mount shows up in the logs immediately instead of the
+// first time someone tries to register.
+const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
+
+async function checkDataDir() {
+  try {
+    await mkdir(DATA_DIR, { recursive: true });
+    await access(DATA_DIR, FS.W_OK);
+    console.log(`  data dir     : ${DATA_DIR} (writable)`);
+  } catch (err) {
+    // Not fatal yet, since nothing depends on it - but say so loudly, because
+    // it WILL be fatal once accounts land.
+    console.warn(`  data dir     : ${DATA_DIR} NOT WRITABLE - ${err.code || err.message}`);
+    console.warn("                 Nothing needs it yet, but persistent data will fail.");
+    console.warn("                 Check the bind mount and its permissions.");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Runtime config served to the front-end
@@ -129,11 +152,23 @@ async function serveFile(res, filePath) {
 const httpServer = createServer(async (req, res) => {
   try {
     const urlPath = req.url === "/" ? "/index.html" : req.url;
+    const bare = urlPath.split("?")[0];
+
+    // Cheap liveness probe for Docker/Unraid healthchecks - no filesystem or
+    // dependency access, so it answers even if something else is wrong.
+    if (bare === "/healthz") {
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(JSON.stringify({ ok: true, rooms: rooms.size, clients: wss.clients.size }));
+      return;
+    }
 
     // Runtime config is generated per-request from env vars rather than
     // written to a file at container start, so changing an env var only
     // needs a restart, not a rebuild - and there's no entrypoint script.
-    if (urlPath.split("?")[0] === "/config.json") {
+    if (bare === "/config.json") {
       res.writeHead(200, {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -251,8 +286,9 @@ const heartbeat = setInterval(() => {
 }, 30000);
 wss.on("close", () => clearInterval(heartbeat));
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, async () => {
   console.log(`AIO Darts listening on port ${PORT}`);
   console.log(`  static files : ${PUBLIC_DIR}`);
   console.log(`  signaling    : ${SIGNALING_PATH} (same port)`);
+  await checkDataDir();
 });
