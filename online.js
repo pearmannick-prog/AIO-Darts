@@ -229,6 +229,21 @@ function statusText(status) {
   }
 }
 
+// Briefly flashes a message in the status line so an out-of-turn attempt is
+// obvious to the person who tried it, instead of a silent console.warn.
+let noticeTimeout = null;
+function showNotice(message) {
+  clearTimeout(noticeTimeout);
+  el.statusLabel.textContent = message;
+  el.statusLabel.style.color = "#B7302A";
+  noticeTimeout = setTimeout(() => {
+    el.statusLabel.style.color = "";
+    el.statusLabel.textContent = online.gameOver
+      ? statusText("connected")
+      : online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+  }, 2200);
+}
+
 // ---------- Game start ----------
 function startOnlineGame(role) {
   online.active = true;
@@ -287,7 +302,7 @@ el.connectBtn.addEventListener("click", async () => {
 function onLocalHit(segment) {
   if (!online.active || online.gameOver) return;
   if (online.activeSide !== "me") {
-    console.warn("Ignored a hit - it's not your turn.");
+    showNotice("Not your turn yet - wait for the opponent to finish.");
     return;
   }
   peerLink?.sendGameMessage({ type: "dart", segment });
@@ -299,7 +314,7 @@ function onLocalEndTurn() {
   // 3 registered darts (e.g. a dart bounced out or missed the board).
   if (!online.active || online.gameOver) return;
   if (online.activeSide !== "me") {
-    console.warn("Ignored end-turn - it's not your turn.");
+    showNotice("Not your turn yet - wait for the opponent to finish.");
     return;
   }
   peerLink?.sendGameMessage({ type: "end_turn" });
@@ -310,7 +325,7 @@ function onLocalEndTurn() {
 function onLocalQuickTotal(totalValue) {
   if (!online.active || online.gameOver) return;
   if (online.activeSide !== "me") {
-    console.warn("Ignored a turn total - it's not your turn.");
+    showNotice("Not your turn yet - wait for the opponent to finish.");
     return;
   }
   peerLink?.sendGameMessage({ type: "quick_total", value: totalValue });
@@ -437,8 +452,13 @@ function renderOnline() {
     el.winnerBanner.textContent = online.iWon ? "🏆 You win!" : "Opponent wins this one.";
   }
 
-  // Only let manual entry apply on your own turn.
+  // Manual entry stays clickable at all times now - a hard CSS block here
+  // was indistinguishable from a bug if the visual state ever fell out of
+  // sync with the real turn state. The actual turn enforcement lives in
+  // onLocalHit/onLocalEndTurn/onLocalQuickTotal below, which now show a
+  // clear on-screen message (not just a console warning) if you try to act
+  // out of turn - so it's self-explanatory either way instead of a
+  // mysterious disabled panel.
   const canAct = online.active && !online.gameOver && online.activeSide === "me";
-  document.getElementById("online-manual-section").style.opacity = canAct ? "1" : "0.4";
-  document.getElementById("online-manual-section").style.pointerEvents = canAct ? "auto" : "none";
+  document.getElementById("online-manual-section").style.opacity = canAct ? "1" : "0.7";
 }
