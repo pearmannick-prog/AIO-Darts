@@ -1,0 +1,10 @@
+signaling-server
+.git
+.github
+.gitignore
+*.bat
+README.md
+docker-compose.yml
+docker-compose.dev.yml
+Dockerfile
+.dockerignore
