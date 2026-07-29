@@ -365,16 +365,17 @@
     filter: brightness(1.35);
   }
   .dartboard-marker {
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--red);
-    border: 2px solid var(--paper);
-    transform: translate(-50%, -50%);
-    box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    transition: left 0.15s ease, top 0.15s ease;
-  }
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2px solid var(--paper);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  transition: left 0.15s ease, top 0.15s ease;
+  pointer-events: none;   /* <-- add this line */
+}
 
   /* Manual entry */
   #manual-section {
