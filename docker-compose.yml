@@ -2,8 +2,12 @@
 # GHCR - no build step, no source needed, just:
 #   docker compose up
 #
-# Then open the web port below and point the app's "Signaling server URL"
-# at ws://<this-host>:8886
+# Set SIGNALING_URL below to your own deployment's address once and players
+# never have to type a signaling server URL in manually - the web-darts
+# container writes it into a config.json at startup that the page fetches
+# automatically (see docker-entrypoint-config.sh). It's still editable per
+# player from a collapsed "Signaling settings" section in the Online
+# Challenge tab, for local testing or overriding the default.
 #
 # If these are your first images and you want anyone to be able to run this
 # without logging in to GHCR first, make both packages public: on GitHub,
@@ -17,18 +21,22 @@
 # in-memory/ephemeral by design (see signaling-server/server.js) - losing
 # them on restart is expected, not a bug, since a challenge code is only
 # meant to live for the few seconds it takes two players to connect. The
-# web service is just static files. The only browser-side persistence
-# (remembering the last-used signaling URL) lives in each player's own
-# browser via localStorage, not on the server, so container restarts don't
-# touch it. This will change once accounts/stat-tracking are built - that'll
-# need a real database and a bind-mounted (or named volume) data directory,
-# added at that point.
+# web service is just static files. This will change once accounts/
+# stat-tracking are built - that'll need a real database and a bind-mounted
+# (or named volume) data directory, added at that point.
 
 services:
   web-darts:
     image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-web:latest
     ports:
       - "8887:80"
+    environment:
+      # Players' browsers connect to this directly - it can't be a Docker
+      # container name (e.g. "signaling-darts"), since that only resolves
+      # inside Docker's internal network, not from someone's own browser.
+      # Use whatever address/port players can actually reach from outside:
+      # your server's LAN IP, a domain name, etc.
+      - SIGNALING_URL=ws://192.168.0.69:8886
 
   signaling-darts:
     image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-signaling:latest
