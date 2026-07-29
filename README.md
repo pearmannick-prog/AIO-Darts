@@ -61,8 +61,8 @@ what the above does.
    "Pair"/"Connect".
 3. Throw darts - hits should show up automatically, update the score, and
    move a marker on the mini dartboard. You can also just **click directly on
-   the mini dartboard** to score that segment - handy as a third input method
-   alongside a real board and manual entry (local mode only for now).
+   the mini dartboard** to score that segment - a third input method alongside
+   a real board and manual entry, available in both local and online mode.
 4. Use **Undo last dart** if a throw gets misread, and the **manual entry**
    section at the bottom to record a miss or fix a misread by hand. It has two
    modes:
@@ -86,6 +86,12 @@ remote 1v1 501 match. Gameplay runs over a **direct peer-to-peer WebRTC
 connection** - the signaling server is only involved in the initial handshake
 (helping the two browsers find each other and swap connection details), never
 in gameplay traffic.
+
+In online mode you have the same three input methods as local play: a real
+Bluetooth board, the clickable dartboard, and manual entry (Per-Dart or Quick
+Total). None of them requires a board to be connected, so someone with no
+Granboard can play a full match against someone using one. The marker on your
+board tracks your own darts; the opponent's throws appear in the throw log.
 
 **There is nothing to configure.** The signaling server is part of the same
 server serving the page, so the front-end derives its address from whatever
