@@ -1,0 +1,15 @@
+# Runs both pieces locally for testing:
+#   docker compose up --build
+# Then open http://localhost:8000 and point the app's "Signaling server URL"
+# at ws://localhost:8080
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:80"
+
+  signaling:
+    build: ./signaling-server
+    ports:
+      - "8080:8080"

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIO Darts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --felt: #0F3D2E;
+    --felt-light: #16513D;
+    --cream: #EFE6D2;
+    --ink: #1B1A14;
+    --red: #B7302A;
+    --green-ring: #2F7A4D;
+    --gold: #C7A24A;
+    --paper: #F7F3E8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: var(--felt);
+    background-image: radial-gradient(circle at 50% -10%, var(--felt-light), var(--felt) 60%);
+    color: var(--cream);
+    min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brand-emblem {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: conic-gradient(
+      var(--cream) 0deg 18deg, var(--red) 18deg 36deg,
+      var(--cream) 36deg 54deg, var(--green-ring) 54deg 72deg,
+      var(--cream) 72deg 90deg, var(--red) 90deg 108deg,
+      var(--cream) 108deg 126deg, var(--green-ring) 126deg 144deg,
+      var(--cream) 144deg 162deg, var(--red) 162deg 180deg,
+      var(--cream) 180deg 198deg, var(--green-ring) 198deg 216deg,
+      var(--cream) 216deg 234deg, var(--red) 234deg 252deg,
+      var(--cream) 252deg 270deg, var(--green-ring) 270deg 288deg,
+      var(--cream) 288deg 306deg, var(--red) 306deg 324deg,
+      var(--cream) 324deg 342deg, var(--green-ring) 342deg 360deg
+    );
+    box-shadow: 0 0 0 3px var(--ink) inset;
+    flex-shrink: 0;
+  }
+
+  h1 {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-size: 26px;
+    margin: 0;
+    text-transform: uppercase;
+  }
+
+  .connection {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .conn-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #7a7a6a;
+    display: inline-block;
+  }
+
+  .conn-dot.connected {
+    background: var(--green-ring);
+    box-shadow: 0 0 8px var(--green-ring);
+  }
+
+  #connection-label {
+    font-size: 13px;
+    opacity: 0.85;
+  }
+
+  #online-connection-label {
+    font-size: 13px;
+    color: var(--ink);
+    opacity: 0.8;
+  }
+
+  /* Mode tabs */
+  .mode-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+  .mode-tab {
+    background: rgba(239,230,210,0.1);
+    color: var(--cream);
+    border: 1px solid rgba(239,230,210,0.3);
+    padding: 10px 18px;
+    border-radius: 8px 8px 0 0;
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 14px;
+  }
+  .mode-tab.active {
+    background: var(--cream);
+    color: var(--ink);
+    border-color: var(--cream);
+  }
+
+  /* Online mode */
+  #signaling-url, #join-code-input {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  #challenge-code-display {
+    font-family: 'Oswald', sans-serif;
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: rgba(27,26,20,0.06);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    margin: 14px 0;
+  }
+
+  .online-scoreboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .online-score-box {
+    background: rgba(27,26,20,0.05);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .online-score-box.active-turn {
+    background: var(--felt);
+    color: var(--cream);
+  }
+  .online-score-label { font-size: 13px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.04em; }
+  .online-score-value { font-family: 'Oswald', sans-serif; font-size: 56px; font-weight: 700; line-height: 1.1; }
+
+  .online-turn-darts { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; }
+
+  #online-manual-section {
+    margin-top: 10px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(27,26,20,0.15);
+  }
+  #online-manual-section h3 {
+    font-family: 'Oswald', sans-serif;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 10px;
+  }
+  #online-manual-sections { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 12px; }
+
+  #online-connect-row { align-items: center; }
+
+  #online-throw-log {
+    margin-top: 16px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+
+  button {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: transform 0.08s ease, filter 0.15s ease;
+  }
+
+  button:active { transform: translateY(1px); }
+
+  .btn-primary {
+    background: var(--gold);
+    color: var(--ink);
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+
+  .btn-secondary {
+    background: rgba(239, 230, 210, 0.12);
+    color: var(--cream);
+    border: 1px solid rgba(239, 230, 210, 0.35);
+  }
+  .btn-secondary:hover { background: rgba(239, 230, 210, 0.2); }
+
+  .panel {
+    background: var(--cream);
+    color: var(--ink);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  }
+
+  .hidden { display: none !important; }
+
+  /* Setup panel */
+  #player-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .player-input {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+  }
+  .setup-actions { display: flex; gap: 10px; margin-top: 16px; }
+
+  /* Game panel layout */
+  .game-top {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  @media (max-width: 640px) {
+    .game-top { grid-template-columns: 1fr; }
+  }
+
+  #player-tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .player-tab {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 14px;
+    border-radius: 10px;
+    background: rgba(27,26,20,0.06);
+    min-width: 90px;
+  }
+  .player-tab.active {
+    background: var(--felt);
+    color: var(--cream);
+  }
+  .player-tab-name { font-size: 12px; opacity: 0.8; }
+  .player-tab-score { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 600; }
+
+  #big-score {
+    font-family: 'Oswald', sans-serif;
+    font-size: 96px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  #turn-label { font-size: 16px; margin-bottom: 18px; opacity: 0.85; }
+
+  #turn-darts { display: flex; gap: 10px; margin-bottom: 20px; }
+  .dart-slot {
+    width: 64px;
+    height: 48px;
+    border-radius: 8px;
+    border: 2px dashed #cfc4a3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Oswald', sans-serif;
+    font-size: 18px;
+    color: #9c9377;
+  }
+  .dart-slot.filled {
+    border-style: solid;
+    border-color: var(--felt);
+    background: rgba(15,61,46,0.06);
+    color: var(--ink);
+  }
+
+  .actions-row { display: flex; gap: 10px; margin-bottom: 8px; }
+
+  #winner-banner {
+    font-family: 'Oswald', sans-serif;
+    font-size: 20px;
+    background: var(--gold);
+    color: var(--ink);
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  /* Dartboard visualization */
+  .dartboard-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    max-width: 260px;
+    margin: 0 auto;
+  }
+  .dartboard {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 50%, var(--red) 0 4%, var(--cream) 4% 8%,
+        var(--felt) 8% 34%, var(--red) 34% 40%, var(--green-ring) 40% 46%,
+        var(--cream) 46% 78%, var(--ink) 78% 82%, var(--felt) 82% 100%);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  }
+  .dartboard-marker {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--red);
+    border: 2px solid var(--paper);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    transition: left 0.15s ease, top 0.15s ease;
+  }
+
+  /* Manual entry */
+  #manual-section {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(27,26,20,0.15);
+  }
+  #manual-section h3 {
+    font-family: 'Oswald', sans-serif;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 10px;
+  }
+  .manual-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  #manual-sections { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 12px; }
+  .manual-section-btn {
+    background: #fff;
+    border: 1px solid #cfc4a3;
+    color: var(--ink);
+    padding: 8px 0;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  .manual-section-btn:hover { background: var(--felt); color: var(--cream); }
+  select#manual-ring {
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #cfc4a3;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Throw log */
+  #throw-log {
+    margin-top: 20px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+  .log-row {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr 0.8fr;
+    gap: 8px;
+    padding: 6px 4px;
+    border-bottom: 1px solid rgba(27,26,20,0.08);
+  }
+  .log-row.bust { color: var(--red); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="brand-emblem"></div>
+        <h1>AIO Darts</h1>
+      </div>
+      <div class="connection">
+        <button id="connect-btn" class="btn-primary">Connect Board</button>
+        <span id="connection-dot" class="conn-dot"></span>
+        <span id="connection-label">Not connected</span>
+      </div>
+    </header>
+
+    <div class="mode-tabs">
+      <button id="tab-local" class="mode-tab active">Local Play</button>
+      <button id="tab-online" class="mode-tab">Online Challenge</button>
+    </div>
+
+    <div id="local-mode">
+      <!-- Setup screen -->
+      <div id="setup-panel" class="panel">
+        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Players</h3>
+        <div id="player-inputs"></div>
+        <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
+        <div class="setup-actions">
+          <button id="start-game-btn" class="btn-primary">Start 501 Game</button>
+        </div>
+      </div>
+
+      <!-- Game screen -->
+      <div id="game-panel" class="panel hidden">
+        <div id="winner-banner" class="hidden"></div>
+        <div id="player-tabs"></div>
+
+        <div class="game-top">
+          <div>
+            <div id="big-score">501</div>
+            <div id="turn-label">Player 1's turn</div>
+            <div id="turn-darts"></div>
+            <div class="actions-row">
+              <button id="undo-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Undo last dart</button>
+              <button id="new-game-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">New game</button>
+            </div>
+          </div>
+
+          <div class="dartboard-wrap">
+            <div class="dartboard"></div>
+            <div id="dartboard-marker" class="dartboard-marker hidden"></div>
+          </div>
+        </div>
+
+        <div id="manual-section">
+          <h3>Manual entry (misses &amp; misreads)</h3>
+          <div class="manual-row">
+            <label for="manual-ring">Ring:</label>
+            <select id="manual-ring">
+              <option value="outer">Single (outer)</option>
+              <option value="inner">Single (inner)</option>
+              <option value="triple">Triple</option>
+              <option value="double">Double</option>
+            </select>
+            <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
+            <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
+            <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+          </div>
+          <div id="manual-sections"></div>
+        </div>
+
+        <div id="throw-log"></div>
+      </div>
+    </div>
+
+    <div id="online-mode" class="hidden">
+      <!-- Signaling server config + create/join -->
+      <div id="online-setup-panel" class="panel">
+        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
+        <label for="signaling-url" style="font-size:13px; opacity:0.8;">Signaling server URL</label>
+        <input id="signaling-url" type="text" placeholder="ws://localhost:8080" value="ws://localhost:8080">
+        <p style="font-size:13px; opacity:0.75; margin-top:6px;">
+          Both players need to point at the same signaling server. Use
+          <code>ws://localhost:8080</code> if you're testing on one machine
+          with two browser tabs, or a LAN/deployed address to play with
+          someone else - see the README.
+        </p>
+        <div class="setup-actions">
+          <button id="create-challenge-btn" class="btn-primary">Create Challenge</button>
+        </div>
+        <div class="setup-actions">
+          <input id="join-code-input" type="text" placeholder="Enter challenge code" style="text-transform:uppercase;">
+          <button id="join-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Join Challenge</button>
+        </div>
+      </div>
+
+      <!-- Waiting for opponent -->
+      <div id="online-waiting-panel" class="panel hidden">
+        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Waiting for opponent…</h3>
+        <p>Share this code with the person you're challenging:</p>
+        <div id="challenge-code-display"></div>
+        <button id="cancel-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Cancel</button>
+      </div>
+
+      <!-- Online game -->
+      <div id="online-game-panel" class="panel hidden">
+        <div id="online-winner-banner" class="hidden"></div>
+        <div id="online-status-label" style="font-size:13px; opacity:0.75; margin-bottom:10px;"></div>
+
+        <div class="online-scoreboard">
+          <div id="online-me-box" class="online-score-box">
+            <div class="online-score-label">You</div>
+            <div id="online-me-score" class="online-score-value">501</div>
+          </div>
+          <div id="online-opp-box" class="online-score-box">
+            <div class="online-score-label">Opponent</div>
+            <div id="online-opp-score" class="online-score-value">501</div>
+          </div>
+        </div>
+
+        <div id="online-turn-label" style="text-align:center; margin:14px 0; font-weight:600;"></div>
+        <div id="online-turn-darts" class="online-turn-darts"></div>
+
+        <div id="online-manual-section">
+          <h3>Manual entry (misses &amp; misreads)</h3>
+          <div class="manual-row">
+            <label for="online-manual-ring">Ring:</label>
+            <select id="online-manual-ring">
+              <option value="outer">Single (outer)</option>
+              <option value="inner">Single (inner)</option>
+              <option value="triple">Triple</option>
+              <option value="double">Double</option>
+            </select>
+            <button id="online-manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
+            <button id="online-manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
+            <button id="online-manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+          </div>
+          <div id="online-manual-sections"></div>
+        </div>
+
+        <div id="online-connect-row" class="actions-row">
+          <button id="online-connect-btn" class="btn-primary">Connect My Board</button>
+          <span id="online-connection-dot" class="conn-dot"></span>
+          <span id="online-connection-label">Not connected</span>
+        </div>
+
+        <div id="online-throw-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./game.js"></script>
+  <script type="module" src="./online.js"></script>
+</body>
+</html>
