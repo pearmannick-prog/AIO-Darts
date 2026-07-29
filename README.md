@@ -105,21 +105,41 @@ npm start
 
 By default it listens on port 8080. Leave it running.
 
+### Auto-configuring the signaling URL (Docker deployments)
+
+If you're running this via `docker-compose.yml` (see Docker section below),
+players don't need to type a signaling URL in manually at all. Set
+`SIGNALING_URL` once in the `web-darts` service's environment there (e.g.
+`ws://192.168.0.69:8886` or eventually a real domain over `wss://`), and
+every player's browser picks it up automatically on load. The field still
+exists - tucked into a collapsed "⚙ Signaling server settings" section in
+the Online Challenge tab - for local testing or overriding the default, but
+nobody needs to touch it in normal use.
+
+Note this has to be an address players' own browsers can actually reach
+(your server's LAN IP, a domain name, etc.) - it can't be a Docker
+container name like `signaling-darts`, since that only resolves inside
+Docker's internal network, not from someone's browser on their own machine.
+
 ### Testing it (easiest: two tabs on one machine)
 
 1. Start the signaling server as above.
 2. Open the app (`http://localhost:8000`) in two separate browser tabs.
-3. In tab 1: go to "Online Challenge", leave the signaling URL as
-   `ws://localhost:8080`, click **Create Challenge**, note the code shown.
+3. In tab 1: go to "Online Challenge", click **Create Challenge** (leave
+   the signaling URL at its default `ws://localhost:8080` under "⚙
+   Signaling server settings" if you haven't changed it), note the code
+   shown.
 4. In tab 2: same tab, enter that code, click **Join Challenge**.
 5. Both tabs should show "Connected" and the live scoreboard. Each tab can
    connect its own Granboard (or use manual entry) and take turns.
 
 ### Playing with someone else (same house / same Wi-Fi)
 
-Run the signaling server on one PC, then have the other player point their
-"Signaling server URL" field at `ws://<that PC's LAN IP>:8080` (e.g.
-`ws://192.168.1.42:8080`) instead of localhost.
+Run the signaling server on one PC, then have the other player open "⚙
+Signaling server settings" and point the field at `ws://<that PC's LAN
+IP>:8080` (e.g. `ws://192.168.1.42:8080`) instead of localhost - or, if
+running via Docker, just set `SIGNALING_URL` once as described above and
+skip this step entirely.
 
 ### Playing over the internet
 
@@ -146,6 +166,19 @@ both players' "Signaling server URL" field at `wss://your-deployed-url`
   keeping both sides in sync.
 
 ## Docker
+
+**Important if you're deploying this to a server others will connect to:**
+Web Bluetooth (the real board connection) only works in what browsers call
+a "secure context" - HTTPS, or literally the address `localhost`. A plain
+`http://192.168.x.x:8887`-style address, even on your own home network,
+does **not** count, and Chrome will silently make `navigator.bluetooth`
+unavailable - the app will tell you "this browser doesn't support Web
+Bluetooth" even though the real problem is the lack of HTTPS. If you want
+people to connect a real board over the network (not just on the same
+machine via `localhost`), put the deployment behind a reverse proxy with a
+TLS certificate (e.g. Caddy, Nginx Proxy Manager, Traefik). Manual entry and
+the clickable dartboard aren't affected by this - only the real Bluetooth
+connection is.
 
 There are two ways to run this in Docker, depending on whether you're
 playing or developing:
