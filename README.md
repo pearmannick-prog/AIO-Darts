@@ -158,8 +158,8 @@ docker compose up
 
 This uses `docker-compose.yml`, which pulls the pre-built images GitHub
 Actions already published to GHCR - nothing gets built on your machine.
-Then open **http://localhost:8000** and point "Signaling server URL" at
-`ws://localhost:8080`.
+Then open **http://localhost:8887** and point "Signaling server URL" at
+`ws://localhost:8886`.
 
 **Changing the code and want to test your changes:**
 
@@ -168,16 +168,16 @@ docker compose -f docker-compose.dev.yml up --build
 ```
 
 This builds fresh images from the source in this repo instead of pulling
-from GHCR.
+from GHCR (using different, un-conflicting ports: 8000/8080).
 
 Individually, without compose at all:
 
 ```
 docker build -t aio-darts-web .
-docker run -p 8000:80 aio-darts-web
+docker run -p 8887:80 aio-darts-web
 
 docker build -t aio-darts-signaling ./signaling-server
-docker run -p 8080:8080 aio-darts-signaling
+docker run -p 8886:8080 aio-darts-signaling
 ```
 
 Note: this repo was put together and syntax/structurally-checked from an
