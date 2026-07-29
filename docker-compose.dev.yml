@@ -6,8 +6,8 @@
 # your changes:
 #   docker compose -f docker-compose.dev.yml up --build
 #
-# Then open http://localhost:8000 and point the app's "Signaling server URL"
-# at ws://localhost:8080
+# Then open http://localhost:8000 - the signaling URL is pre-filled
+# automatically from SIGNALING_URL below, no manual entry needed.
 #
 # Service names match docker-compose.yml (web-darts / signaling-darts)
 # for consistency between the two files, even though naming collisions
@@ -18,6 +18,8 @@ services:
     build: .
     ports:
       - "8000:80"
+    environment:
+      - SIGNALING_URL=ws://localhost:8080
 
   signaling-darts:
     build: ./signaling-server
