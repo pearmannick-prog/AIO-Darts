@@ -169,30 +169,53 @@ network, put the deployment behind a reverse proxy with a TLS certificate
 (Nginx Proxy Manager, Caddy, Traefik, etc.). Manual entry and the clickable
 dartboard are unaffected.
 
-**Just want to run it (no build step):**
+There is **one** compose file. The service declares both `image:` and
+`build:`, so the same file covers running a published release and building
+local changes - no separate dev file to drift out of sync, and git history is
+the revert path.
 
 ```
-docker compose up -d
+docker compose up -d          # run it (pulls the pre-built image)
+docker compose pull           # update to the latest published image
+docker compose up -d --build  # build from THIS source instead of pulling
 ```
 
-This uses `docker-compose.yml`, which pulls the pre-built image GitHub Actions
-published to GHCR - nothing is built locally. Open **http://localhost:8887**.
-
-**Changing the code and want to test your changes:**
-
-```
-docker compose -f docker-compose.dev.yml up --build
-```
-
-This builds from the source in this repo instead of pulling, on port 8000 so
-it doesn't collide with the above.
+Open **http://localhost:8887**.
 
 Without compose at all:
 
 ```
-docker build -t aio-darts .
-docker run -p 8887:8080 aio-darts
+docker build -t aiodarts .
+docker run -p 8887:8080 -v /mnt/user/appdata/aiodarts:/data aiodarts
 ```
+
+### Persistent data
+
+The compose file bind-mounts a data directory to `/data` in the container.
+**Nothing is written there yet** - challenge rooms are deliberately in-memory
+and ephemeral. It's mounted now because the accounts/stat-tracking phase puts
+a SQLite file there, and SQLite is a plain file, so that phase adds no second
+container. Having the mount in place means that becomes a code deploy rather
+than a compose edit plus downtime.
+
+The default path (`/mnt/user/appdata/aiodarts`) follows Unraid's appdata
+convention. Override it elsewhere with a `.env` file next to the compose file:
+
+```
+DATA_PATH=./data
+```
+
+The server checks this directory is writable at startup and logs the result,
+so a misconfigured mount shows up in `docker compose logs` immediately rather
+than the first time someone tries to register. A bad mount is currently a
+warning, not a fatal error, since nothing depends on it yet.
+
+### Health check
+
+The container reports health via `GET /healthz`, which returns
+`{"ok":true,...}` plus current room and client counts. Compose has a
+healthcheck wired to it already, so `docker ps` and Unraid's Docker tab show
+health status without extra setup.
 
 ### Reverse proxy setup
 
