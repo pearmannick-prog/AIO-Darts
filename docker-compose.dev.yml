@@ -8,14 +8,18 @@
 #
 # Then open http://localhost:8000 and point the app's "Signaling server URL"
 # at ws://localhost:8080
+#
+# Service names match docker-compose.yml (web-darts / signaling-darts)
+# for consistency between the two files, even though naming collisions
+# aren't really a concern for a local one-off dev build.
 
 services:
-  web:
+  web-darts:
     build: .
     ports:
       - "8000:80"
 
-  signaling:
+  signaling-darts:
     build: ./signaling-server
     ports:
       - "8080:8080"
