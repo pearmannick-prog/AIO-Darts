@@ -8,6 +8,82 @@ const STARTING_SCORE = 501;
 // Standard dartboard number order, clockwise starting from the top (20).
 const BOARD_ORDER = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 
+// Ring boundaries as a fraction of the double ring's outer radius - kept in
+// sync with the fractions moveMarkerTo() uses below (inner/triple/outer/double)
+// so the hit marker actually lands in the ring it's drawn in.
+const RING_BOUNDS = {
+  doubleBull: 0.09,
+  bull: 0.16,
+  innerSingle: 0.56,
+  triple: 0.64,
+  outerSingle: 0.94,
+  double: 1.0,
+};
+
+// The dartboard SVG is drawn in a 200x200 viewBox with the double ring's
+// outer edge at this radius - used both to draw it and to convert a ring's
+// fractional bounds into the [-1,1] coordinate space positionMarker() uses.
+const BOARD_R = 80;
+
+function polarToCartesian(cx, cy, r, angleDeg) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+// Builds an SVG path for one "ring band" of one wedge (a donut slice).
+function wedgeBandPath(cx, cy, innerR, outerR, startAngle, endAngle) {
+  const p1 = polarToCartesian(cx, cy, outerR, startAngle);
+  const p2 = polarToCartesian(cx, cy, outerR, endAngle);
+  const p3 = polarToCartesian(cx, cy, innerR, endAngle);
+  const p4 = polarToCartesian(cx, cy, innerR, startAngle);
+  return `M ${p1.x} ${p1.y} A ${outerR} ${outerR} 0 0 1 ${p2.x} ${p2.y} ` +
+         `L ${p3.x} ${p3.y} A ${innerR} ${innerR} 0 0 0 ${p4.x} ${p4.y} Z`;
+}
+
+// Generates a dartboard SVG matching a real board's layout: 20 numbered
+// wedges, alternating light/dark singles, alternating red/green triple and
+// double rings, and a red/green bullseye - rather than the old simplified
+// concentric-ring approximation.
+function buildDartboardSVG() {
+  const cx = 100, cy = 100, R = BOARD_R;
+  const bands = [
+    { key: "innerSingle", from: RING_BOUNDS.bull, to: RING_BOUNDS.innerSingle, colors: ["#EFE6D2", "#1B1A14"] },
+    { key: "triple", from: RING_BOUNDS.innerSingle, to: RING_BOUNDS.triple, colors: ["#B7302A", "#2F7A4D"] },
+    { key: "outerSingle", from: RING_BOUNDS.triple, to: RING_BOUNDS.outerSingle, colors: ["#EFE6D2", "#1B1A14"] },
+    { key: "double", from: RING_BOUNDS.outerSingle, to: RING_BOUNDS.double, colors: ["#B7302A", "#2F7A4D"] },
+  ];
+
+  let wedges = "";
+  let numbers = "";
+
+  for (let i = 0; i < 20; i++) {
+    const center = -90 + i * 18;
+    const start = center - 9;
+    const end = center + 9;
+    const color = (i, colors) => colors[i % 2];
+
+    for (const band of bands) {
+      const path = wedgeBandPath(cx, cy, band.from * R, band.to * R, start, end);
+      wedges += `<path d="${path}" fill="${color(i, band.colors)}" stroke="#0d0c09" stroke-width="0.4"/>`;
+    }
+
+    const labelPos = polarToCartesian(cx, cy, R * 1.12, center);
+    numbers += `<text x="${labelPos.x}" y="${labelPos.y}" fill="#EFE6D2" font-family="Oswald, sans-serif" ` +
+               `font-size="9" font-weight="600" text-anchor="middle" dominant-baseline="middle">${BOARD_ORDER[i]}</text>`;
+  }
+
+  return `
+    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${cx}" cy="${cy}" r="98" fill="#0F3D2E"/>
+      <circle cx="${cx}" cy="${cy}" r="${R + 3}" fill="#111"/>
+      ${wedges}
+      <circle cx="${cx}" cy="${cy}" r="${RING_BOUNDS.bull * R}" fill="#2F7A4D" stroke="#0d0c09" stroke-width="0.4"/>
+      <circle cx="${cx}" cy="${cy}" r="${RING_BOUNDS.doubleBull * R}" fill="#B7302A" stroke="#0d0c09" stroke-width="0.4"/>
+      ${numbers}
+    </svg>
+  `;
+}
+
 const state = {
   players: [],
   currentPlayerIndex: 0,
@@ -45,7 +121,10 @@ const el = {
   throwLog: document.getElementById("throw-log"),
   dartboardMarker: document.getElementById("dartboard-marker"),
   winnerBanner: document.getElementById("winner-banner"),
+  dartboardEl: document.querySelector(".dartboard"),
 };
+
+el.dartboardEl.innerHTML = buildDartboardSVG();
 
 // ---------- Setup screen ----------
 function addPlayerRow(name = "") {
@@ -239,7 +318,16 @@ function moveMarkerTo(segment) {
   const angleDeg = -90 + index * 18;
   const angleRad = (angleDeg * Math.PI) / 180;
 
-  const ringRadius = { inner: 0.38, triple: 0.62, outer: 0.82, double: 0.97 }[segment.ring] ?? 0.7;
+  // Midpoint of each ring band, converted from "fraction of BOARD_R" into
+  // the [-1,1] container-fraction space positionMarker() expects (the
+  // board face's outer edge sits at BOARD_R/100 of the container).
+  const bandMidpoint = (from, to) => ((from + to) / 2) * (BOARD_R / 100);
+  const ringRadius = {
+    inner: bandMidpoint(RING_BOUNDS.bull, RING_BOUNDS.innerSingle),
+    triple: bandMidpoint(RING_BOUNDS.innerSingle, RING_BOUNDS.triple),
+    outer: bandMidpoint(RING_BOUNDS.triple, RING_BOUNDS.outerSingle),
+    double: bandMidpoint(RING_BOUNDS.outerSingle, RING_BOUNDS.double),
+  }[segment.ring] ?? 0.7;
   const x = ringRadius * Math.cos(angleRad);
   const y = ringRadius * Math.sin(angleRad);
   positionMarker(x, y);
