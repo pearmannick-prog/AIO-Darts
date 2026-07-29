@@ -35,14 +35,13 @@ services:
       # container name (e.g. "signaling-darts"), since that only resolves
       # inside Docker's internal network, not from someone's own browser.
       #
-      # Since the site is served over https (aiodarts.spazcat.com), this
-      # has to be wss:// (encrypted), not ws:// - browsers block a plain
-      # ws:// connection from an https:// page as mixed content. Route it
-      # through the same reverse proxy that serves the site: add a rule
-      # forwarding this path to signaling-darts:8080 (internal) or
-      # 192.168.0.69:8886 (if the proxy sits outside this compose file),
-      # with WebSocket upgrade forwarding turned on.
-      - SIGNALING_URL=wss://aiodarts.spazcat.com/signaling
+      # Routed through its own subdomain in the reverse proxy (NGINX Proxy
+      # Manager: a separate Proxy Host for signaling.aiodarts.spazcat.com,
+      # forwarding to 192.168.0.69:8886, with "Websockets Support" turned
+      # on) rather than a path on the main domain - subdomain routing is
+      # the simplest case for most proxies to get right, no custom
+      # location/path rewriting needed.
+      - SIGNALING_URL=wss://signaling.aiodarts.spazcat.com
 
   signaling-darts:
     image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-signaling:latest
