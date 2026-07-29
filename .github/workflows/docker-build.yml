@@ -3,6 +3,12 @@ name: Build Docker images
 # Runs on every push so pull requests / branches at least get build-checked.
 # Only pushes images to GHCR from main or version tags, so random branches
 # don't clutter the registry.
+#
+# Tagging behavior:
+#   - Pushes to main         -> tagged "latest" (rolling, always the newest main)
+#   - Tags like v1.2.3       -> ALSO tagged "1.2.3" and "1.2" (a pinnable release,
+#                                on top of also moving "latest" forward)
+#   - Pull requests           -> built to verify they compile, never pushed
 on:
   push:
     branches: ["main"]
@@ -35,12 +41,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker metadata (web)
+        id: meta-web
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.REPO_LC }}/aio-darts-web
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ env.REPO_LC }}/aio-darts-web:latest
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
 
   build-signaling:
     runs-on: ubuntu-latest
@@ -60,8 +77,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker metadata (signaling)
+        id: meta-signaling
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.REPO_LC }}/aio-darts-signaling
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
       - uses: docker/build-push-action@v6
         with:
           context: ./signaling-server
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ env.REPO_LC }}/aio-darts-signaling:latest
+          tags: ${{ steps.meta-signaling.outputs.tags }}
+          labels: ${{ steps.meta-signaling.outputs.labels }}
