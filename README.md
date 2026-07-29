@@ -241,6 +241,15 @@ then on, keep pushing normal changes to `main` - `latest` keeps updating
 with every change, and you cut a new release (`v1.1.0`, `v2.0.0`, etc.)
 whenever you want a stable, pinnable snapshot for deploying somewhere.
 
+## Version footer
+
+The bottom of the page shows a small `AIO Darts · build <sha> · <date>`
+line - the Docker build bakes in the exact git commit it was built from
+(see the root `Dockerfile` and `version.js`), so it always matches what's
+actually deployed with no manual version bumping. Running locally via
+`start-granboard.bat` (no Docker) shows "local dev build" instead, since
+there's no build step to bake a commit into.
+
 ## Roadmap
 
 - 🎯 **Cricket** - coming soon, alongside 501 (both local and online)
