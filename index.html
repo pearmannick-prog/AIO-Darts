@@ -323,11 +323,13 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background:
-      radial-gradient(circle at 50% 50%, var(--red) 0 4%, var(--cream) 4% 8%,
-        var(--felt) 8% 34%, var(--red) 34% 40%, var(--green-ring) 40% 46%,
-        var(--cream) 46% 78%, var(--ink) 78% 82%, var(--felt) 82% 100%);
     box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    overflow: hidden;
+  }
+  .dartboard svg {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
   .dartboard-marker {
     position: absolute;
