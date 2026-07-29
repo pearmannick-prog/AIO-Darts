@@ -180,9 +180,13 @@ To use it:
    `.../aio-darts-signaling`. They're private by default - change visibility
    there if you want to `docker pull` them somewhere else without logging in.
 
-## What's next
+## Roadmap
 
-Local play is 501 only so far (no Cricket yet), and there's no persistent
-stats across sessions. Let me know how both the local scoring and the new
-online matches behave with real boards, and we can prioritize from there -
-Cricket, matchmaking, or the native Windows version.
+- 🎯 **Cricket** - coming soon, alongside 501 (both local and online)
+- Persistent stats across sessions
+- Matchmaking beyond invite codes
+- Native Windows (C#/.NET) version
+- Webcam-based hit detection for standard steel-tip boards
+
+Let me know how the current 501 scoring and online matches behave with real
+boards, and we'll prioritize from there.
