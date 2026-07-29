@@ -365,17 +365,19 @@
     filter: brightness(1.35);
   }
   .dartboard-marker {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--red);
-  border: 2px solid var(--paper);
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 10px rgba(0,0,0,0.5);
-  transition: left 0.15s ease, top 0.15s ease;
-  pointer-events: none;   /* <-- add this line */
-}
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--red);
+    border: 2px solid var(--paper);
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    transition: left 0.15s ease, top 0.15s ease;
+    /* Purely visual - let clicks pass through to the segment underneath so
+       re-hitting the same spot the marker is sitting on still registers. */
+    pointer-events: none;
+  }
 
   /* Manual entry */
   #manual-section {
@@ -600,13 +602,12 @@
         <details class="signaling-settings">
           <summary>⚙ Signaling server settings</summary>
           <label for="signaling-url" style="font-size:13px; opacity:0.8;">Signaling server URL</label>
-          <input id="signaling-url" type="text" placeholder="ws://localhost:8080" value="ws://localhost:8080">
+          <input id="signaling-url" type="text">
           <p style="font-size:13px; opacity:0.75; margin-top:6px;">
-            Both players need to point at the same signaling server. This is
-            usually pre-filled automatically by the deployment - you only
-            need to touch this for local testing (<code>ws://localhost:8080</code>
-            for two tabs on one machine) or to override the default. See the
-            README.
+            Filled in automatically - the signaling server runs on this same
+            address, so there's normally nothing to change here. Clear the box
+            to go back to the automatic value. Only set this by hand if you're
+            deliberately using a signaling server somewhere else.
           </p>
         </details>
       </div>
