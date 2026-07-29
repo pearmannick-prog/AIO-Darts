@@ -2,6 +2,7 @@
 
 import { Granboard, SegmentType, createSegment, SegmentID } from "./granboard.js";
 import { resolveThrow } from "./scoring.js";
+import { createQuickEntry } from "./quickentry.js";
 
 const STARTING_SCORE = 501;
 
@@ -46,11 +47,14 @@ function wedgeBandPath(cx, cy, innerR, outerR, startAngle, endAngle) {
 // concentric-ring approximation.
 function buildDartboardSVG() {
   const cx = 100, cy = 100, R = BOARD_R;
+  // slot matches the ring-to-segmentId scheme used everywhere else in the
+  // app (see manualSegmentFromRing in online.js / granboard.js's SegmentID):
+  // 0=inner single, 1=triple, 2=outer single, 3=double.
   const bands = [
-    { key: "innerSingle", from: RING_BOUNDS.bull, to: RING_BOUNDS.innerSingle, colors: ["#EFE6D2", "#1B1A14"] },
-    { key: "triple", from: RING_BOUNDS.innerSingle, to: RING_BOUNDS.triple, colors: ["#B7302A", "#2F7A4D"] },
-    { key: "outerSingle", from: RING_BOUNDS.triple, to: RING_BOUNDS.outerSingle, colors: ["#EFE6D2", "#1B1A14"] },
-    { key: "double", from: RING_BOUNDS.outerSingle, to: RING_BOUNDS.double, colors: ["#B7302A", "#2F7A4D"] },
+    { key: "innerSingle", slot: 0, from: RING_BOUNDS.bull, to: RING_BOUNDS.innerSingle, colors: ["#EFE6D2", "#1B1A14"] },
+    { key: "triple", slot: 1, from: RING_BOUNDS.innerSingle, to: RING_BOUNDS.triple, colors: ["#B7302A", "#2F7A4D"] },
+    { key: "outerSingle", slot: 2, from: RING_BOUNDS.triple, to: RING_BOUNDS.outerSingle, colors: ["#EFE6D2", "#1B1A14"] },
+    { key: "double", slot: 3, from: RING_BOUNDS.outerSingle, to: RING_BOUNDS.double, colors: ["#B7302A", "#2F7A4D"] },
   ];
 
   let wedges = "";
@@ -61,15 +65,18 @@ function buildDartboardSVG() {
     const start = center - 9;
     const end = center + 9;
     const color = (i, colors) => colors[i % 2];
+    const boardNumber = BOARD_ORDER[i];
 
     for (const band of bands) {
       const path = wedgeBandPath(cx, cy, band.from * R, band.to * R, start, end);
-      wedges += `<path d="${path}" fill="${color(i, band.colors)}" stroke="#0d0c09" stroke-width="0.4"/>`;
+      const segmentId = (boardNumber - 1) * 4 + band.slot;
+      wedges += `<path class="dartboard-segment" data-segment-id="${segmentId}" ` +
+                `d="${path}" fill="${color(i, band.colors)}" stroke="#0d0c09" stroke-width="0.4"/>`;
     }
 
     const labelPos = polarToCartesian(cx, cy, R * 1.12, center);
     numbers += `<text x="${labelPos.x}" y="${labelPos.y}" fill="#EFE6D2" font-family="Oswald, sans-serif" ` +
-               `font-size="9" font-weight="600" text-anchor="middle" dominant-baseline="middle">${BOARD_ORDER[i]}</text>`;
+               `font-size="9" font-weight="600" text-anchor="middle" dominant-baseline="middle">${boardNumber}</text>`;
   }
 
   return `
@@ -77,8 +84,8 @@ function buildDartboardSVG() {
       <circle cx="${cx}" cy="${cy}" r="98" fill="#0F3D2E"/>
       <circle cx="${cx}" cy="${cy}" r="${R + 3}" fill="#111"/>
       ${wedges}
-      <circle cx="${cx}" cy="${cy}" r="${RING_BOUNDS.bull * R}" fill="#2F7A4D" stroke="#0d0c09" stroke-width="0.4"/>
-      <circle cx="${cx}" cy="${cy}" r="${RING_BOUNDS.doubleBull * R}" fill="#B7302A" stroke="#0d0c09" stroke-width="0.4"/>
+      <circle class="dartboard-segment" data-segment-id="${SegmentID.BULL}" cx="${cx}" cy="${cy}" r="${RING_BOUNDS.bull * R}" fill="#2F7A4D" stroke="#0d0c09" stroke-width="0.4"/>
+      <circle class="dartboard-segment" data-segment-id="${SegmentID.DBL_BULL}" cx="${cx}" cy="${cy}" r="${RING_BOUNDS.doubleBull * R}" fill="#B7302A" stroke="#0d0c09" stroke-width="0.4"/>
       ${numbers}
     </svg>
   `;
@@ -114,6 +121,8 @@ const el = {
   undoBtn: document.getElementById("undo-btn"),
   newGameBtn: document.getElementById("new-game-btn"),
   manualSection: document.getElementById("manual-section"),
+  manualPerdart: document.getElementById("manual-perdart"),
+  manualQuickTotal: document.getElementById("manual-quicktotal"),
   manualRing: document.getElementById("manual-ring"),
   manualMiss: document.getElementById("manual-miss"),
   manualBull: document.getElementById("manual-bull"),
@@ -125,6 +134,28 @@ const el = {
 };
 
 el.dartboardEl.innerHTML = buildDartboardSVG();
+
+// Clicking a segment on the board scores it directly - the same applyHit
+// path a real Bluetooth hit or the manual-entry grid uses, so undo, bust
+// detection, and the hit marker all work identically either way.
+el.dartboardEl.querySelectorAll("[data-segment-id]").forEach((node) => {
+  node.addEventListener("click", () => {
+    if (state.players.length === 0 || state.gameOver) return;
+    applyHit(createSegment(Number(node.dataset.segmentId)));
+  });
+});
+
+// ---------- Manual entry mode sub-tabs (Per-Dart vs Quick Total) ----------
+el.manualSection.querySelectorAll(".entry-mode-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    const mode = tab.dataset.mode;
+    el.manualSection.querySelectorAll(".entry-mode-tab").forEach((t) => t.classList.toggle("active", t === tab));
+    el.manualPerdart.classList.toggle("hidden", mode !== "perdart");
+    el.manualQuickTotal.classList.toggle("hidden", mode !== "quicktotal");
+  });
+});
+
+createQuickEntry(el.manualQuickTotal, applyQuickTotal);
 
 // ---------- Setup screen ----------
 function addPlayerRow(name = "") {
@@ -273,6 +304,52 @@ function applyHit(segment) {
       state.winnerIndex = state.currentPlayerIndex;
     } else if (state.dartsThisTurn.length >= 3) {
       endTurn();
+    }
+  }
+
+  render();
+}
+
+// DartConnect-style whole-turn-total entry. Unlike applyHit, this always
+// finalizes the turn immediately - it represents all of that turn's darts
+// collapsed into one number, not a single dart, so there's no "wait for 3"
+// step. See quickentry.js for the double-out assumption this makes.
+function applyQuickTotal(totalValue) {
+  if (state.gameOver) return;
+
+  undoStack.push(snapshot());
+
+  const player = state.players[state.currentPlayerIndex];
+  const segment = {
+    value: totalValue,
+    type: SegmentType.Double, // see quickentry.js: exact-0 entries assume a valid double-out
+    longName: `Turn total: ${totalValue}`,
+    shortName: `${totalValue}`,
+    ring: "quick",
+    section: "Other",
+  };
+  const { after, isBust, isWin } = resolveThrow(player.remaining, segment);
+
+  state.throwLog.unshift({
+    playerName: player.name,
+    label: segment.longName,
+    value: segment.value,
+    remainingAfter: isBust ? state.startOfTurnRemaining : Math.max(after, 0),
+    bust: isBust,
+  });
+
+  el.dartboardMarker.classList.add("hidden"); // no single position to show for a turn total
+
+  if (isBust) {
+    player.remaining = state.startOfTurnRemaining;
+    endTurn();
+  } else {
+    player.remaining = after;
+    if (isWin) {
+      state.gameOver = true;
+      state.winnerIndex = state.currentPlayerIndex;
+    } else {
+      endTurn(); // always finalizes, regardless of dartsThisTurn count
     }
   }
 
