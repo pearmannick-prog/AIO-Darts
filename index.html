@@ -149,6 +149,23 @@
     max-width: 320px;
   }
 
+  .signaling-settings {
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(27,26,20,0.12);
+  }
+  .signaling-settings summary {
+    cursor: pointer;
+    font-family: 'Oswald', sans-serif;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    opacity: 0.7;
+    user-select: none;
+  }
+  .signaling-settings summary:hover { opacity: 1; }
+  .signaling-settings input#signaling-url { margin-top: 10px; }
+
   #challenge-code-display {
     font-family: 'Oswald', sans-serif;
     font-size: 40px;
@@ -571,14 +588,6 @@
       <!-- Signaling server config + create/join -->
       <div id="online-setup-panel" class="panel">
         <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
-        <label for="signaling-url" style="font-size:13px; opacity:0.8;">Signaling server URL</label>
-        <input id="signaling-url" type="text" placeholder="ws://localhost:8080" value="ws://localhost:8080">
-        <p style="font-size:13px; opacity:0.75; margin-top:6px;">
-          Both players need to point at the same signaling server. Use
-          <code>ws://localhost:8080</code> if you're testing on one machine
-          with two browser tabs, or a LAN/deployed address to play with
-          someone else - see the README.
-        </p>
         <div class="setup-actions">
           <button id="create-challenge-btn" class="btn-primary">Create Challenge</button>
         </div>
@@ -586,6 +595,19 @@
           <input id="join-code-input" type="text" placeholder="Enter challenge code" style="text-transform:uppercase;">
           <button id="join-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Join Challenge</button>
         </div>
+
+        <details class="signaling-settings">
+          <summary>⚙ Signaling server settings</summary>
+          <label for="signaling-url" style="font-size:13px; opacity:0.8;">Signaling server URL</label>
+          <input id="signaling-url" type="text" placeholder="ws://localhost:8080" value="ws://localhost:8080">
+          <p style="font-size:13px; opacity:0.75; margin-top:6px;">
+            Both players need to point at the same signaling server. This is
+            usually pre-filled automatically by the deployment - you only
+            need to touch this for local testing (<code>ws://localhost:8080</code>
+            for two tabs on one machine) or to override the default. See the
+            README.
+          </p>
+        </details>
       </div>
 
       <!-- Waiting for opponent -->
