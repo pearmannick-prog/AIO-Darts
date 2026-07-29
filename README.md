@@ -60,9 +60,21 @@ and open whatever local URL it prints (usually http://localhost:3000).
    Granboard from a list of nearby Bluetooth devices. Select it and click
    "Pair"/"Connect".
 3. Throw darts - hits should show up automatically, update the score, and
-   move a marker on the mini dartboard.
+   move a marker on the mini dartboard. You can also just **click directly
+   on the mini dartboard** to score that segment - handy as a third input
+   method alongside a real board and manual entry (local mode only for
+   now).
 4. Use **Undo last dart** if a throw gets misread, and the **manual entry**
-   section at the bottom to record a miss or fix a misread by hand.
+   section at the bottom to record a miss or fix a misread by hand. It has
+   two modes:
+   - **Per-Dart** - pick a ring and tap the exact segment hit, one dart at a
+     time (what the board's own hits look like too).
+   - **Quick Total** - a DartConnect-style numeric keypad for entering a
+     whole turn's total in one go (with shortcuts for common totals like
+     26, 45, 60, 100, 180). Faster if you already know the turn's total and
+     don't need per-dart detail - entering a total always finalizes that
+     whole turn immediately, and entering exactly enough to reach 0 is
+     always treated as a valid double-out checkout.
 5. The board's physical button **ends your turn early** - useful if a dart
    bounces out or misses the board and you don't want to wait for 3
    registered hits before it's the next player's turn. It doesn't undo
