@@ -135,16 +135,30 @@ both players' "Signaling server URL" field at `wss://your-deployed-url`
 
 ## Docker
 
-Both pieces have a Dockerfile. Easiest way to run them together locally:
+There are two ways to run this in Docker, depending on whether you're
+playing or developing:
+
+**Just want to run it (no build step):**
 
 ```
-docker compose up --build
+docker compose up
 ```
 
+This uses `docker-compose.yml`, which pulls the pre-built images GitHub
+Actions already published to GHCR - nothing gets built on your machine.
 Then open **http://localhost:8000** and point "Signaling server URL" at
 `ws://localhost:8080`.
 
-Individually:
+**Changing the code and want to test your changes:**
+
+```
+docker compose -f docker-compose.dev.yml up --build
+```
+
+This builds fresh images from the source in this repo instead of pulling
+from GHCR.
+
+Individually, without compose at all:
 
 ```
 docker build -t aio-darts-web .
@@ -156,16 +170,19 @@ docker run -p 8080:8080 aio-darts-signaling
 
 Note: this repo was put together and syntax/structurally-checked from an
 environment without Docker installed, so the actual `docker build`/`docker
-compose up` steps above haven't been run end-to-end yet - that first real
-test is on you (or CI, see below). If something doesn't build cleanly, the
-error output will say exactly what's wrong and it's likely a one-line fix.
+compose up` commands above haven't been run end-to-end by me - that first
+real test is on you (or CI, see below). If something doesn't build cleanly,
+the error output will say exactly what's wrong and it's likely a one-line
+fix.
 
 ## Continuous integration (GitHub Actions)
 
 `.github/workflows/docker-build.yml` builds both images on every push and
 pull request, and pushes them to GitHub Container Registry (GHCR) on pushes
 to `main` or version tags (`v1.0.0`, etc.) - not on pull requests, so
-random branches don't clutter the registry.
+random branches don't clutter the registry. This is what makes the plain
+`docker compose up` above possible - by the time you run it, the images
+already exist on GHCR, built by CI, not by whoever's running the app.
 
 To use it:
 
@@ -177,8 +194,14 @@ To use it:
    it authenticates to GHCR using GitHub's built-in token.
 4. Once it succeeds, the images show up under your GitHub profile's
    **Packages** tab, as `ghcr.io/<you>/<repo>/aio-darts-web` and
-   `.../aio-darts-signaling`. They're private by default - change visibility
-   there if you want to `docker pull` them somewhere else without logging in.
+   `.../aio-darts-signaling`.
+5. **They're private by default.** For `docker-compose.yml` to work for
+   anyone besides you without a `docker login ghcr.io` first, open each
+   package's settings and change visibility to public. (The repo itself can
+   stay private - package visibility is separate.)
+6. `docker-compose.yml` currently points at
+   `ghcr.io/pearmannick-prog/aio-darts/...` - update that if your GitHub
+   username or repo name differs.
 
 ## Roadmap
 
@@ -187,3 +210,6 @@ To use it:
 - Matchmaking beyond invite codes
 - Native Windows (C#/.NET) version
 - Webcam-based hit detection for standard steel-tip boards
+
+Let me know how the current 501 scoring and online matches behave with real
+boards, and we'll prioritize from there.
