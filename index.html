@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -316,7 +317,7 @@
     position: relative;
     width: 100%;
     aspect-ratio: 1;
-    max-width: 260px;
+    max-width: 320px;
     margin: 0 auto;
   }
   .dartboard {
@@ -330,6 +331,13 @@
     display: block;
     width: 100%;
     height: 100%;
+  }
+  .dartboard-segment {
+    cursor: pointer;
+    transition: filter 0.1s ease;
+  }
+  .dartboard-segment:hover {
+    filter: brightness(1.35);
   }
   .dartboard-marker {
     position: absolute;
@@ -367,6 +375,86 @@
     font-weight: 600;
   }
   .manual-section-btn:hover { background: var(--felt); color: var(--cream); }
+
+  /* Manual entry mode sub-tabs (Per-Dart vs Quick Total) */
+  .entry-mode-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .entry-mode-tab {
+    background: #fff;
+    border: 1px solid #cfc4a3;
+    color: var(--ink);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 13px;
+  }
+  .entry-mode-tab.active {
+    background: var(--felt);
+    color: var(--cream);
+    border-color: var(--felt);
+  }
+
+  /* Quick-total (DartConnect-style) keypad */
+  .quick-entry {
+    max-width: 320px;
+  }
+  .quick-display {
+    font-family: 'Oswald', sans-serif;
+    font-size: 40px;
+    font-weight: 700;
+    text-align: center;
+    background: rgba(27,26,20,0.06);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .quick-shortcuts {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .quick-shortcut-btn {
+    background: var(--gold);
+    color: var(--ink);
+    border: none;
+    border-radius: 6px;
+    padding: 10px 0;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+  }
+  .quick-shortcut-btn:hover { filter: brightness(1.08); }
+  .quick-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .quick-digit-btn, .quick-back-btn, .quick-enter-btn {
+    background: #fff;
+    border: 1px solid #cfc4a3;
+    color: var(--ink);
+    border-radius: 6px;
+    padding: 14px 0;
+    font-family: 'Oswald', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .quick-digit-btn.quick-zero { grid-column: span 1; }
+  .quick-back-btn { background: rgba(183,48,42,0.12); }
+  .quick-enter-btn { background: rgba(47,122,77,0.15); }
+  .quick-miss-btn {
+    width: 100%;
+    background: var(--red);
+    color: var(--cream);
+    border: none;
+    border-radius: 6px;
+    padding: 12px 0;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
   select#manual-ring {
     padding: 8px 10px;
     border-radius: 6px;
@@ -445,19 +533,26 @@
 
         <div id="manual-section">
           <h3>Manual entry (misses &amp; misreads)</h3>
-          <div class="manual-row">
-            <label for="manual-ring">Ring:</label>
-            <select id="manual-ring">
-              <option value="outer">Single (outer)</option>
-              <option value="inner">Single (inner)</option>
-              <option value="triple">Triple</option>
-              <option value="double">Double</option>
-            </select>
-            <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-            <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-            <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+          <div class="entry-mode-tabs">
+            <button type="button" class="entry-mode-tab" data-mode="perdart">Per-Dart</button>
+            <button type="button" class="entry-mode-tab active" data-mode="quicktotal">Quick Total</button>
           </div>
-          <div id="manual-sections"></div>
+          <div id="manual-perdart" class="entry-mode-panel hidden">
+            <div class="manual-row">
+              <label for="manual-ring">Ring:</label>
+              <select id="manual-ring">
+                <option value="outer">Single (outer)</option>
+                <option value="inner">Single (inner)</option>
+                <option value="triple">Triple</option>
+                <option value="double">Double</option>
+              </select>
+              <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
+              <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
+              <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+            </div>
+            <div id="manual-sections"></div>
+          </div>
+          <div id="manual-quicktotal" class="entry-mode-panel"></div>
         </div>
 
         <div id="throw-log"></div>
@@ -514,19 +609,26 @@
 
         <div id="online-manual-section">
           <h3>Manual entry (misses &amp; misreads)</h3>
-          <div class="manual-row">
-            <label for="online-manual-ring">Ring:</label>
-            <select id="online-manual-ring">
-              <option value="outer">Single (outer)</option>
-              <option value="inner">Single (inner)</option>
-              <option value="triple">Triple</option>
-              <option value="double">Double</option>
-            </select>
-            <button id="online-manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-            <button id="online-manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-            <button id="online-manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+          <div class="entry-mode-tabs">
+            <button type="button" class="entry-mode-tab" data-mode="perdart">Per-Dart</button>
+            <button type="button" class="entry-mode-tab active" data-mode="quicktotal">Quick Total</button>
           </div>
-          <div id="online-manual-sections"></div>
+          <div id="online-manual-perdart" class="entry-mode-panel hidden">
+            <div class="manual-row">
+              <label for="online-manual-ring">Ring:</label>
+              <select id="online-manual-ring">
+                <option value="outer">Single (outer)</option>
+                <option value="inner">Single (inner)</option>
+                <option value="triple">Triple</option>
+                <option value="double">Double</option>
+              </select>
+              <button id="online-manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
+              <button id="online-manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
+              <button id="online-manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+            </div>
+            <div id="online-manual-sections"></div>
+          </div>
+          <div id="online-manual-quicktotal" class="entry-mode-panel"></div>
         </div>
 
         <div id="online-connect-row" class="actions-row">
