@@ -1,14 +1,21 @@
-name: Build Docker images
+name: Build Docker image
 
 # Runs on every push so pull requests / branches at least get build-checked.
-# Only pushes images to GHCR from main or version tags, so random branches
+# Only pushes the image to GHCR from main or version tags, so random branches
 # don't clutter the registry.
 #
+# There is deliberately only ONE image. The static front-end and the
+# signaling WebSocket are served by the same Node process on the same port
+# (see server/server.js), which is what lets this run as a single container
+# behind a single reverse-proxy host with nothing to configure. The old
+# separate "aio-darts-signaling" image is gone - if it's still listed under
+# your GHCR packages it's a leftover, and can be deleted there.
+#
 # Tagging behavior:
-#   - Pushes to main         -> tagged "latest" (rolling, always the newest main)
-#   - Tags like v1.2.3       -> ALSO tagged "1.2.3" and "1.2" (a pinnable release,
-#                                on top of also moving "latest" forward)
-#   - Pull requests           -> built to verify they compile, never pushed
+#   - Pushes to main    -> tagged "latest" (rolling, always the newest main)
+#   - Tags like v1.2.3  -> ALSO tagged "1.2.3" and "1.2" (a pinnable release,
+#                          on top of also moving "latest" forward)
+#   - Pull requests     -> built to verify they compile, never pushed
 on:
   push:
     branches: ["main"]
@@ -21,7 +28,7 @@ permissions:
   packages: write
 
 jobs:
-  build-web:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,10 +48,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata (web)
-        id: meta-web
+      - name: Docker metadata
+        id: meta
         uses: docker/metadata-action@v5
         with:
+          # Image name kept as "aio-darts-web" so existing deployments
+          # pulling :latest keep working without editing their compose file.
           images: ghcr.io/${{ env.REPO_LC }}/aio-darts-web
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
@@ -56,43 +65,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-web.outputs.tags }}
-          labels: ${{ steps.meta-web.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ env.BUILD_DATE }}
-
-  build-signaling:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Compute lowercase repo name
-        run: echo "REPO_LC=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Docker metadata (signaling)
-        id: meta-signaling
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ env.REPO_LC }}/aio-darts-signaling
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./signaling-server
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-signaling.outputs.tags }}
-          labels: ${{ steps.meta-signaling.outputs.labels }}
