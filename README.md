@@ -1,57 +1,57 @@
-# AIO Darts (web app)
+# AIO Darts
 
-An "all-in-one" darts app: local pass-and-play scoring, online 1v1
-challenges over a direct P2P connection, Granboard Bluetooth support with a
-manual-entry fallback (so it also works with a plain steel-tip board), and
-room to grow from there - camera-based hit detection is on the roadmap.
+An "all-in-one" darts app: local pass-and-play scoring, online 1v1 challenges
+over a direct P2P connection, Granboard Bluetooth support with a manual-entry
+fallback (so it also works with a plain steel-tip board), and room to grow
+from there - camera-based hit detection is on the roadmap.
 
-A browser-based 501 scorer for the Granboard, connecting directly over
-Bluetooth from the page - no install required.
+Everything runs as **one container on one port**. The static front-end and the
+WebRTC signaling server are served by the same process, which is what keeps
+deployment simple (see [Architecture](#architecture)).
 
 The Bluetooth service UUID and dart-hit decoding table in `granboard.js` are
 adapted from the open-source project
-[sobassy/gran-app](https://github.com/sobassy/gran-app) (MIT License).
-Credit to that project for reverse-engineering the protocol in the first
-place.
+[sobassy/gran-app](https://github.com/sobassy/gran-app) (MIT License). Credit
+to that project for reverse-engineering the protocol in the first place.
 
 ## Requirements
 
-- **Chrome or Edge** on desktop. (Web Bluetooth isn't supported in Firefox or
-  Safari.)
+- **Chrome or Edge** on desktop, for real board support. (Web Bluetooth isn't
+  supported in Firefox or Safari. Manual entry and the clickable dartboard
+  work in any modern browser.)
 - Your Granboard powered on and **not** already connected to a phone/tablet -
   BLE devices only accept one active connection at a time.
+- **Node.js**, if running locally without Docker.
 
-## Running it
+## Running it locally
 
-**Easiest: double-click `start-granboard.bat`** in this folder. It starts a
-local server and opens the app in your default browser automatically. Leave
-the console window it opens running while you play - closing it stops the
+**Easiest: double-click `start-aio-darts.bat`.** It installs the one
+dependency the first time, starts the server on port 8000, and opens your
+browser. Leave the console window open while you play - closing it stops the
 server.
 
-If you'd rather run it by hand (or the shortcut can't find Python/Node on
-your machine), here's what it's doing under the hood:
-
-Web Bluetooth requires a "secure context" - it won't work if you just
-double-click `index.html` and open it as a `file://` page. You need to serve
-it from a tiny local web server instead. Easiest options:
-
-**If you have Python installed** (most Windows machines with dev tools do):
+By hand, if you prefer:
 
 ```
-cd aio-darts
-python -m http.server 8000
+cd server
+npm install
+cd ..
 ```
 
-Then open **http://localhost:8000** in Chrome or Edge.
-
-**If you have Node.js installed instead:**
+then, from the repo root:
 
 ```
-cd aio-darts
-npx serve .
+PUBLIC_DIR=. PORT=8000 node server/server.js
 ```
 
-and open whatever local URL it prints (usually http://localhost:3000).
+(on Windows `cmd`: `set PUBLIC_DIR=.` and `set PORT=8000` on their own lines
+first, then `node server\server.js`)
+
+Open **http://localhost:8000**.
+
+Note you can't just double-click `index.html` - Web Bluetooth requires a
+"secure context," which a `file://` page isn't. It has to be served, which is
+what the above does.
 
 ## Using it
 
@@ -60,139 +60,123 @@ and open whatever local URL it prints (usually http://localhost:3000).
    Granboard from a list of nearby Bluetooth devices. Select it and click
    "Pair"/"Connect".
 3. Throw darts - hits should show up automatically, update the score, and
-   move a marker on the mini dartboard. You can also just **click directly
-   on the mini dartboard** to score that segment - handy as a third input
-   method alongside a real board and manual entry (local mode only for
-   now).
+   move a marker on the mini dartboard. You can also just **click directly on
+   the mini dartboard** to score that segment - handy as a third input method
+   alongside a real board and manual entry (local mode only for now).
 4. Use **Undo last dart** if a throw gets misread, and the **manual entry**
-   section at the bottom to record a miss or fix a misread by hand. It has
-   two modes:
+   section at the bottom to record a miss or fix a misread by hand. It has two
+   modes:
    - **Per-Dart** - pick a ring and tap the exact segment hit, one dart at a
      time (what the board's own hits look like too).
-   - **Quick Total** - a DartConnect-style numeric keypad for entering a
-     whole turn's total in one go (with shortcuts for common totals like
-     26, 45, 60, 100, 180). Faster if you already know the turn's total and
-     don't need per-dart detail - entering a total always finalizes that
-     whole turn immediately, and entering exactly enough to reach 0 is
-     always treated as a valid double-out checkout.
+   - **Quick Total** - a DartConnect-style numeric keypad for entering a whole
+     turn's total in one go (with shortcuts for common totals like 26, 45, 60,
+     100, 180). Faster if you already know the turn's total and don't need
+     per-dart detail - entering a total always finalizes that whole turn
+     immediately, and entering exactly enough to reach 0 is always treated as
+     a valid double-out checkout.
 5. The board's physical button **ends your turn early** - useful if a dart
-   bounces out or misses the board and you don't want to wait for 3
-   registered hits before it's the next player's turn. It doesn't undo
-   anything; only a bust reverts score.
+   bounces out or misses the board and you don't want to wait for 3 registered
+   hits before it's the next player's turn. It doesn't undo anything; only a
+   bust reverts score.
 
-## Online 1v1 challenges (new)
+## Online 1v1 challenges
 
-There's now an "Online Challenge" tab alongside local play. Two people, each
-with their own Granboard, can play a remote 1v1 501 match. This works over a
-direct peer-to-peer WebRTC connection - a small signaling server is only used
-for the initial handshake (finding each other and exchanging connection
-info), not for the actual gameplay traffic.
+The "Online Challenge" tab lets two people, each with their own board, play a
+remote 1v1 501 match. Gameplay runs over a **direct peer-to-peer WebRTC
+connection** - the signaling server is only involved in the initial handshake
+(helping the two browsers find each other and swap connection details), never
+in gameplay traffic.
 
-### Running the signaling server
+**There is nothing to configure.** The signaling server is part of the same
+server serving the page, so the front-end derives its address from whatever
+URL you loaded the app on. Load the app over HTTPS and the socket is
+automatically `wss://`; over plain HTTP it's `ws://`. Because it's the same
+origin, it can never be blocked as mixed content.
 
-**Easiest: double-click `start-signaling-server.bat`** inside the
-`signaling-server` folder. It installs dependencies the first time (needs
-Node.js), then starts the server on port 8080. Leave the console window
-open while people are playing.
+A "⚙ Signaling server settings" section still exists, collapsed, in case you
+ever want to point players at a signaling server somewhere else entirely.
+Leave it alone otherwise - clearing the box restores the automatic value.
 
-If you'd rather run it by hand:
+### Testing it (two tabs on one machine)
 
-```
-cd signaling-server
-npm install
-npm start
-```
-
-By default it listens on port 8080. Leave it running.
-
-### Auto-configuring the signaling URL (Docker deployments)
-
-If you're running this via `docker-compose.yml` (see Docker section below),
-players don't need to type a signaling URL in manually at all. Set
-`SIGNALING_URL` once in the `web-darts` service's environment there (e.g.
-`ws://192.168.0.69:8886` or eventually a real domain over `wss://`), and
-every player's browser picks it up automatically on load. The field still
-exists - tucked into a collapsed "⚙ Signaling server settings" section in
-the Online Challenge tab - for local testing or overriding the default, but
-nobody needs to touch it in normal use.
-
-Note this has to be an address players' own browsers can actually reach
-(your server's LAN IP, a domain name, etc.) - it can't be a Docker
-container name like `signaling-darts`, since that only resolves inside
-Docker's internal network, not from someone's browser on their own machine.
-
-### Testing it (easiest: two tabs on one machine)
-
-1. Start the signaling server as above.
-2. Open the app (`http://localhost:8000`) in two separate browser tabs.
-3. In tab 1: go to "Online Challenge", click **Create Challenge** (leave
-   the signaling URL at its default `ws://localhost:8080` under "⚙
-   Signaling server settings" if you haven't changed it), note the code
-   shown.
-4. In tab 2: same tab, enter that code, click **Join Challenge**.
+1. Start the app as above.
+2. Open **http://localhost:8000** in two separate browser tabs.
+3. In tab 1: go to "Online Challenge", click **Create Challenge**, note the
+   code shown.
+4. In tab 2: enter that code, click **Join Challenge**.
 5. Both tabs should show "Connected" and the live scoreboard. Each tab can
    connect its own Granboard (or use manual entry) and take turns.
 
-### Playing with someone else (same house / same Wi-Fi)
+### Playing with someone else
 
-Run the signaling server on one PC, then have the other player open "⚙
-Signaling server settings" and point the field at `ws://<that PC's LAN
-IP>:8080` (e.g. `ws://192.168.1.42:8080`) instead of localhost - or, if
-running via Docker, just set `SIGNALING_URL` once as described above and
-skip this step entirely.
+Whoever's hosting just shares the URL they're serving on - a LAN address for
+the same house, or a public domain over HTTPS for the internet. Both players
+loading the same URL is all the setup there is; the signaling server comes
+along with it.
 
-### Playing over the internet
+For internet play, serve it over HTTPS behind a reverse proxy (see
+[Docker](#docker)). HTTPS isn't optional for real board support anyway - Web
+Bluetooth requires it.
 
-The signaling server needs to be reachable by both players, so it needs to
-be deployed somewhere public - a free tier on Render, Railway, Fly.io, or
-similar works fine, since it's a tiny, low-traffic WebSocket relay. Point
-both players' "Signaling server URL" field at `wss://your-deployed-url`
-(note `wss://`, not `ws://`, once it's served over HTTPS).
+### Known limitations
 
-### Known limitations (v1)
+- **No TURN relay configured by default** - only STUN. STUN is enough for
+  most networks: it lets each browser discover its own public address so the
+  two can connect directly. But if a player is behind a strict/symmetric NAT
+  (some corporate and mobile networks), direct P2P can't be established at
+  all and they won't be able to connect. The fix is a TURN server, which
+  relays the traffic instead - see [Adding a TURN relay](#adding-a-turn-relay).
+- **No anti-cheat** - each side reports its own hits; a modified client could
+  lie. Fine for playing with people you trust, not tamper-proof.
+- **No matchmaking/accounts** - invite-code only for now. A public
+  lobby/ranked queue needs persistent accounts and a real backend.
+- Challenge codes are **in-memory and ephemeral** - restarting the server
+  drops any in-progress ones. That's by design; a code only needs to live for
+  the few seconds it takes two players to connect.
+- The physical **end-turn button** works in online mode too - it finalizes
+  your turn and tells your opponent's browser to advance, keeping both sides
+  in sync.
 
-- **No TURN relay** - only STUN is configured, so if either player is behind
-  a strict/symmetric NAT (common on some corporate or mobile networks), the
-  direct P2P connection may fail to establish. Adding a TURN server (a relay
-  of last resort) is the fix, but usually costs money to run reliably - a
-  reasonable next step if this becomes a problem in practice.
-- **No anti-cheat** - each side reports its own hits; a modified client
-  could lie. Fine for playing with people you trust, not tamper-proof.
-- **No matchmaking/accounts** - it's invite-code only for now. A public
-  lobby/ranked queue would need persistent accounts and a real backend,
-  which is a much bigger addition.
-- The physical **end-turn button** on the board works in online mode too -
-  it finalizes your turn and tells your opponent's browser to advance,
-  keeping both sides in sync.
+## Architecture
+
+One Node process (`server/server.js`) does two jobs on a single port:
+
+- serves the static front-end (`index.html` and the `*.js` files)
+- serves the signaling WebSocket at `/signaling`
+
+That merge is deliberate. Because the socket lives on the same origin as the
+page, deploying needs **no second subdomain, no extra DNS record, no separate
+TLS certificate, no path-rewriting rules, and no signaling URL for anyone to
+type**. A reverse proxy just forwards the site as it would any static site,
+with WebSocket upgrades enabled.
+
+Scoring stays in sync between peers without any rollback/replay machinery:
+both browsers run the identical deterministic `resolveThrow` logic from
+`scoring.js`. Each side only ever applies hits from its own physical board
+locally and forwards them to the peer, which applies them to its model of "the
+opponent" using the same rules. WebRTC DataChannels guarantee ordered
+delivery, so both sides stay in lockstep.
 
 ## Docker
 
-**Important if you're deploying this to a server others will connect to:**
-Web Bluetooth (the real board connection) only works in what browsers call
-a "secure context" - HTTPS, or literally the address `localhost`. A plain
-`http://192.168.x.x:8887`-style address, even on your own home network,
-does **not** count, and Chrome will silently make `navigator.bluetooth`
-unavailable - the app will tell you "this browser doesn't support Web
-Bluetooth" even though the real problem is the lack of HTTPS. If you want
-people to connect a real board over the network (not just on the same
-machine via `localhost`), put the deployment behind a reverse proxy with a
-TLS certificate (e.g. Caddy, Nginx Proxy Manager, Traefik). Manual entry and
-the clickable dartboard aren't affected by this - only the real Bluetooth
-connection is.
-
-There are two ways to run this in Docker, depending on whether you're
-playing or developing:
+**Important if others will connect over the network:** Web Bluetooth only
+works in a "secure context" - HTTPS, or literally `localhost`. A plain
+`http://192.168.x.x:8887` address, even on your own home network, does **not**
+count, and Chrome will silently make `navigator.bluetooth` unavailable - the
+app will report "this browser doesn't support Web Bluetooth" when the real
+problem is the missing HTTPS. To let people connect a real board over the
+network, put the deployment behind a reverse proxy with a TLS certificate
+(Nginx Proxy Manager, Caddy, Traefik, etc.). Manual entry and the clickable
+dartboard are unaffected.
 
 **Just want to run it (no build step):**
 
 ```
-docker compose up
+docker compose up -d
 ```
 
-This uses `docker-compose.yml`, which pulls the pre-built images GitHub
-Actions already published to GHCR - nothing gets built on your machine.
-Then open **http://localhost:8887** and point "Signaling server URL" at
-`ws://localhost:8886`.
+This uses `docker-compose.yml`, which pulls the pre-built image GitHub Actions
+published to GHCR - nothing is built locally. Open **http://localhost:8887**.
 
 **Changing the code and want to test your changes:**
 
@@ -200,94 +184,111 @@ Then open **http://localhost:8887** and point "Signaling server URL" at
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-This builds fresh images from the source in this repo instead of pulling
-from GHCR (using different, un-conflicting ports: 8000/8080).
+This builds from the source in this repo instead of pulling, on port 8000 so
+it doesn't collide with the above.
 
-Individually, without compose at all:
+Without compose at all:
 
 ```
-docker build -t aio-darts-web .
-docker run -p 8887:80 aio-darts-web
-
-docker build -t aio-darts-signaling ./signaling-server
-docker run -p 8886:8080 aio-darts-signaling
+docker build -t aio-darts .
+docker run -p 8887:8080 aio-darts
 ```
 
-Note: this repo was put together and syntax/structurally-checked from an
-environment without Docker installed, so the actual `docker build`/`docker
-compose up` commands above haven't been run end-to-end by me - that first
-real test is on you (or CI, see below). If something doesn't build cleanly,
-the error output will say exactly what's wrong and it's likely a one-line
-fix.
+### Reverse proxy setup
+
+Point your proxy host at the container's published port (`8887` by default)
+exactly as you would for any static site, and **enable WebSocket support**.
+That's the entire requirement - there's no second host, path rule, or upstream
+to add.
+
+In **Nginx Proxy Manager** that's the "Websockets Support" toggle on the Proxy
+Host. Other proxies name it differently (Caddy and Traefik handle it
+automatically; hand-written nginx needs the `Upgrade` and `Connection` headers
+forwarded).
+
+If challenges connect but drop after a minute of no throws, raise the proxy's
+idle/read timeout - the server already sends a keepalive ping every 30s, but
+some proxies are stricter than that.
+
+### Optional environment variables
+
+None of these are required; the defaults are correct for a normal deployment.
+Set them in `docker-compose.yml` under the `darts` service.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `8080` | Port inside the container. |
+| `STUN_URLS` | Google's public STUN | Comma-separated STUN servers. |
+| `TURN_URL` | *(unset)* | TURN relay address - see below. |
+| `TURN_USERNAME` / `TURN_CREDENTIAL` | *(unset)* | TURN credentials. |
+| `SIGNALING_PATH` | `/signaling` | Path the WebSocket is served on. |
+| `SIGNALING_URL` | *(unset)* | Only to point players at a *different* signaling server. Leave unset for same-origin. |
+
+### Adding a TURN relay
+
+Only needed if some players can never connect while others can - the symptom
+of a network that refuses direct peer-to-peer. Run a TURN server (coturn is
+the usual choice) and set `TURN_URL`, `TURN_USERNAME`, and `TURN_CREDENTIAL`.
+No code changes required; the front-end picks the servers up from
+`/config.json` on load.
+
+Bandwidth cost is negligible here - a dart throw is a few bytes - so
+self-hosting coturn alongside this is cheap, unlike TURN for video calls.
 
 ## Continuous integration (GitHub Actions)
 
-`.github/workflows/docker-build.yml` builds both images on every push and
-pull request, and pushes them to GitHub Container Registry (GHCR) on pushes
-to `main` or version tags (`v1.0.0`, etc.) - not on pull requests, so
-random branches don't clutter the registry. This is what makes the plain
-`docker compose up` above possible - by the time you run it, the images
-already exist on GHCR, built by CI, not by whoever's running the app.
+`.github/workflows/docker-build.yml` builds the image on every push and pull
+request, and pushes to GitHub Container Registry (GHCR) on pushes to `main` or
+version tags - not on pull requests, so branches don't clutter the registry.
+This is what makes the plain `docker compose up` above work: the image already
+exists by the time you run it.
 
 **Image tags it produces:**
-- Every push to `main` updates the **`latest`** tag - this is what
-  `docker-compose.yml` points at, so it always tracks the newest code on
-  `main`.
-- Pushing a version tag like `v1.0.0` (see "Cutting a release" below)
-  *additionally* publishes that exact version - `1.0.0` and `1.0` - so a
-  specific release stays pinnable/pullable even after `latest` moves on.
+- Every push to `main` updates **`latest`** - what `docker-compose.yml` points
+  at, so it always tracks the newest code on `main`.
+- Pushing a version tag like `v1.0.0` *additionally* publishes `1.0.0` and
+  `1.0`, so a specific release stays pinnable even after `latest` moves on.
 
-To use it:
+The image is named `aio-darts-web` for backwards compatibility with existing
+deployments. There's only one image - if a separate `aio-darts-signaling`
+package still shows under your GHCR packages, it's a leftover from the old
+two-container setup and can be deleted there.
 
-1. Create a new repo on GitHub (this folder is already a local git repo on
-   the `main` branch with one commit).
-2. `git remote add origin <your-repo-url>` then `git push -u origin main`.
-3. Go to the repo's **Actions** tab on GitHub - the workflow should run
-   automatically and build both images. No extra setup or secrets needed;
-   it authenticates to GHCR using GitHub's built-in token.
-4. Once it succeeds, the images show up under your GitHub profile's
-   **Packages** tab, as `ghcr.io/<you>/<repo>/aio-darts-web` and
-   `.../aio-darts-signaling`.
-5. **They're private by default.** For `docker-compose.yml` to work for
-   anyone besides you without a `docker login ghcr.io` first, open each
-   package's settings and change visibility to public, or add specific
-   people under "Manage Actions access" (the repo itself can stay private -
-   package visibility is separate). Note that collaborators with repo
-   access can inherit package access automatically too.
-6. `docker-compose.yml` currently points at
-   `ghcr.io/pearmannick-prog/aio-darts/...` - update that if your GitHub
-   username or repo name differs.
+**Packages are private by default.** For `docker compose up` to work for
+anyone who hasn't run `docker login ghcr.io`, open the package's settings and
+change visibility to public (the repo itself can stay private - package
+visibility is separate).
 
-### Cutting a release (no git command line needed)
+`docker-compose.yml` points at `ghcr.io/pearmannick-prog/aio-darts/...` -
+update that if your GitHub username or repo name differs.
+
+### Cutting a release (no command line needed)
 
 1. On the repo's main page, click **Releases** (right sidebar) → **Create a
    new release**.
 2. Click **Choose a tag**, type a new tag name like `v1.0.0`, and select
    "Create new tag on publish."
-3. Give the release a title (e.g. "v1.0.0 - first playable version") and
-   optionally describe what changed.
+3. Give the release a title and optionally describe what changed.
 4. Click **Publish release**.
 
-That tag push triggers the workflow automatically, which builds and
-publishes the versioned images (`1.0.0` / `1.0`) alongside `latest`. From
-then on, keep pushing normal changes to `main` - `latest` keeps updating
-with every change, and you cut a new release (`v1.1.0`, `v2.0.0`, etc.)
-whenever you want a stable, pinnable snapshot for deploying somewhere.
+That tag push triggers the workflow, publishing the versioned images
+(`1.0.0` / `1.0`) alongside `latest`. Keep pushing normal changes to `main` -
+`latest` updates with every change - and cut a new release whenever you want a
+pinnable snapshot.
 
 ## Version footer
 
-The bottom of the page shows a small `AIO Darts · build <sha> · <date>`
-line - the Docker build bakes in the exact git commit it was built from
-(see the root `Dockerfile` and `version.js`), so it always matches what's
-actually deployed with no manual version bumping. Running locally via
-`start-granboard.bat` (no Docker) shows "local dev build" instead, since
-there's no build step to bake a commit into.
+The bottom of the page shows `AIO Darts · build <sha> · <date>`. The Docker
+build bakes in the exact git commit it came from (see the root `Dockerfile`
+and `version.js`), so it always matches what's actually deployed with no
+manual version bumping. Running locally without Docker shows "local dev build"
+instead, since there's no build step to bake a commit into.
 
 ## Roadmap
 
 - 🎯 **Cricket** - coming soon, alongside 501 (both local and online)
-- Persistent stats across sessions
-- Matchmaking beyond invite codes
+- Persistent stats across sessions (accounts + SQLite, staying single-container)
+- Matchmaking and a lobby beyond invite codes
 - Native Windows (C#/.NET) version
 - Webcam-based hit detection for standard steel-tip boards
 
