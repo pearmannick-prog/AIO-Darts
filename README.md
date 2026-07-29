@@ -184,6 +184,14 @@ random branches don't clutter the registry. This is what makes the plain
 `docker compose up` above possible - by the time you run it, the images
 already exist on GHCR, built by CI, not by whoever's running the app.
 
+**Image tags it produces:**
+- Every push to `main` updates the **`latest`** tag - this is what
+  `docker-compose.yml` points at, so it always tracks the newest code on
+  `main`.
+- Pushing a version tag like `v1.0.0` (see "Cutting a release" below)
+  *additionally* publishes that exact version - `1.0.0` and `1.0` - so a
+  specific release stays pinnable/pullable even after `latest` moves on.
+
 To use it:
 
 1. Create a new repo on GitHub (this folder is already a local git repo on
@@ -197,11 +205,29 @@ To use it:
    `.../aio-darts-signaling`.
 5. **They're private by default.** For `docker-compose.yml` to work for
    anyone besides you without a `docker login ghcr.io` first, open each
-   package's settings and change visibility to public. (The repo itself can
-   stay private - package visibility is separate.)
+   package's settings and change visibility to public, or add specific
+   people under "Manage Actions access" (the repo itself can stay private -
+   package visibility is separate). Note that collaborators with repo
+   access can inherit package access automatically too.
 6. `docker-compose.yml` currently points at
    `ghcr.io/pearmannick-prog/aio-darts/...` - update that if your GitHub
    username or repo name differs.
+
+### Cutting a release (no git command line needed)
+
+1. On the repo's main page, click **Releases** (right sidebar) → **Create a
+   new release**.
+2. Click **Choose a tag**, type a new tag name like `v1.0.0`, and select
+   "Create new tag on publish."
+3. Give the release a title (e.g. "v1.0.0 - first playable version") and
+   optionally describe what changed.
+4. Click **Publish release**.
+
+That tag push triggers the workflow automatically, which builds and
+publishes the versioned images (`1.0.0` / `1.0`) alongside `latest`. From
+then on, keep pushing normal changes to `main` - `latest` keeps updating
+with every change, and you cut a new release (`v1.1.0`, `v2.0.0`, etc.)
+whenever you want a stable, pinnable snapshot for deploying somewhere.
 
 ## Roadmap
 
