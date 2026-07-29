@@ -7,7 +7,18 @@
 // reports "open", gameplay messages flow directly between the two browsers -
 // the signaling server is no longer involved.
 
-const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+// Fallback only. Normally the caller passes servers in, sourced from the
+// deployment's /config.json - that's what allows a self-hosted TURN relay to
+// be added later without touching this file.
+//
+// STUN vs TURN, briefly: STUN just tells a browser what its own public
+// address looks like from outside, which is enough for the two peers to
+// connect DIRECTLY in most cases. When a network refuses direct P2P outright
+// (symmetric NAT, strict corporate firewalls - roughly 10-20% of
+// connections), TURN relays the traffic through a server instead. Neither
+// replaces the signaling step: something still has to carry the initial
+// offer/answer exchange, which is what the WebSocket below is for.
+const DEFAULT_ICE_SERVERS = [{ urls: ["stun:stun.l.google.com:19302"] }];
 
 export class PeerLink {
   #ws;
@@ -18,8 +29,9 @@ export class PeerLink {
   onMessage = null; // (gameMessage: object) => void
   onStatusChange = null; // (status: string) => void
 
-  constructor(signalingUrl) {
+  constructor(signalingUrl, iceServers = DEFAULT_ICE_SERVERS) {
     this.signalingUrl = signalingUrl;
+    this.iceServers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS;
   }
 
   get role() {
@@ -64,7 +76,7 @@ export class PeerLink {
 
     this.#ws.send(JSON.stringify({ type: "join", code }));
 
-    this.#pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this.#pc = new RTCPeerConnection({ iceServers: this.iceServers });
 
     this.#pc.addEventListener("icecandidate", (event) => {
       if (event.candidate) {
