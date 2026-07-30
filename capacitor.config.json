@@ -1,0 +1,8 @@
+{
+  "appId": "com.spazcat.aiodarts",
+  "appName": "AIO Darts",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
