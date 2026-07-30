@@ -71,7 +71,12 @@ export function hasClosedAll(player) {
 // A number is "dead" once every player has closed it - nobody can score on it
 // again. Worth checking before awarding points, or a two-player game would
 // keep paying out on numbers both players finished.
+//
+// Solo practice is the exception: with no opponent there's nobody to close a
+// number out against, so nothing ever goes dead and you can keep scoring on
+// what you've closed. That's the whole point of practising cricket alone.
 export function isTargetDead(players, target) {
+  if (players.length < 2) return false;
   return players.every((p) => isClosedBy(p, target));
 }
 
@@ -107,7 +112,12 @@ export function resolveCricketThrow(players, playerIndex, segment) {
   // Overflow only pays out while someone else still has the number open. A
   // triple on a number you've already closed is worth 3x face value against
   // an opponent who hasn't got there yet, and nothing at all once they have.
-  const scoreable = players.some((p, i) => i !== playerIndex && !isClosedBy(p, hit.target));
+  //
+  // Solo is exempt for the same reason as isTargetDead: with nobody to close
+  // out against, this test would otherwise be false forever and a solo game
+  // could never score a single point.
+  const scoreable = players.length < 2 ||
+    players.some((p, i) => i !== playerIndex && !isClosedBy(p, hit.target));
   const points = scoreable ? overflow * targetValue(hit.target) : 0;
 
   return {
