@@ -510,7 +510,14 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 6px;
+    flex-wrap: wrap;
   }
+  /* The starting score is a short field; the rules label is long, so it gets
+     the remaining width. Both disappear for a cricket leg. */
+  .leg-row .leg-score { flex: 0 0 82px; }
+  .leg-row .leg-rules { flex: 2 1 190px; }
+  .leg-row .leg-game { flex: 1 1 110px; }
+  .leg-row select.hidden { display: none; }
   .leg-row .leg-label {
     font-size: 13px;
     font-weight: 600;
@@ -761,7 +768,9 @@
         <div class="setup-row">
           <label for="medley-preset">Format</label>
           <select id="medley-preset">
+            <option value="single-301">Single game &middot; 301</option>
             <option value="single-501">Single game &middot; 501</option>
+            <option value="single-701">Single game &middot; 701</option>
             <option value="single-cricket">Single game &middot; Cricket</option>
             <option value="bo3">Best of 3 &middot; 501 / Cricket / 501</option>
             <option value="bo5">Best of 5 &middot; alternating</option>
