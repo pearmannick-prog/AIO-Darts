@@ -3,9 +3,9 @@ name: Build Android APK
 # Builds a debug APK on GitHub's runners and uploads it as a downloadable
 # artifact - no Android Studio needed locally.
 #
-# This is the local-only build: manual entry and local pass-and-play, which
-# are entirely client-side. Bluetooth and online play are deliberately not
-# wired up here yet.
+# This is the local-only build: manual entry, the clickable dartboard, and
+# local pass-and-play, which are entirely client-side. Bluetooth and online
+# play are deliberately not wired up here yet.
 on:
   workflow_dispatch:
   push:
@@ -25,48 +25,65 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # Capacitor 8's CLI declares engines.node >= 22 - Node 20 fails here.
+          node-version: "22"
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
 
-      # Assembles the front-end into www/ by copying the repo root and then
-      # removing infrastructure that has no place in an APK. Exclusion-based
-      # on purpose: a new front-end file added at the root is picked up
+      # Capacitor 8 generates a project targeting compileSdk 36, which is newer
+      # than what the runner image ships with. This installs the missing SDK
+      # packages and accepts the licenses, so Gradle doesn't fail partway
+      # through trying to resolve the platform itself.
+      - uses: android-actions/setup-android@v3
+
+      # Assembles the front-end into www/ by copying the repo and pruning
+      # infrastructure that has no place in an APK. Exclusion-based on
+      # purpose: a new front-end file added at the root is picked up
       # automatically instead of silently missing until someone remembers to
       # update a list here.
+      #
+      # Uses tar rather than rsync - rsync is no longer present on the
+      # ubuntu-24.04 runner image that ubuntu-latest now points to.
       - name: Assemble web assets
         run: |
           rm -rf www
           mkdir -p www
-          rsync -a ./ www/ \
-            --exclude www \
-            --exclude .git \
-            --exclude .github \
-            --exclude server \
-            --exclude android \
-            --exclude node \
-            --exclude node_modules \
-            --exclude Dockerfile \
-            --exclude .dockerignore \
-            --exclude docker-compose.yml \
-            --exclude README.md \
-            --exclude 'capacitor.config.json' \
-            --exclude 'package.json' \
-            --exclude 'package-lock.json' \
-            --exclude '*.bat'
+          tar -cf - \
+            --exclude=./www \
+            --exclude=./.git \
+            --exclude=./.github \
+            --exclude=./server \
+            --exclude=./android \
+            --exclude=./node \
+            --exclude=./node_modules \
+            --exclude=./Dockerfile \
+            --exclude=./.dockerignore \
+            --exclude=./docker-compose.yml \
+            --exclude=./README.md \
+            --exclude=./capacitor.config.json \
+            --exclude=./package.json \
+            --exclude=./package-lock.json \
+            --exclude='./*.bat' \
+            . | tar -xf - -C www
           echo "--- www contents ---"
           ls -la www
 
-      # Fails loudly here rather than shipping an APK with a blank screen.
+      # Fails loudly here rather than shipping an APK that opens to a blank
+      # screen. A missing file at this point is nearly always a filename typo.
       - name: Verify web assets
         run: |
-          test -f www/index.html || { echo "www/index.html missing"; exit 1; }
+          FAIL=0
+          test -f www/index.html || { echo "MISSING: www/index.html"; FAIL=1; }
           for f in game.js online.js dartboard.js granboard.js scoring.js quickentry.js version.js webrtc.js; do
-            test -f "www/$f" || { echo "www/$f missing"; exit 1; }
+            test -f "www/$f" || { echo "MISSING: www/$f"; FAIL=1; }
           done
+          if [ "$FAIL" -ne 0 ]; then
+            echo "Front-end files missing from www/ - check for filename typos at the repo root."
+            exit 1
+          fi
           echo "All expected front-end files present."
 
       - name: Install Capacitor
