@@ -55,7 +55,22 @@ what the above does.
 
 ## Using it
 
-1. Click **Start 501 Game** (edit the player names first if you want).
+1. Pick a game from the **Game** dropdown - **501** (double out) or
+   **Cricket** - edit the player names if you want, then click **Start Game**.
+
+   In Cricket the board itself is the scorekeeping pad, laid out
+   DartConnect-style: the targets run down the centre with **D** and **T**
+   buttons either side, so any dart is a single tap, and each player's marks
+   sit in a flanking column. Clicking the mini dartboard and a real Bluetooth
+   board both work too - all three inputs run through identical scoring code.
+
+   Only 20, 19, 18, 17, 16, 15 and the bull count. Three marks
+   closes a number (a single is 1 mark, a double 2, a triple 3); after that,
+   hits on it score its face value per mark until your opponent closes it too,
+   at which point it's dead and the row greys out. You win by closing
+   everything **and** being level or ahead on points - closing out while
+   behind doesn't end the game. Quick Total entry is hidden in Cricket, since
+   a turn total says nothing about which numbers were hit.
 2. Click **Connect Board** - a browser popup will ask you to pick your
    Granboard from a list of nearby Bluetooth devices. Select it and click
    "Pair"/"Connect".
@@ -315,7 +330,7 @@ instead, since there's no build step to bake a commit into.
 
 ## Roadmap
 
-- 🎯 **Cricket** - coming soon, alongside 501 (both local and online)
+- 🎯 **Cricket online** - the local game is in; the online version needs the peer message protocol extended to carry marks instead of a running score
 - Persistent stats across sessions (accounts + SQLite, staying single-container)
 - Matchmaking and a lobby beyond invite codes
 - Native Windows (C#/.NET) version
