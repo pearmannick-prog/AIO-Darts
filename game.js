@@ -5,6 +5,10 @@ import { resolveThrow } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
 import {
+  createMatch, currentGameType, recordLegWin, advanceLeg,
+  startingPlayerForLeg, matchScoreText, legProgressText, gameLabel,
+} from "./medley.js";
+import {
   CRICKET_TARGETS, createCricketPlayer, resolveCricketThrow, applyCricketResult,
   checkCricketWin, describeCricketResult, markSymbol, targetLabel, isClosedBy,
   isTargetDead,
@@ -13,7 +17,9 @@ import {
 const STARTING_SCORE = 501;
 
 const state = {
-  gameType: "501", // "501" | "cricket"
+  gameType: "501", // "501" | "cricket" - the CURRENT leg's game
+  match: null,     // see medley.js; a single game is a one-leg match
+  legOver: false,  // leg decided but match still running - waiting for "Next leg"
   players: [],
   currentPlayerIndex: 0,
   dartsThisTurn: [],
@@ -51,7 +57,11 @@ const el = {
   manualDblBull: document.getElementById("manual-dblbull"),
   throwLog: document.getElementById("throw-log"),
   dartboardMarker: document.getElementById("dartboard-marker"),
-  gameTypeSelect: document.getElementById("game-type"),
+  medleyLegs: document.getElementById("medley-legs"),
+  addLegBtn: document.getElementById("add-leg-btn"),
+  medleyPreset: document.getElementById("medley-preset"),
+  matchBar: document.getElementById("match-bar"),
+  nextLegBtn: document.getElementById("next-leg-btn"),
   cricketBoard: document.getElementById("cricket-board"),
   scoreBlock: document.getElementById("score-block"),
   winnerBanner: document.getElementById("winner-banner"),
@@ -101,16 +111,9 @@ el.startGameBtn.addEventListener("click", () => {
   const names = [...el.playerInputs.querySelectorAll(".player-input")]
     .map((input, i) => input.value.trim() || `Player ${i + 1}`);
 
-  state.gameType = el.gameTypeSelect?.value === "cricket" ? "cricket" : "501";
-  state.players = state.gameType === "cricket"
-    ? names.map((name) => createCricketPlayer(name))
-    : names.map((name) => ({ name, remaining: STARTING_SCORE }));
-  state.currentPlayerIndex = 0;
-  state.dartsThisTurn = [];
-  state.startOfTurnRemaining = STARTING_SCORE;
-  state.gameOver = false;
-  state.winnerIndex = null;
-  state.throwLog = [];
+  state.match = createMatch(readMedleyLegs(), names.length);
+  state.playerNames = names;
+  startLeg(names);
   undoStack = [];
 
   el.setupPanel.classList.add("hidden");
@@ -202,6 +205,107 @@ function restore(snap) {
   Object.assign(state, snap);
 }
 
+// ---------- Medley builder ----------
+// A match is just an ordered list of games. One row is an ordinary single
+// game, so there's no "enable medley" switch to find - adding a second leg is
+// what turns it into one.
+const MEDLEY_PRESETS = {
+  "single-501": ["501"],
+  "single-cricket": ["cricket"],
+  bo3: ["501", "cricket", "501"],
+  bo5: ["501", "cricket", "501", "cricket", "501"],
+};
+
+function renderMedleyBuilder(legs) {
+  if (!el.medleyLegs) return;
+  el.medleyLegs.innerHTML = legs.map((game, i) => `
+    <div class="leg-row">
+      <span class="leg-label">Leg ${i + 1}</span>
+      <select class="leg-game">
+        <option value="501"${game === "501" ? " selected" : ""}>${gameLabel("501")}</option>
+        <option value="cricket"${game === "cricket" ? " selected" : ""}>${gameLabel("cricket")}</option>
+      </select>
+      <button type="button" class="leg-remove" title="Remove this leg">&times;</button>
+    </div>`).join("");
+  // With one leg there's nothing to remove - hide rather than let someone
+  // delete their way to a match with no games in it.
+  el.medleyLegs.classList.toggle("single", legs.length <= 1);
+}
+
+// Changing a leg's game by hand means the preset no longer describes the
+// match, so the dropdown falls back to "Custom" rather than lying.
+function markCustomIfNeeded() {
+  const legs = readMedleyLegs();
+  const match = Object.entries(MEDLEY_PRESETS)
+    .find(([, preset]) => preset.length === legs.length && preset.every((g, i) => g === legs[i]));
+  if (el.medleyPreset) el.medleyPreset.value = match ? match[0] : "custom";
+}
+
+el.medleyPreset?.addEventListener("change", () => {
+  const preset = MEDLEY_PRESETS[el.medleyPreset.value];
+  if (preset) renderMedleyBuilder(preset);
+});
+
+el.addLegBtn?.addEventListener("click", () => {
+  const legs = readMedleyLegs();
+  // Repeat the pattern rather than always appending 501 - in an alternating
+  // medley the next leg is almost always the other game.
+  const next = legs.length >= 2 ? legs[legs.length - 2] : (legs[0] === "501" ? "cricket" : "501");
+  renderMedleyBuilder([...legs, next]);
+  markCustomIfNeeded();
+});
+
+el.medleyLegs?.addEventListener("click", (event) => {
+  if (!event.target.classList.contains("leg-remove")) return;
+  const legs = readMedleyLegs();
+  if (legs.length <= 1) return;
+  const index = [...el.medleyLegs.querySelectorAll(".leg-row")].indexOf(event.target.closest(".leg-row"));
+  legs.splice(index, 1);
+  renderMedleyBuilder(legs);
+  markCustomIfNeeded();
+});
+
+el.medleyLegs?.addEventListener("change", (event) => {
+  if (event.target.classList.contains("leg-game")) markCustomIfNeeded();
+});
+
+renderMedleyBuilder(["501"]);
+
+// Reads the medley builder into a plain list of game types. One row is a
+// normal single game - there's no separate "single vs medley" mode.
+function readMedleyLegs() {
+  const selects = el.medleyLegs?.querySelectorAll(".leg-game") || [];
+  const legs = [...selects].map((sel) => (sel.value === "cricket" ? "cricket" : "501"));
+  return legs.length ? legs : ["501"];
+}
+
+// Sets up a fresh leg: new scores, but names and the match tally carry over.
+// The throw alternates each leg so the same player isn't always first.
+function startLeg(names) {
+  state.gameType = currentGameType(state.match);
+  state.players = state.gameType === "cricket"
+    ? names.map((name) => createCricketPlayer(name))
+    : names.map((name) => ({ name, remaining: STARTING_SCORE }));
+  state.currentPlayerIndex = startingPlayerForLeg(state.match.currentLeg, names.length);
+  state.dartsThisTurn = [];
+  state.startOfTurnRemaining = STARTING_SCORE;
+  state.gameOver = false;
+  state.legOver = false;
+  state.winnerIndex = null;
+  state.throwLog = [];
+}
+
+// Called whenever a leg is won. Decides whether that also ends the match.
+// gameOver stays true either way so no further darts register until the
+// player moves on.
+function finishLeg(winnerIndex) {
+  state.gameOver = true;
+  state.winnerIndex = winnerIndex;
+  recordLegWin(state.match, winnerIndex);
+  // A one-leg match is over the moment the leg is - nothing to advance to.
+  state.legOver = !state.match.over;
+}
+
 function applyHit(segment) {
   if (state.gameOver) return;
 
@@ -229,8 +333,7 @@ function applyHit(segment) {
   } else {
     player.remaining = after;
     if (isWin) {
-      state.gameOver = true;
-      state.winnerIndex = state.currentPlayerIndex;
+      finishLeg(state.currentPlayerIndex);
     } else if (state.dartsThisTurn.length >= 3) {
       endTurn();
     }
@@ -279,8 +382,7 @@ function applyQuickTotal(totalValue) {
   } else {
     player.remaining = after;
     if (isWin) {
-      state.gameOver = true;
-      state.winnerIndex = state.currentPlayerIndex;
+      finishLeg(state.currentPlayerIndex);
     } else {
       endTurn(); // always finalizes, regardless of dartsThisTurn count
     }
@@ -293,6 +395,51 @@ function applyQuickTotal(totalValue) {
 // number, a column per player, slashes building to a circled X. A number
 // everyone has closed is greyed out - it's dead and worth nothing, which is
 // otherwise easy to miss mid-game.
+// Shows which leg is in progress and the running leg tally. Hidden entirely
+// for a single game, so a normal one-off match looks exactly as it did before
+// medleys existed.
+function renderMatchBar() {
+  if (!el.matchBar) return;
+  const match = state.match;
+  const multiLeg = match && match.legs.length > 1;
+
+  el.matchBar.classList.toggle("hidden", !multiLeg);
+  el.nextLegBtn?.classList.toggle("hidden", !state.legOver);
+
+  if (!multiLeg) return;
+
+  const names = state.players.map((p) => p.name);
+  el.matchBar.querySelector(".match-progress").textContent = legProgressText(match);
+  el.matchBar.querySelector(".match-score").textContent = matchScoreText(match, names);
+}
+
+// Winner banner has to cover three different endings: leg won with more to
+// play, match won, and a drawn match (possible with an even number of legs).
+function winnerBannerText() {
+  const match = state.match;
+  const names = state.players.map((p) => p.name);
+
+  if (match?.over) {
+    if (match.drawn) return `Match drawn ${matchScoreText(match, names)}`;
+    const winner = names[match.winnerIndex] ?? "Winner";
+    return match.legs.length > 1
+      ? `🏆 ${winner} wins the match ${matchScoreText(match, names)}`
+      : `🏆 ${winner} wins!`;
+  }
+
+  const legWinner = names[state.winnerIndex] ?? "Winner";
+  return `${legWinner} takes leg ${match.currentLeg + 1} · ${matchScoreText(match, names)}`;
+}
+
+el.nextLegBtn?.addEventListener("click", () => {
+  if (!state.legOver) return;
+  advanceLeg(state.match);
+  startLeg(state.playerNames);
+  undoStack = []; // undo must not reach back into a finished leg
+  el.winnerBanner.classList.add("hidden");
+  render();
+});
+
 function renderCricketBoard() {
   if (!el.cricketBoard) return;
 
@@ -397,8 +544,7 @@ function applyCricketHit(segment) {
   moveMarker(el.dartboardMarker, segment);
 
   if (checkCricketWin(state.players, state.currentPlayerIndex)) {
-    state.gameOver = true;
-    state.winnerIndex = state.currentPlayerIndex;
+    finishLeg(state.currentPlayerIndex);
   } else if (state.dartsThisTurn.length >= 3) {
     endTurn();
   }
@@ -451,8 +597,10 @@ function render() {
   const current = state.players[state.currentPlayerIndex];
   el.bigScore.textContent = cricket ? current.points : current.remaining;
   el.turnLabel.textContent = state.gameOver
-    ? `${state.players[state.winnerIndex].name} wins! 🎯`
+    ? `${state.players[state.winnerIndex].name} wins the leg! 🎯`
     : `${current.name}'s turn`;
+
+  renderMatchBar();
 
   // Cricket gets a marks grid; 501 doesn't. Quick Total is hidden in cricket
   // because a turn total says nothing about which numbers were hit.
@@ -479,6 +627,6 @@ function render() {
 
   el.winnerBanner.classList.toggle("hidden", !state.gameOver);
   if (state.gameOver) {
-    el.winnerBanner.textContent = `🏆 ${state.players[state.winnerIndex].name} wins!`;
+    el.winnerBanner.textContent = winnerBannerText();
   }
 }
