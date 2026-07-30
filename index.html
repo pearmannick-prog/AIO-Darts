@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0F3D2E">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <title>AIO Darts</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -942,5 +946,23 @@
   <script type="module" src="./game.js"></script>
   <script type="module" src="./online.js"></script>
   <script type="module" src="./version.js"></script>
+  <script>
+    // Registers the service worker so the app can be installed to the
+    // desktop and still open with no connection. Wrapped in a guard because
+    // service workers need a secure context - over plain http on a LAN
+    // address this simply doesn't run, which is fine: the app works, it just
+    // isn't installable. (Web Bluetooth needs that same secure context, so
+    // anywhere the board works, this works too.)
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        // Relative path on purpose - the app is served from the domain root
+        // in Docker but from /AIO-Darts/ on GitHub Pages, and a leading
+        // slash would break one of them.
+        navigator.serviceWorker.register("./sw.js").catch((err) => {
+          console.warn("Service worker registration failed", err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
