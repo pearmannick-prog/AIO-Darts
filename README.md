@@ -64,6 +64,12 @@ what the above does.
    best of 3, best of 5), or use **+ Add leg** and the per-leg dropdowns to
    build your own; editing a leg by hand switches the preset to "Custom".
 
+   **Solo play** works too - remove a player down to one and you can practise
+   alone. Both games support it: 501 plays as a straight checkout, and Cricket
+   keeps paying out points on numbers you've closed (with no opponent there's
+   nobody to close them out against, so nothing goes dead). A solo medley
+   plays every leg rather than ending after the first.
+
    With more than one leg, a bar shows which leg is in play and the running
    leg tally, and a **Next leg** button appears once a leg is won. Scores
    reset each leg while names and the tally carry over, and the throw
