@@ -8,3 +8,7 @@ docker-compose.yml
 docker-compose.dev.yml
 Dockerfile
 .dockerignore
+capacitor.config.json
+package.json
+www
+android
