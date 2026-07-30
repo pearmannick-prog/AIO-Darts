@@ -9,17 +9,39 @@
 // Pure and side-effect-free, same as scoring.js and cricket.js, so online play
 // can reuse it later without a second implementation.
 
-export const GAME_TYPES = {
-  "501": "501 (double out)",
-  cricket: "Cricket",
-};
+import { rulesLabel } from "./scoring.js";
 
-export function gameLabel(type) {
-  return GAME_TYPES[type] || type;
+// A leg is an object rather than a bare game name, because x01 isn't one game
+// - a leg needs to carry its starting score and its in/out rules too:
+//   { game: "x01", score: 501, rules: "double" }
+//   { game: "cricket" }
+// Plain strings are still accepted and normalised, so older callers and saved
+// configs keep working.
+export function normalizeLeg(leg) {
+  if (typeof leg === "string") {
+    if (leg === "cricket") return { game: "cricket" };
+    const score = Number(leg);
+    return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double" };
+  }
+  if (!leg || typeof leg !== "object") return { game: "x01", score: 501, rules: "double" };
+  if (leg.game === "cricket") return { game: "cricket" };
+  return {
+    game: "x01",
+    score: Number(leg.score) > 0 ? Number(leg.score) : 501,
+    rules: leg.rules || "double",
+  };
+}
+
+export function gameLabel(leg) {
+  const l = normalizeLeg(leg);
+  if (l.game === "cricket") return "Cricket";
+  // "501 · Double out" - the variant matters as much as the number, so it's
+  // always shown rather than only when it's unusual.
+  return `${l.score} · ${rulesLabel(l.rules)}`;
 }
 
 export function createMatch(legGames, playerCount) {
-  const legs = (legGames?.length ? legGames : ["501"]).slice();
+  const legs = (legGames?.length ? legGames : ["501"]).map(normalizeLeg);
   return {
     legs,
     currentLeg: 0,
@@ -32,8 +54,15 @@ export function createMatch(legGames, playerCount) {
   };
 }
 
-export function currentGameType(match) {
+// The full leg descriptor for the leg in progress.
+export function currentLegConfig(match) {
   return match.legs[match.currentLeg] ?? match.legs[match.legs.length - 1];
+}
+
+// Just "x01" or "cricket" - for callers that only need to branch on which
+// board/scoreboard to show.
+export function currentGameType(match) {
+  return currentLegConfig(match).game;
 }
 
 export function isFinalLeg(match) {
@@ -111,5 +140,5 @@ export function matchScoreText(match, names) {
 
 export function legProgressText(match) {
   if (match.legs.length <= 1) return "";
-  return `Leg ${match.currentLeg + 1} of ${match.legs.length} · ${gameLabel(currentGameType(match))}`;
+  return `Leg ${match.currentLeg + 1} of ${match.legs.length} · ${gameLabel(currentLegConfig(match))}`;
 }
