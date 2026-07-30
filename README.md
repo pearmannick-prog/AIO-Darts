@@ -55,8 +55,23 @@ what the above does.
 
 ## Using it
 
-1. Pick a game from the **Game** dropdown - **501** (double out) or
-   **Cricket** - edit the player names if you want, then click **Start Game**.
+1. Choose a **Format**, edit the player names if you want, then click
+   **Start Game**.
+
+   A match is an ordered list of legs, each with its own game - so a single
+   game is simply a one-leg match, and there's no separate "medley mode" to
+   switch on. Presets cover the common shapes (single 501, single Cricket,
+   best of 3, best of 5), or use **+ Add leg** and the per-leg dropdowns to
+   build your own; editing a leg by hand switches the preset to "Custom".
+
+   With more than one leg, a bar shows which leg is in play and the running
+   leg tally, and a **Next leg** button appears once a leg is won. Scores
+   reset each leg while names and the tally carry over, and the throw
+   alternates each leg so the same player isn't always first. A match ends
+   when someone's lead can't be caught - 3-0 in a best of 5 finishes there
+   rather than playing two dead legs - and an even number of legs can
+   genuinely end drawn, which is reported as a draw rather than picking a
+   winner.
 
    In Cricket the board itself is the scorekeeping pad, laid out
    DartConnect-style: the targets run down the centre with **D** and **T**
@@ -330,7 +345,7 @@ instead, since there's no build step to bake a commit into.
 
 ## Roadmap
 
-- 🎯 **Cricket online** - the local game is in; the online version needs the peer message protocol extended to carry marks instead of a running score
+- 🎯 **Cricket and medley matches online** - both work in local play; online needs the peer message protocol extended to carry marks and leg state instead of just a running score
 - Persistent stats across sessions (accounts + SQLite, staying single-container)
 - Matchmaking and a lobby beyond invite codes
 - Native Windows (C#/.NET) version
