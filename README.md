@@ -60,7 +60,22 @@ what the above does.
 
    A match is an ordered list of legs, each with its own game - so a single
    game is simply a one-leg match, and there's no separate "medley mode" to
-   switch on. Presets cover the common shapes (single 501, single Cricket,
+   switch on. An x01 leg carries its own **starting score** (301, 501 or 701)
+   and its own **rules**:
+
+   | Rules | In | Out |
+   | --- | --- | --- |
+   | Double out (standard) | any dart scores | must finish on a double |
+   | SISO (single in, single out) | any dart scores | anything finishes, including a single |
+   | DIDO (double in, double out) | nothing scores until you hit a double | must finish on a double |
+   | Master out | any dart scores | a double **or** a triple finishes |
+
+   Two details that catch people out. Under **double in**, darts thrown before
+   you open still count as darts - they just score nothing, and the throw log
+   says "not in yet" rather than logging them as if they counted; the dart
+   that opens you does score. And leaving exactly **1** busts under double
+   out and master out (nothing makes 1 from a double or triple) but is
+   perfectly legal under SISO, where you can finish on a single 1. Presets cover the common shapes (single 501, single Cricket,
    best of 3, best of 5), or use **+ Add leg** and the per-leg dropdowns to
    build your own; editing a leg by hand switches the preset to "Custom".
 
