@@ -1,12 +1,12 @@
 // game.js - 501 scoring, board visualization, and all UI wiring.
 
 import { Granboard, SegmentType, createSegment, SegmentID } from "./granboard.js";
-import { resolveThrow } from "./scoring.js";
+import { resolveThrow, rulesFor, X01_SCORES, X01_RULES, segmentOpens } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
 import {
-  createMatch, currentGameType, recordLegWin, advanceLeg,
-  startingPlayerForLeg, matchScoreText, legProgressText, gameLabel,
+  createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
+  startingPlayerForLeg, matchScoreText, legProgressText, gameLabel, normalizeLeg,
 } from "./medley.js";
 import {
   CRICKET_TARGETS, createCricketPlayer, resolveCricketThrow, applyCricketResult,
@@ -17,7 +17,8 @@ import {
 const STARTING_SCORE = 501;
 
 const state = {
-  gameType: "501", // "501" | "cricket" - the CURRENT leg's game
+  gameType: "x01", // "x01" | "cricket" - the CURRENT leg's game
+  legConfig: null, // the full leg descriptor (score + rules) - see medley.js
   match: null,     // see medley.js; a single game is a one-leg match
   legOver: false,  // leg decided but match still running - waiting for "Next leg"
   players: [],
@@ -237,35 +238,57 @@ function restore(snap) {
 // A match is just an ordered list of games. One row is an ordinary single
 // game, so there's no "enable medley" switch to find - adding a second leg is
 // what turns it into one.
+const x01 = (score, rules = "double") => ({ game: "x01", score, rules });
+const CRICKET_LEG = { game: "cricket" };
+
 const MEDLEY_PRESETS = {
-  "single-501": ["501"],
-  "single-cricket": ["cricket"],
-  bo3: ["501", "cricket", "501"],
-  bo5: ["501", "cricket", "501", "cricket", "501"],
+  "single-301": [x01(301)],
+  "single-501": [x01(501)],
+  "single-701": [x01(701)],
+  "single-cricket": [CRICKET_LEG],
+  bo3: [x01(501), CRICKET_LEG, x01(501)],
+  bo5: [x01(501), CRICKET_LEG, x01(501), CRICKET_LEG, x01(501)],
 };
 
 function renderMedleyBuilder(legs) {
   if (!el.medleyLegs) return;
-  el.medleyLegs.innerHTML = legs.map((game, i) => `
+  el.medleyLegs.innerHTML = legs.map(normalizeLeg).map((leg, i) => {
+    const isX01 = leg.game === "x01";
+    // The score and rules selects only exist for x01 legs - cricket has
+    // neither a starting score nor an in/out rule.
+    const scoreOptions = X01_SCORES
+      .map((n) => `<option value="${n}"${isX01 && leg.score === n ? " selected" : ""}>${n}</option>`)
+      .join("");
+    const rulesOptions = Object.entries(X01_RULES)
+      .map(([key, r]) => `<option value="${key}"${isX01 && leg.rules === key ? " selected" : ""}>${r.label}</option>`)
+      .join("");
+
+    return `
     <div class="leg-row">
       <span class="leg-label">Leg ${i + 1}</span>
       <select class="leg-game">
-        <option value="501"${game === "501" ? " selected" : ""}>${gameLabel("501")}</option>
-        <option value="cricket"${game === "cricket" ? " selected" : ""}>${gameLabel("cricket")}</option>
+        <option value="x01"${isX01 ? " selected" : ""}>x01</option>
+        <option value="cricket"${!isX01 ? " selected" : ""}>Cricket</option>
       </select>
+      <select class="leg-score${isX01 ? "" : " hidden"}">${scoreOptions}</select>
+      <select class="leg-rules${isX01 ? "" : " hidden"}">${rulesOptions}</select>
       <button type="button" class="leg-remove" title="Remove this leg">&times;</button>
-    </div>`).join("");
-  // With one leg there's nothing to remove - hide rather than let someone
-  // delete their way to a match with no games in it.
+    </div>`;
+  }).join("");
   el.medleyLegs.classList.toggle("single", legs.length <= 1);
 }
 
 // Changing a leg's game by hand means the preset no longer describes the
 // match, so the dropdown falls back to "Custom" rather than lying.
+function sameLeg(a, b) {
+  const x = normalizeLeg(a), y = normalizeLeg(b);
+  return x.game === y.game && x.score === y.score && x.rules === y.rules;
+}
+
 function markCustomIfNeeded() {
   const legs = readMedleyLegs();
   const match = Object.entries(MEDLEY_PRESETS)
-    .find(([, preset]) => preset.length === legs.length && preset.every((g, i) => g === legs[i]));
+    .find(([, preset]) => preset.length === legs.length && preset.every((g, i) => sameLeg(g, legs[i])));
   if (el.medleyPreset) el.medleyPreset.value = match ? match[0] : "custom";
 }
 
@@ -278,7 +301,10 @@ el.addLegBtn?.addEventListener("click", () => {
   const legs = readMedleyLegs();
   // Repeat the pattern rather than always appending 501 - in an alternating
   // medley the next leg is almost always the other game.
-  const next = legs.length >= 2 ? legs[legs.length - 2] : (legs[0] === "501" ? "cricket" : "501");
+  const last = normalizeLeg(legs[legs.length - 1]);
+  const next = legs.length >= 2
+    ? legs[legs.length - 2]
+    : (last.game === "x01" ? { game: "cricket" } : { game: "x01", score: 501, rules: "double" });
   renderMedleyBuilder([...legs, next]);
   markCustomIfNeeded();
 });
@@ -294,29 +320,49 @@ el.medleyLegs?.addEventListener("click", (event) => {
 });
 
 el.medleyLegs?.addEventListener("change", (event) => {
-  if (event.target.classList.contains("leg-game")) markCustomIfNeeded();
+  // Switching between x01 and cricket changes which controls that row needs,
+  // so the row is rebuilt rather than just re-checked.
+  if (event.target.classList.contains("leg-game")) {
+    renderMedleyBuilder(readMedleyLegs());
+  }
+  markCustomIfNeeded();
 });
 
-renderMedleyBuilder(["501"]);
+renderMedleyBuilder([{ game: "x01", score: 501, rules: "double" }]);
 
-// Reads the medley builder into a plain list of game types. One row is a
-// normal single game - there's no separate "single vs medley" mode.
+// Reads the medley builder into leg objects. One row is a normal single
+// game - there's no separate "single vs medley" mode.
 function readMedleyLegs() {
-  const selects = el.medleyLegs?.querySelectorAll(".leg-game") || [];
-  const legs = [...selects].map((sel) => (sel.value === "cricket" ? "cricket" : "501"));
-  return legs.length ? legs : ["501"];
+  const rows = el.medleyLegs?.querySelectorAll(".leg-row") || [];
+  const legs = [...rows].map((row) => {
+    const game = row.querySelector(".leg-game")?.value;
+    if (game === "cricket") return { game: "cricket" };
+    return {
+      game: "x01",
+      score: Number(row.querySelector(".leg-score")?.value) || 501,
+      rules: row.querySelector(".leg-rules")?.value || "double",
+    };
+  });
+  return legs.length ? legs : [{ game: "x01", score: 501, rules: "double" }];
 }
 
 // Sets up a fresh leg: new scores, but names and the match tally carry over.
 // The throw alternates each leg so the same player isn't always first.
 function startLeg(names) {
-  state.gameType = currentGameType(state.match);
+  state.legConfig = currentLegConfig(state.match);
+  state.gameType = state.legConfig.game;
+
+  const start = state.legConfig.score ?? STARTING_SCORE;
+  const rules = rulesFor(state.legConfig.rules);
+
   state.players = state.gameType === "cricket"
     ? names.map((name) => createCricketPlayer(name))
-    : names.map((name) => ({ name, remaining: STARTING_SCORE }));
+    // `opened` tracks the double-in requirement: with a straight in, everyone
+    // starts open and it never matters again.
+    : names.map((name) => ({ name, remaining: start, opened: rules.in !== "double" }));
   state.currentPlayerIndex = startingPlayerForLeg(state.match.currentLeg, names.length);
   state.dartsThisTurn = [];
-  state.startOfTurnRemaining = STARTING_SCORE;
+  state.startOfTurnRemaining = start;
   state.gameOver = false;
   state.legOver = false;
   state.winnerIndex = null;
@@ -342,13 +388,21 @@ function applyHit(segment) {
   undoStack.push(snapshot());
 
   const player = state.players[state.currentPlayerIndex];
-  const { after, isBust, isWin } = resolveThrow(player.remaining, segment);
+  const rules = rulesFor(state.legConfig?.rules);
+  const { after, isBust, isWin, opened, ignored } = resolveThrow(player.remaining, segment, {
+    inRule: rules.in,
+    outRule: rules.out,
+    opened: player.opened !== false,
+  });
+  player.opened = opened;
 
   state.dartsThisTurn.push(segment);
   state.throwLog.unshift({
     playerName: player.name,
-    label: segment.longName,
-    value: segment.value,
+    // Double-in: say why a dart scored nothing, rather than silently logging
+    // it as if it counted.
+    label: ignored ? `${segment.longName} - not in yet` : segment.longName,
+    value: ignored ? 0 : segment.value,
     remainingAfter: isBust ? state.startOfTurnRemaining : Math.max(after, 0),
     bust: isBust,
   });
@@ -392,7 +446,16 @@ function applyQuickTotal(totalValue) {
     ring: "quick",
     section: "Other",
   };
-  const { after, isBust, isWin } = resolveThrow(player.remaining, segment);
+  // A turn total is entered by someone who watched the darts land, so it's
+  // taken at face value: it counts as being "in" under double-in rules, and
+  // an exact-zero entry is assumed to be a legal finish under whatever the
+  // leg's out rule is (see quickentry.js).
+  player.opened = true;
+  const { after, isBust, isWin } = resolveThrow(player.remaining, segment, {
+    inRule: "straight",
+    outRule: "straight",
+    opened: true,
+  });
 
   state.throwLog.unshift({
     playerName: player.name,
