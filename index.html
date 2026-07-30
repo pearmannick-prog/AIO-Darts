@@ -364,6 +364,150 @@
   .dartboard-segment:hover {
     filter: brightness(1.35);
   }
+  /* ---- Cricket (DartConnect-style board) ---- */
+  /* Targets run down the centre with D/T either side; each player's marks sit
+     in a flanking column, so two players read as a familiar left-vs-right
+     board. Every button here produces the same segment ID a real board hit or
+     a click on the dartboard would, so all three inputs share one code path. */
+  .cricket-board {
+    margin: 14px 0;
+    border: 1px solid rgba(27,26,20,0.15);
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(27,26,20,0.03);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+  .cricket-board.hidden { display: none; }
+
+  .ck-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    border-bottom: 1px solid rgba(27,26,20,0.08);
+  }
+  .ck-row:last-child { border-bottom: none; }
+
+  .ck-side {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .ck-header {
+    background: rgba(27,26,20,0.07);
+    padding: 8px 0;
+  }
+  .ck-col { text-align: center; padding: 0 6px; min-width: 0; }
+  .ck-name {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ck-col.active .ck-name { opacity: 1; color: var(--red); }
+  .ck-points { font-size: 26px; font-weight: 700; line-height: 1.1; }
+
+  /* Marks are chalked the way they are on a real board: / then X then a
+     circled X once the number is closed. */
+  .ck-mark {
+    flex: 1;
+    text-align: center;
+    font-size: 22px;
+    line-height: 1;
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ck-mark.closed { color: var(--red); }
+
+  .ck-controls {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+
+  .ck-num, .ck-mod, .ck-miss {
+    font-family: inherit;
+    font-weight: 700;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: filter 0.1s ease;
+  }
+  .ck-num:active, .ck-mod:active, .ck-miss:active { filter: brightness(0.85); }
+
+  /* The number itself is the big target - a single is the most common dart. */
+  .ck-num {
+    min-width: 62px;
+    padding: 8px 0;
+    font-size: 22px;
+    background: var(--red);
+    color: #fff;
+  }
+  .ck-mod {
+    min-width: 34px;
+    padding: 8px 0;
+    font-size: 14px;
+    background: rgba(183,48,42,0.85);
+    color: #fff;
+  }
+  .ck-mod.ck-disabled, .ck-mod:disabled {
+    background: rgba(27,26,20,0.12);
+    color: rgba(27,26,20,0.35);
+    cursor: not-allowed;
+  }
+
+  .ck-miss {
+    padding: 7px 22px;
+    font-size: 14px;
+    background: rgba(27,26,20,0.08);
+    color: var(--ink);
+    border-color: #cfc4a3;
+  }
+  .ck-footer { background: rgba(27,26,20,0.04); padding: 6px 0; }
+
+  /* A number every player has closed is dead - nothing more can be scored on
+     it, so the whole row including its buttons drops back. */
+  .ck-row.dead { opacity: 0.38; }
+  .ck-row.dead .ck-num, .ck-row.dead .ck-mod { background: rgba(27,26,20,0.25); }
+
+  @media (max-width: 420px) {
+    .ck-num { min-width: 52px; font-size: 19px; }
+    .ck-mod { min-width: 28px; }
+    .ck-points { font-size: 22px; }
+  }
+
+  .setup-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .setup-row label { font-weight: 600; }
+  .setup-row select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #cfc4a3;
+    background: rgba(27,26,20,0.04);
+    color: var(--ink);
+  }
+
+  /* Quick Total is a 501 concept - a turn total tells you nothing about
+     which numbers were hit, so it's hidden in cricket. */
+  /* The cricket board above IS the scorekeeping pad, so the generic manual
+     entry section is redundant in cricket - hiding it avoids two competing
+     ways to enter the same dart. The clickable dartboard stays available. */
+  #manual-section.cricket-mode { display: none; }
+
   .dartboard-marker {
     position: absolute;
     width: 16px;
@@ -530,6 +674,14 @@
       <!-- Setup screen -->
       <div id="setup-panel" class="panel">
         <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Players</h3>
+        <div class="setup-row">
+          <label for="game-type">Game</label>
+          <select id="game-type">
+            <option value="501">501 (double out)</option>
+            <option value="cricket">Cricket</option>
+          </select>
+        </div>
+
         <div id="player-inputs"></div>
         <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
         <div class="setup-actions">
@@ -558,6 +710,8 @@
             <div id="dartboard-marker" class="dartboard-marker hidden"></div>
           </div>
         </div>
+
+        <div id="cricket-board" class="cricket-board hidden"></div>
 
         <div id="manual-section">
           <h3>Manual entry (misses &amp; misreads)</h3>
