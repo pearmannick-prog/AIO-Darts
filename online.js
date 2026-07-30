@@ -10,7 +10,16 @@
 // architecture notes in the top-level README.
 
 import { Granboard, SegmentID, SegmentType, createSegment } from "./granboard.js";
-import { resolveThrow } from "./scoring.js";
+import { resolveThrow, rulesFor } from "./scoring.js";
+import {
+  createCricketPlayer, resolveCricketThrow, applyCricketResult,
+  checkCricketWin, describeCricketResult,
+} from "./cricket.js";
+import {
+  createMatch, currentLegConfig, recordLegWin, advanceLeg,
+  startingPlayerForLeg, legProgressText, normalizeLeg, MATCH_PRESETS, matchScoreText,
+} from "./medley.js";
+import { renderCricketBoard, wireCricketBoard } from "./cricketboard.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
 
@@ -24,10 +33,21 @@ const online = {
   active: false,
   role: null, // 'host' | 'guest'
   activeSide: null, // 'me' | 'opp'
-  gameOver: false,
+  gameOver: false, // the LEG is decided
+  legOver: false, // leg decided but the match continues
   iWon: null,
-  me: { remaining: STARTING_SCORE, startOfTurn: STARTING_SCORE, dartsThisTurn: [] },
-  opp: { remaining: STARTING_SCORE, startOfTurn: STARTING_SCORE, dartsThisTurn: [] },
+  // The match format is chosen by the host and sent to the guest on connect
+  // (see the "match_config" message) - otherwise both sides would guess, and
+  // a guest could end up playing 501 while the host played Cricket.
+  match: null,
+  legConfig: null,
+  gameType: "x01",
+  // Absolute player indices in the match: host is 0, guest is 1. Both sides
+  // need the same numbering so leg tallies and who-throws-first agree.
+  myIndex: 0,
+  oppIndex: 1,
+  me: null,
+  opp: null,
   log: [],
 };
 
@@ -65,6 +85,10 @@ const el = {
   manualSection: document.getElementById("online-manual-section"),
   dartboardEl: document.querySelector("#online-mode .dartboard"),
   dartboardMarker: document.getElementById("online-dartboard-marker"),
+  formatSelect: document.getElementById("online-format"),
+  cricketBoard: document.getElementById("online-cricket-board"),
+  matchBar: document.getElementById("online-match-bar"),
+  nextLegBtn: document.getElementById("online-next-leg-btn"),
   manualPerdart: document.getElementById("online-manual-perdart"),
   manualQuickTotal: document.getElementById("online-manual-quicktotal"),
   manualRing: document.getElementById("online-manual-ring"),
@@ -191,6 +215,30 @@ renderDartboard(el.dartboardEl, (segmentId) => {
   onLocalHit(createSegment(segmentId));
 });
 
+// The host picks the format; the guest is told it over the wire, so this is
+// only ever read on the host side.
+function selectedOnlineLegs() {
+  const key = el.formatSelect?.value || "single-501";
+  return (MATCH_PRESETS[key] || MATCH_PRESETS["single-501"]).map(normalizeLeg);
+}
+
+// Same cricket board component as local play, so the two modes can't drift.
+wireCricketBoard(el.cricketBoard, (segment) => {
+  if (online.gameType !== "cricket") return;
+  onLocalHit(segment);
+});
+
+el.nextLegBtn?.addEventListener("click", () => {
+  if (!online.legOver) return;
+  // Tell the opponent first, then advance locally - both sides run the same
+  // deterministic step, so neither needs to be sent the resulting state.
+  peerLink?.sendGameMessage({ type: "next_leg" });
+  advanceLeg(online.match);
+  startOnlineLeg();
+  el.winnerBanner.classList.add("hidden");
+  renderOnline();
+});
+
 // ---------- Create / Join ----------
 el.createBtn.addEventListener("click", async () => {
   await ensurePeerLinkLoaded();
@@ -251,7 +299,13 @@ function wirePeerLink() {
     el.statusLabel.textContent = statusText(status);
 
     if (status === "connected" && !online.active) {
-      startOnlineGame(peerLink.role);
+      // The guest announces itself and the host replies with the format.
+      // Doing it in that order removes any race over whether the data
+      // channel was open when the config was sent - the host only sends
+      // once it has heard from the guest.
+      if (peerLink.role === "guest") {
+        peerLink.sendGameMessage({ type: "hello" });
+      }
     }
     if (status === "disconnected" || status === "room-full") {
       if (online.active) {
@@ -261,6 +315,23 @@ function wirePeerLink() {
   };
 
   peerLink.onMessage = (msg) => {
+    if (msg.type === "hello") {
+      // Only the host answers this, and only once.
+      if (peerLink.role !== "host" || online.active) return;
+      const legs = selectedOnlineLegs();
+      peerLink.sendGameMessage({ type: "match_config", legs });
+      startOnlineGame("host", legs);
+      renderOnline();
+      return;
+    }
+
+    if (msg.type === "match_config") {
+      if (online.active) return;
+      startOnlineGame("guest", msg.legs);
+      renderOnline();
+      return;
+    }
+
     if (msg.type === "dart") {
       applyThrow("opp", msg.segment);
     } else if (msg.type === "end_turn") {
@@ -270,6 +341,13 @@ function wirePeerLink() {
       }
     } else if (msg.type === "quick_total") {
       applyQuickTotalThrow("opp", msg.value);
+    } else if (msg.type === "next_leg") {
+      // Either player can move the match on; both sides advance together.
+      if (!online.legOver) return;
+      advanceLeg(online.match);
+      startOnlineLeg();
+      el.winnerBanner.classList.add("hidden");
+      renderOnline();
     }
   };
 }
@@ -302,20 +380,67 @@ function showNotice(message) {
 }
 
 // ---------- Game start ----------
-function startOnlineGame(role) {
+// Builds one player's state for a leg. x01 and Cricket keep completely
+// different shapes, which is why this is a function rather than a literal.
+function buildOnlinePlayer(name, legConfig) {
+  if (legConfig.game === "cricket") return createCricketPlayer(name);
+  const rules = rulesFor(legConfig.rules);
+  return {
+    name,
+    remaining: legConfig.score,
+    startOfTurn: legConfig.score,
+    // Double-in: nothing scores until this player lands a double.
+    opened: rules.in !== "double",
+    dartsThisTurn: [],
+  };
+}
+
+function startOnlineGame(role, legs) {
   online.active = true;
   online.role = role;
-  online.activeSide = role === "host" ? "me" : "opp"; // host throws first
-  online.gameOver = false;
-  online.iWon = null;
-  online.me = { remaining: STARTING_SCORE, startOfTurn: STARTING_SCORE, dartsThisTurn: [] };
-  online.opp = { remaining: STARTING_SCORE, startOfTurn: STARTING_SCORE, dartsThisTurn: [] };
+  online.myIndex = role === "host" ? 0 : 1;
+  online.oppIndex = 1 - online.myIndex;
+  online.match = createMatch(legs, 2);
   online.log = [];
+
+  startOnlineLeg();
 
   el.waitingPanel.classList.add("hidden");
   el.gamePanel.classList.remove("hidden");
   el.winnerBanner.classList.add("hidden");
   renderOnline();
+}
+
+// Resets scores for a new leg. The match tally and player identities carry
+// over; only the leg's own state is rebuilt.
+function startOnlineLeg() {
+  const leg = normalizeLeg(currentLegConfig(online.match));
+  online.legConfig = leg;
+  online.gameType = leg.game;
+
+  online.me = buildOnlinePlayer("You", leg);
+  online.opp = buildOnlinePlayer("Opponent", leg);
+  online.me.dartsThisTurn = [];
+  online.opp.dartsThisTurn = [];
+
+  // Throw alternates each leg, and both sides compute it from the same
+  // absolute index so they never disagree about whose turn it is.
+  const starter = startingPlayerForLeg(online.match.currentLeg, 2);
+  online.activeSide = starter === online.myIndex ? "me" : "opp";
+
+  online.gameOver = false;
+  online.legOver = false;
+  online.iWon = null;
+}
+
+// A leg has been won. Both sides run this independently off the same inputs,
+// so neither has to be told the result.
+function finishOnlineLeg(side) {
+  online.gameOver = true;
+  online.iWon = side === "me";
+  const winnerIndex = side === "me" ? online.myIndex : online.oppIndex;
+  recordLegWin(online.match, winnerIndex);
+  online.legOver = !online.match.over;
 }
 
 // ---------- My physical board ----------
@@ -394,6 +519,9 @@ function onLocalQuickTotal(totalValue) {
 // quickentry.js for the double-out assumption this makes.
 function applyQuickTotalThrow(side, totalValue) {
   if (online.gameOver) return;
+  // A turn total says nothing about WHICH numbers were hit, so it has no
+  // meaning in cricket. The UI hides it there; this guards the message path.
+  if (online.gameType === "cricket") return;
   if (online.activeSide !== side) {
     console.warn(`Ignored an out-of-turn '${side}' turn total.`);
     return;
@@ -402,10 +530,18 @@ function applyQuickTotalThrow(side, totalValue) {
   const s = online[side];
   const segment = {
     value: totalValue,
-    type: SegmentType.Double, // exact-0 entries assume a valid double-out
+    type: SegmentType.Double, // exact-0 entries assume a valid finish
     longName: `Turn total: ${totalValue}`,
   };
-  const { after, isBust, isWin } = resolveThrow(s.remaining, segment);
+  // Entered by someone who watched the darts land, so it's taken at face
+  // value: it counts as being "in", and an exact zero is assumed legal under
+  // whatever the leg's out rule is.
+  s.opened = true;
+  const { after, isBust, isWin } = resolveThrow(s.remaining, segment, {
+    inRule: "straight",
+    outRule: "straight",
+    opened: true,
+  });
 
   // A whole-turn total has no single board position to point at.
   if (side === "me") hideMarker(el.dartboardMarker);
@@ -423,17 +559,15 @@ function applyQuickTotalThrow(side, totalValue) {
   } else {
     s.remaining = after;
     if (isWin) {
-      online.gameOver = true;
-      online.iWon = side === "me";
+      finishOnlineLeg(side);
     } else {
-      endTurn(side); // always finalizes, regardless of dartsThisTurn count
+      endTurn(side);
     }
   }
 
   renderOnline();
 }
 
-// ---------- Shared scoring application ----------
 function applyThrow(side, segment) {
   if (online.gameOver) return;
   if (online.activeSide !== side) {
@@ -443,8 +577,16 @@ function applyThrow(side, segment) {
     return;
   }
 
+  if (online.gameType === "cricket") return applyCricketThrowOnline(side, segment);
+
   const s = online[side];
-  const { after, isBust, isWin } = resolveThrow(s.remaining, segment);
+  const rules = rulesFor(online.legConfig?.rules);
+  const { after, isBust, isWin, opened, ignored } = resolveThrow(s.remaining, segment, {
+    inRule: rules.in,
+    outRule: rules.out,
+    opened: s.opened !== false,
+  });
+  s.opened = opened;
 
   // The board is this player's own input surface, so the marker tracks THEIR
   // darts only - the opponent's throws still show in the throw log, but
@@ -455,7 +597,7 @@ function applyThrow(side, segment) {
   s.dartsThisTurn.push(segment);
   online.log.unshift({
     side,
-    label: segment.longName,
+    label: ignored ? `${segment.longName} - not in yet` : segment.longName,
     remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
     bust: isBust,
   });
@@ -466,8 +608,7 @@ function applyThrow(side, segment) {
   } else {
     s.remaining = after;
     if (isWin) {
-      online.gameOver = true;
-      online.iWon = side === "me";
+      finishOnlineLeg(side);
     } else if (s.dartsThisTurn.length >= 3) {
       endTurn(side);
     }
@@ -476,55 +617,136 @@ function applyThrow(side, segment) {
   renderOnline();
 }
 
+// Cricket needs both players' marks to decide whether a number still scores,
+// so it's handed the pair with the thrower first. That ordering is safe
+// because the rule only ever asks "have the OTHERS closed this?".
+function applyCricketThrowOnline(side, segment) {
+  const mine = side === "me";
+  const players = mine ? [online.me, online.opp] : [online.opp, online.me];
+  const player = players[0];
+
+  const result = resolveCricketThrow(players, 0, segment);
+  applyCricketResult(player, result);
+
+  if (mine) moveMarkerTo(el.dartboardMarker, segment);
+
+  player.dartsThisTurn.push(segment);
+  online.log.unshift({
+    side,
+    label: describeCricketResult(segment, result),
+    remainingAfter: player.points,
+    bust: false,
+  });
+
+  if (checkCricketWin(players, 0)) {
+    finishOnlineLeg(side);
+  } else if (player.dartsThisTurn.length >= 3) {
+    endTurn(side);
+  }
+
+  renderOnline();
+}
+
 function endTurn(side) {
   const s = online[side];
   s.dartsThisTurn = [];
-  s.startOfTurn = s.remaining;
+  // Cricket has no bust, so there's no start-of-turn value to revert to.
+  if (online.gameType !== "cricket") s.startOfTurn = s.remaining;
   online.activeSide = side === "me" ? "opp" : "me";
 }
 
 // ---------- Render ----------
 function renderOnline() {
-  el.meScore.textContent = online.me.remaining;
-  el.oppScore.textContent = online.opp.remaining;
+  const cricket = online.gameType === "cricket";
+
+  // Cricket shows marks; x01 shows a remaining score. Only one at a time.
+  el.cricketBoard?.classList.toggle("hidden", !cricket);
+  el.manualSection?.classList.toggle("cricket-mode", cricket);
+
+  if (cricket) {
+    // "me" first so the local player always reads on the left, whichever
+    // side of the match they are.
+    renderCricketBoard(el.cricketBoard, [online.me, online.opp],
+      online.activeSide === "me" ? 0 : 1);
+    el.meScore.textContent = online.me.points;
+    el.oppScore.textContent = online.opp.points;
+  } else {
+    el.meScore.textContent = online.me.remaining;
+    el.oppScore.textContent = online.opp.remaining;
+  }
+
   el.meBox.classList.toggle("active-turn", online.activeSide === "me" && !online.gameOver);
   el.oppBox.classList.toggle("active-turn", online.activeSide === "opp" && !online.gameOver);
 
+  renderOnlineMatchBar();
+
   el.turnLabel.textContent = online.gameOver
-    ? (online.iWon ? "You win! 🎯" : "Opponent wins.")
+    ? (online.iWon ? "You win the leg! 🎯" : "Opponent takes the leg.")
     : online.activeSide === "me" ? "Your turn" : "Opponent's turn";
 
-  const activeSideState = online[online.activeSide] ?? online.me;
   el.turnDarts.innerHTML = "";
+  const darts = online.activeSide === "me" ? online.me.dartsThisTurn : online.opp.dartsThisTurn;
   for (let i = 0; i < 3; i++) {
-    const dart = activeSideState.dartsThisTurn[i];
     const slot = document.createElement("div");
-    slot.className = "dart-slot" + (dart ? " filled" : "");
-    slot.textContent = dart ? dart.shortName : "–";
+    slot.className = "dart-slot" + (darts[i] ? " filled" : "");
+    slot.textContent = darts[i] ? darts[i].shortName : "-";
     el.turnDarts.appendChild(slot);
   }
 
   el.throwLog.innerHTML = "";
-  online.log.slice(0, 20).forEach((entry) => {
+  online.log.slice(0, 12).forEach((entry) => {
     const row = document.createElement("div");
     row.className = "log-row" + (entry.bust ? " bust" : "");
-    const who = entry.side === "me" ? "You" : "Opponent";
-    row.innerHTML = `<span>${who}</span><span>${entry.label}</span><span>${entry.bust ? "BUST" : entry.remainingAfter}</span>`;
+    row.textContent = `${entry.side === "me" ? "You" : "Opponent"}: ${entry.label} → ${entry.remainingAfter}`;
     el.throwLog.appendChild(row);
   });
 
   el.winnerBanner.classList.toggle("hidden", !online.gameOver);
-  if (online.gameOver) {
-    el.winnerBanner.textContent = online.iWon ? "🏆 You win!" : "Opponent wins this one.";
+  if (online.gameOver) el.winnerBanner.textContent = onlineBannerText();
+
+  // Manual entry stays clickable at all times - a hard CSS block here was
+  // indistinguishable from a bug if the visual state ever fell out of sync
+  // with the real turn state. Turn enforcement lives in the handlers, which
+  // show an on-screen message if you act out of turn.
+  const canAct = online.active && !online.gameOver && online.activeSide === "me";
+  el.manualSection.style.opacity = canAct ? "1" : "0.7";
+}
+
+// Leg progress and the running leg tally. Hidden entirely for a single game,
+// so a one-off match looks exactly as it did before medleys existed.
+function renderOnlineMatchBar() {
+  if (!el.matchBar) return;
+  const match = online.match;
+  const multiLeg = match && match.legs.length > 1;
+
+  el.matchBar.classList.toggle("hidden", !multiLeg);
+  el.nextLegBtn?.classList.toggle("hidden", !online.legOver);
+  if (!multiLeg) return;
+
+  // Names are ordered by absolute index (host first), so they're relabelled
+  // from each player's own point of view.
+  const names = [];
+  names[online.myIndex] = "You";
+  names[online.oppIndex] = "Opponent";
+
+  el.matchBar.querySelector(".match-progress").textContent = legProgressText(match);
+  el.matchBar.querySelector(".match-score").textContent = matchScoreText(match, names);
+}
+
+function onlineBannerText() {
+  const match = online.match;
+  const names = [];
+  names[online.myIndex] = "You";
+  names[online.oppIndex] = "Opponent";
+
+  if (match?.over) {
+    if (match.drawn) return `Match drawn · ${matchScoreText(match, names)}`;
+    const iWonMatch = match.winnerIndex === online.myIndex;
+    if (match.legs.length > 1) {
+      return `${iWonMatch ? "🏆 You win the match" : "Opponent wins the match"} · ${matchScoreText(match, names)}`;
+    }
+    return iWonMatch ? "🏆 You win!" : "Opponent wins this one.";
   }
 
-  // Manual entry stays clickable at all times now - a hard CSS block here
-  // was indistinguishable from a bug if the visual state ever fell out of
-  // sync with the real turn state. The actual turn enforcement lives in
-  // onLocalHit/onLocalEndTurn/onLocalQuickTotal below, which now show a
-  // clear on-screen message (not just a console warning) if you try to act
-  // out of turn - so it's self-explanatory either way instead of a
-  // mysterious disabled panel.
-  const canAct = online.active && !online.gameOver && online.activeSide === "me";
-  document.getElementById("online-manual-section").style.opacity = canAct ? "1" : "0.7";
+  return `${online.iWon ? "You take" : "Opponent takes"} leg ${match.currentLeg + 1} · ${matchScoreText(match, names)}`;
 }

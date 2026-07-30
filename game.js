@@ -5,13 +5,15 @@ import { resolveThrow, rulesFor, X01_SCORES, X01_RULES, segmentOpens } from "./s
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
 import {
+  renderCricketBoard as renderCricketBoard_, wireCricketBoard,
+} from "./cricketboard.js";
+import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
   startingPlayerForLeg, matchScoreText, legProgressText, gameLabel, normalizeLeg,
 } from "./medley.js";
 import {
-  CRICKET_TARGETS, createCricketPlayer, resolveCricketThrow, applyCricketResult,
-  checkCricketWin, describeCricketResult, markSymbol, targetLabel, isClosedBy,
-  isTargetDead,
+  createCricketPlayer, resolveCricketThrow, applyCricketResult,
+  checkCricketWin, describeCricketResult,
 } from "./cricket.js";
 
 const STARTING_SCORE = 501;
@@ -532,85 +534,12 @@ el.nextLegBtn?.addEventListener("click", () => {
 });
 
 function renderCricketBoard() {
-  if (!el.cricketBoard) return;
-
-  // DartConnect-style layout: the targets run down the centre with D and T
-  // buttons either side, and each player's marks sit in a flanking column.
-  // Players are split around the centre so two players read as the familiar
-  // left-vs-right board; three or four still work, just unevenly split.
-  const half = Math.ceil(state.players.length / 2);
-  const left = state.players.map((p, i) => ({ p, i })).slice(0, half);
-  const right = state.players.map((p, i) => ({ p, i })).slice(half);
-
-  const side = (group, cls) => `<div class="ck-side ${cls}">` +
-    group.map(({ p, i }) =>
-      `<div class="ck-col${i === state.currentPlayerIndex ? " active" : ""}">
-         <div class="ck-name">${p.name}</div>
-         <div class="ck-points">${p.points}</div>
-       </div>`).join("") + `</div>`;
-
-  const marksFor = (group, target) => `<div class="ck-side">` +
-    group.map(({ p }) =>
-      `<div class="ck-mark${isClosedBy(p, target) ? " closed" : ""}">${markSymbol(p.marks[target] || 0)}</div>`
-    ).join("") + `</div>`;
-
-  const rows = CRICKET_TARGETS.map((target) => {
-    const dead = isTargetDead(state.players, target);
-    // There is no triple bull on a real board, so that button is disabled
-    // rather than quietly scoring something wrong.
-    const noTriple = target === "BULL";
-    return `<div class="ck-row${dead ? " dead" : ""}">
-      ${marksFor(left, target)}
-      <div class="ck-controls">
-        <button type="button" class="ck-mod" data-target="${target}" data-mult="2">D</button>
-        <button type="button" class="ck-num" data-target="${target}" data-mult="1">${targetLabel(target)}</button>
-        <button type="button" class="ck-mod${noTriple ? " ck-disabled" : ""}" data-target="${target}" data-mult="3"${noTriple ? " disabled" : ""}>T</button>
-      </div>
-      ${marksFor(right, target)}
-    </div>`;
-  }).join("");
-
-  el.cricketBoard.innerHTML =
-    `<div class="ck-row ck-header">
-       ${side(left, "ck-left")}
-       <div class="ck-controls"></div>
-       ${side(right, "ck-right")}
-     </div>` +
-    rows +
-    `<div class="ck-row ck-footer">
-       <div class="ck-side"></div>
-       <div class="ck-controls">
-         <button type="button" class="ck-miss" data-target="MISS" data-mult="0">Miss</button>
-       </div>
-       <div class="ck-side"></div>
-     </div>`;
+  renderCricketBoard_(el.cricketBoard, state.players, state.currentPlayerIndex);
 }
 
-// One delegated listener rather than rebinding every button on each render -
-// the grid is rewritten after every dart.
-el.cricketBoard?.addEventListener("click", (event) => {
-  const btn = event.target.closest("[data-target]");
-  if (!btn || btn.disabled) return;
+wireCricketBoard(el.cricketBoard, (segment) => {
   if (state.gameType !== "cricket" || state.gameOver) return;
-
-  const target = btn.dataset.target;
-  const mult = Number(btn.dataset.mult);
-
-  if (target === "MISS") {
-    applyHit(createSegment(SegmentID.MISS));
-    return;
-  }
-
-  // Rebuild the same segment ID the board or the clickable dartboard would
-  // produce, so every input path lands in the identical scoring code.
-  if (target === "BULL") {
-    applyHit(createSegment(mult === 2 ? SegmentID.DBL_BULL : SegmentID.BULL));
-    return;
-  }
-
-  const section = Number(target);
-  const slot = mult === 3 ? 1 : mult === 2 ? 3 : 0; // triple / double / single
-  applyHit(createSegment((section - 1) * 4 + slot));
+  applyHit(segment);
 });
 
 // Cricket's turn structure is simpler than 501's: there's no bust and no

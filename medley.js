@@ -17,6 +17,27 @@ import { rulesLabel } from "./scoring.js";
 //   { game: "cricket" }
 // Plain strings are still accepted and normalised, so older callers and saved
 // configs keep working.
+// Shared so the local setup panel and the online format picker offer exactly
+// the same formats - two lists would drift.
+export const MATCH_PRESETS = {
+  "single-301": [{ game: "x01", score: 301, rules: "double" }],
+  "single-501": [{ game: "x01", score: 501, rules: "double" }],
+  "single-701": [{ game: "x01", score: 701, rules: "double" }],
+  "single-cricket": [{ game: "cricket" }],
+  bo3: [
+    { game: "x01", score: 501, rules: "double" },
+    { game: "cricket" },
+    { game: "x01", score: 501, rules: "double" },
+  ],
+  bo5: [
+    { game: "x01", score: 501, rules: "double" },
+    { game: "cricket" },
+    { game: "x01", score: 501, rules: "double" },
+    { game: "cricket" },
+    { game: "x01", score: 501, rules: "double" },
+  ],
+};
+
 export function normalizeLeg(leg) {
   if (typeof leg === "string") {
     if (leg === "cricket") return { game: "cricket" };

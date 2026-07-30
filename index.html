@@ -601,7 +601,15 @@
   /* The cricket board above IS the scorekeeping pad, so the generic manual
      entry section is redundant in cricket - hiding it avoids two competing
      ways to enter the same dart. The clickable dartboard stays available. */
-  #manual-section.cricket-mode { display: none; }
+  #manual-section.cricket-mode,
+  #online-manual-section.cricket-mode { display: none; }
+
+  .format-note {
+    font-size: 12.5px;
+    opacity: 0.75;
+    line-height: 1.5;
+    margin: 0 0 12px;
+  }
 
   .dartboard-marker {
     position: absolute;
@@ -854,6 +862,21 @@
       <div id="online-setup-panel" class="panel">
         <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
         <div class="setup-actions">
+          <div class="setup-row">
+            <label for="online-format">Format</label>
+            <select id="online-format">
+              <option value="single-301">Single game &middot; 301</option>
+              <option value="single-501" selected>Single game &middot; 501</option>
+              <option value="single-701">Single game &middot; 701</option>
+              <option value="single-cricket">Single game &middot; Cricket</option>
+              <option value="bo3">Best of 3 &middot; 501 / Cricket / 501</option>
+              <option value="bo5">Best of 5 &middot; alternating</option>
+            </select>
+          </div>
+          <p class="format-note">
+            The player who creates the challenge picks the format - whoever
+            joins gets the same one automatically.
+          </p>
           <button id="create-challenge-btn" class="btn-primary">Create Challenge</button>
         </div>
         <div class="setup-actions">
@@ -887,6 +910,11 @@
         <div id="online-winner-banner" class="hidden"></div>
         <div id="online-status-label" style="font-size:13px; opacity:0.75; margin-bottom:10px;"></div>
 
+        <div id="online-match-bar" class="match-bar hidden">
+          <span class="match-progress"></span>
+          <span class="match-score"></span>
+        </div>
+
         <div class="online-scoreboard">
           <div id="online-me-box" class="online-score-box">
             <div class="online-score-label">You</div>
@@ -905,6 +933,10 @@
           <div class="dartboard"></div>
           <div id="online-dartboard-marker" class="dartboard-marker hidden"></div>
         </div>
+
+        <button type="button" id="online-next-leg-btn" class="btn-primary next-leg-btn hidden">Next leg &rarr;</button>
+
+        <div id="online-cricket-board" class="cricket-board hidden"></div>
 
         <div id="online-manual-section">
           <h3>Manual entry (misses &amp; misreads)</h3>
