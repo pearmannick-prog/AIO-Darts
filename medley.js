@@ -66,7 +66,9 @@ export function clinchedBy(match) {
   const remaining = match.legs.length - (match.currentLeg + 1);
   const [first, second] = ranked(match);
   if (!first) return null;
-  if (!second) return first.wins > 0 ? first.index : null;
+  // Solo: there's nobody to build an unassailable lead over, so a medley
+  // plays every leg instead of "clinching" the moment the first one is won.
+  if (!second) return null;
   return first.wins > second.wins + remaining ? first.index : null;
 }
 
