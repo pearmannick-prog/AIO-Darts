@@ -214,6 +214,28 @@ locally and forwards them to the peer, which applies them to its model of "the
 opponent" using the same rules. WebRTC DataChannels guarantee ordered
 delivery, so both sides stay in lockstep.
 
+## Installing as a desktop app
+
+The app is a PWA, so Chrome or Edge will offer to install it - look for the
+install icon in the address bar, or the browser menu's "Install AIO Darts".
+It then opens in its own window from the Start menu or taskbar, with no
+browser chrome.
+
+Web Bluetooth works exactly as it does in a tab, so a Granboard connects to
+the installed app normally.
+
+Installing also enables offline play, which matters if the PC by the board has
+patchy wifi. The service worker is **network-first**: it always tries the
+network and only falls back to the cache when there's no answer. That's a
+deliberate trade - a cache-first worker is faster but would serve stale code
+after a deploy, which is a miserable bug to chase. `config.json` and
+`version.json` are never cached at all, so the signaling address and build
+stamp are always current.
+
+The install prompt needs a secure context (https, or localhost). Over a plain
+LAN address the app still works, it just can't be installed - the same
+condition Web Bluetooth has, so anywhere the board works, installing works.
+
 ## Docker
 
 **Important if others will connect over the network:** Web Bluetooth only
