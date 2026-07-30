@@ -1,81 +1,23 @@
-# AIO Darts - single container, single port.
-#
-#   docker compose up -d          # run it (pulls the pre-built image)
-#   docker compose pull           # update to the latest published image
-#   docker compose up -d --build  # build from THIS source instead of pulling
-#
-# There is deliberately only one compose file. Because the service declares
-# both `image:` and `build:`, the same file covers running a release and
-# building local changes - no separate dev file to drift out of sync. Git
-# history is the revert path.
-#
-# The static site and the WebRTC signaling WebSocket are served by the same
-# process on the same port (see server/server.js). That's what keeps this to
-# one container and means a reverse proxy needs exactly one host with no path
-# rules, no second subdomain, and nothing for players to configure.
-
 services:
   aiodarts:
-    # Distinct service and container names on purpose: this shares a Docker
-    # host with unrelated stacks, so a generic name like "web" or "darts"
-    # risks colliding with another stack's service.
-    container_name: aiodarts
     image: ghcr.io/pearmannick-prog/aio-darts/aio-darts-web:latest
-
-    # Present so `docker compose up --build` builds from source and tags it as
-    # the image above. Ignored during a normal `up`/`pull`.
-    build:
-      context: .
-      dockerfile: Dockerfile
-
+    container_name: aiodarts
+    build: . # Only used by `docker compose up --build`; ignored by a normal `up`
     restart: unless-stopped
-
-    ports:
-      # host:container. Host port 8887 matches the existing reverse-proxy
-      # host so it needs no re-pointing. The container listens on 8080 (Node),
-      # where it previously listened on 80 (nginx) - hence the mapping.
-      - "8887:8080"
-
-    volumes:
-      # Persistent data. Nothing is written here yet - challenge rooms are
-      # intentionally in-memory and ephemeral - but the accounts/stat-tracking
-      # phase puts a SQLite file here, and SQLite is a plain file, so that
-      # phase does NOT add a second container. Mounted now so that change is
-      # a code deploy rather than a compose edit + downtime.
-      #
-      # Default suits Unraid's appdata convention. Override elsewhere by
-      # setting DATA_PATH in a .env file next to this compose file, e.g.
-      #   DATA_PATH=./data
-      - ${DATA_PATH:-/mnt/user/appdata/aiodarts}:/data
-
     environment:
-      # --- Paths (match the mounts above; change together or not at all) ---
-      - DATA_DIR=/data
-      - PORT=8080
-
-      # --- Everything below is OPTIONAL. Defaults are correct. ---
-
-      # TURN relay, for players whose networks refuse direct peer-to-peer
-      # (symmetric NAT, strict corporate/mobile firewalls). Without it those
-      # specific players can't connect at all; others are unaffected. Darts
-      # traffic is a few bytes per throw, so self-hosting coturn is cheap.
-      # - TURN_URL=turn:turn.example.com:3478
-      # - TURN_USERNAME=aiodarts
-      # - TURN_CREDENTIAL=change-me
-
-      # Override the STUN server(s) if you'd rather not use Google's.
-      # - STUN_URLS=stun:stun.example.com:3478
-
-      # Path the signaling WebSocket is served on. Only worth changing if it
-      # collides with something else behind the same proxy.
-      # - SIGNALING_PATH=/signaling
-
-      # Only to point players at a DIFFERENT signaling server entirely.
-      # Leave unset for same-origin, which is what you want.
-      # - SIGNALING_URL=
-
+      - PORT=8080 # Port the app listens on inside the container
+      - DATA_DIR=/data # Where persistent data is written (matches the volume below)
+      - SIGNALING_PATH=/signaling # URL path the signaling WebSocket is served on
+      - STUN_URLS=stun:stun.l.google.com:19302 # Comma-separated STUN servers for NAT traversal
+      # - TURN_URL=turn:turn.example.com:3478 # Optional relay for players who can't connect peer-to-peer
+      # - TURN_USERNAME=aiodarts # Username for the TURN server above
+      # - TURN_CREDENTIAL=change-me # Password for the TURN server above
+      # - SIGNALING_URL=wss://example.com/signaling # Only to point players at a DIFFERENT signaling server; leave unset for same-origin
+    volumes:
+      - /mnt/user/appdata/aiodarts:/data # Persistent data (SQLite once accounts land); empty for now
+    ports:
+      - 8887:8080 # host:container - the reverse proxy points at 8887
     healthcheck:
-      # Node is already in the image, so no curl/wget dependency needed.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
