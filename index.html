@@ -202,6 +202,92 @@
 
   .online-turn-darts { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; }
 
+  /* Camera/mic tiles. Placed above the scoreboard rather than below the
+     dartboard so that on a phone the opponent is visible without scrolling
+     past the whole scoring UI first - watching them throw is the point. */
+  .video-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .video-tile {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    background: #12110c;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .video-tile video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* Self-view is mirrored, the way every video-call app does it - an
+     unmirrored view of yourself reads as subtly wrong. The opponent's tile is
+     deliberately NOT mirrored: that one may be pointed at a board, and a
+     flipped board would be actively misleading. */
+  .video-tile.self video { transform: scaleX(-1); }
+  .video-tile-label {
+    position: absolute;
+    left: 8px;
+    bottom: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--cream);
+    background: rgba(0,0,0,0.5);
+    padding: 2px 7px;
+    border-radius: 5px;
+  }
+  .video-tile-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    text-align: center;
+    font-size: 13px;
+    color: rgba(239,230,210,0.65);
+    background: #12110c;
+  }
+  .video-tile-placeholder.hidden { display: none; }
+  /* Only the autoplay-blocked state is actually clickable, so only that state
+     advertises itself as clickable. */
+  .video-tile-placeholder.tappable {
+    cursor: pointer;
+    color: var(--cream);
+    font-weight: 600;
+  }
+  .video-tile-placeholder.tappable:hover { background: #1d1b13; }
+
+  .av-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .av-btn {
+    font-size: 13px;
+    padding: 8px 12px;
+    background: rgba(27,26,20,0.06);
+    color: var(--ink);
+    border: 1px solid #cfc4a3;
+  }
+  .av-btn:hover { background: rgba(27,26,20,0.12); }
+  /* Muted / camera-off is shown in red rather than as a pressed state, because
+     "am I currently muted" has to be answerable at a glance from across a
+     room, mid-throw. */
+  .av-btn.off {
+    background: var(--red);
+    border-color: var(--red);
+    color: var(--cream);
+  }
+
+  /* Two tiles side by side on a phone are too small to see a dart land in.
+     Stacked, each one is still worth looking at. */
+  @media (max-width: 560px) {
+    .video-strip { grid-template-columns: 1fr; }
+  }
+
   #online-manual-section {
     margin-top: 10px;
     padding-top: 16px;
@@ -948,6 +1034,28 @@
         <div id="online-match-bar" class="match-bar hidden">
           <span class="match-progress"></span>
           <span class="match-score"></span>
+        </div>
+
+        <!-- The local <video> MUST stay muted: it's playing this machine's own
+             microphone, so unmuted it is a howling feedback loop. -->
+        <div id="online-video-strip" class="video-strip hidden">
+          <div class="video-tile self">
+            <video id="online-local-video" autoplay playsinline muted></video>
+            <div id="online-local-placeholder" class="video-tile-placeholder">Camera off</div>
+            <span class="video-tile-label">You</span>
+          </div>
+          <div class="video-tile">
+            <video id="online-remote-video" autoplay playsinline></video>
+            <div id="online-remote-placeholder" class="video-tile-placeholder">Waiting for opponent's camera&hellip;</div>
+            <span class="video-tile-label">Opponent</span>
+          </div>
+        </div>
+
+        <div id="online-av-row" class="av-row">
+          <button type="button" id="online-av-start-btn" class="av-btn">📹 Start camera &amp; mic</button>
+          <button type="button" id="online-av-mic-btn" class="av-btn hidden">🎤 Mute</button>
+          <button type="button" id="online-av-cam-btn" class="av-btn hidden">📹 Camera off</button>
+          <button type="button" id="online-av-stop-btn" class="av-btn hidden">Stop</button>
         </div>
 
         <div class="online-scoreboard">

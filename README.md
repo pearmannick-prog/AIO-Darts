@@ -1,9 +1,10 @@
 # AIO Darts
 
 An "all-in-one" darts app: local pass-and-play scoring, online 1v1 challenges
-over a direct P2P connection, Granboard Bluetooth support with a manual-entry
-fallback (so it also works with a plain steel-tip board), and room to grow
-from there - camera-based hit detection is on the roadmap.
+over a direct P2P connection with optional camera and mic so you can watch your
+opponent throw, Granboard Bluetooth support with a manual-entry fallback (so it
+also works with a plain steel-tip board), and room to grow from there -
+camera-based hit detection is on the roadmap.
 
 Everything runs as **one container on one port**. The static front-end and the
 WebRTC signaling server are served by the same process, which is what keeps
@@ -150,6 +151,29 @@ Bluetooth board, the clickable dartboard, and manual entry (Per-Dart or Quick
 Total). None of them requires a board to be connected, so someone with no
 Granboard can play a full match against someone using one. The marker on your
 board tracks your own darts; the opponent's throws appear in the throw log.
+
+### Camera and mic
+
+Press **📹 Start camera & mic** during a match to see and hear your opponent
+throw. It's entirely optional and off until you press it: no permission prompt
+appears and no media is sent otherwise, so a match between two people who never
+touch the button behaves exactly as it did before the feature existed.
+
+Once on, you get **Mute**, **Camera off**, and **Stop** (which releases the
+devices - the camera light really does go out). Your own tile is mirrored, the
+way video-call apps show you; the opponent's is not, so a board pointed at the
+camera reads the right way round. If your opponent switches their camera off
+their tile says so, rather than going black and looking like a dropped
+connection.
+
+This rides the *same* peer-to-peer connection as the scoring data, so it needs
+no extra ports, no second service, and no configuration. Two caveats:
+
+- Like Web Bluetooth, `getUserMedia` needs a **secure context** - it works on
+  `localhost` but not on a plain `http://<ip-address>` LAN address. Put the
+  site behind HTTPS.
+- If a match falls back to a **TURN relay**, video is no longer free -
+  see [Adding a TURN relay](#adding-a-turn-relay).
 
 **There is nothing to configure.** The signaling server is part of the same
 server serving the page, so the front-end derives its address from whatever
@@ -341,8 +365,19 @@ the usual choice) and set `TURN_URL`, `TURN_USERNAME`, and `TURN_CREDENTIAL`.
 No code changes required; the front-end picks the servers up from
 `/config.json` on load.
 
-Bandwidth cost is negligible here - a dart throw is a few bytes - so
-self-hosting coturn alongside this is cheap, unlike TURN for video calls.
+Bandwidth cost depends entirely on whether the players use the camera:
+
+- **Scoring only** - negligible. A dart throw is a few bytes, so a relay costs
+  effectively nothing and self-hosting coturn alongside this is cheap.
+- **With camera and mic on** - this is a video call, and TURN relays every
+  frame. Budget roughly 0.5-1 Mbit/s per direction per relayed match, i.e. up
+  to ~2 Mbit/s of relay traffic for one match with both cameras on.
+
+This only applies to matches that *need* the relay (the 10-20% of networks that
+refuse direct P2P); everyone else connects peer-to-peer and never touches it.
+Still, if you enable TURN on a metered connection, that difference is the one
+to plan for. Players who don't press "Start camera & mic" cost you nothing
+extra - no media is ever sent until they do.
 
 ## Continuous integration (GitHub Actions)
 
@@ -405,6 +440,13 @@ with no date can't be told apart from a stale one.*
 
 Done since the last review:
 
+- ✅ **Camera and mic in online matches** (30 July 2026) - opt-in webcam and
+  microphone on the existing peer connection, so you can watch your opponent
+  throw. The audio/video m-lines are negotiated up front and left empty, then
+  filled in with `replaceTrack()`, which means switching a camera on needs no
+  renegotiation and two players can do it simultaneously without glare. Note
+  this changes the TURN bandwidth picture - see [Adding a TURN
+  relay](#adding-a-turn-relay).
 - ✅ **Cricket and medley matches online** (30 July 2026) - the peer protocol now
   sends the host's chosen format on connect and carries per-dart segments, so
   marks and leg state stay in sync without a separate message type per game.

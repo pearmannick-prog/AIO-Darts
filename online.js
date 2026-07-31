@@ -83,6 +83,16 @@ const el = {
   connectionDot: document.getElementById("online-connection-dot"),
   connectionLabel: document.getElementById("online-connection-label"),
 
+  videoStrip: document.getElementById("online-video-strip"),
+  localVideo: document.getElementById("online-local-video"),
+  remoteVideo: document.getElementById("online-remote-video"),
+  localPlaceholder: document.getElementById("online-local-placeholder"),
+  remotePlaceholder: document.getElementById("online-remote-placeholder"),
+  avStartBtn: document.getElementById("online-av-start-btn"),
+  avMicBtn: document.getElementById("online-av-mic-btn"),
+  avCamBtn: document.getElementById("online-av-cam-btn"),
+  avStopBtn: document.getElementById("online-av-stop-btn"),
+
   manualSection: document.getElementById("online-manual-section"),
   dartboardEl: document.querySelector("#online-mode .dartboard"),
   dartboardMarker: document.getElementById("online-dartboard-marker"),
@@ -254,6 +264,7 @@ el.createBtn.addEventListener("click", async () => {
   rememberSignalingOverride();
   peerLink = new PeerLink(currentSignalingUrl(), iceServers);
   wirePeerLink();
+  resetAv();
 
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
@@ -276,6 +287,7 @@ el.joinBtn.addEventListener("click", async () => {
   rememberSignalingOverride();
   peerLink = new PeerLink(currentSignalingUrl(), iceServers);
   wirePeerLink();
+  resetAv();
 
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
@@ -293,6 +305,7 @@ el.joinBtn.addEventListener("click", async () => {
 el.cancelBtn.addEventListener("click", () => {
   peerLink?.close();
   peerLink = null;
+  resetAv();
   el.waitingPanel.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
 });
@@ -304,6 +317,25 @@ async function ensurePeerLinkLoaded() {
 }
 
 function wirePeerLink() {
+  peerLink.onRemoteStream = (stream) => {
+    // Re-fired per arriving track (audio and video come separately), and it's
+    // the same MediaStream object every time, so re-assigning is harmless.
+    // Fires immediately on connect for the pre-negotiated m-lines, long before
+    // anyone switches a camera on - so this only wires the element up, and
+    // deliberately does not touch the "is the opponent sending?" state.
+    el.remoteVideo.srcObject = stream;
+    renderAv();
+  };
+
+  peerLink.onRemoteMediaChange = ({ audio, video }) => {
+    av.remoteAudio = audio;
+    av.remoteVideo = video;
+    // An opponent switching their camera back on is a fresh chance to get
+    // playback going, in case it was blocked when the stream first arrived.
+    if (video && el.remoteVideo.paused) playRemote();
+    renderAv();
+  };
+
   peerLink.onStatusChange = (status) => {
     el.statusLabel.textContent = statusText(status);
 
@@ -489,6 +521,168 @@ el.connectBtn.addEventListener("click", async () => {
     alert(`Couldn't connect: ${err.message}`);
   }
 });
+
+// ---------- Camera & mic ----------
+// Entirely optional and entirely separate from the game state: nothing here
+// touches scoring, and a match plays exactly as before if nobody ever presses
+// Start. The transport work lives in webrtc.js (see the long note at the top
+// of that file about why turning a camera on needs no renegotiation).
+const av = {
+  on: false, // this player has granted access and is sending
+  mic: true, // ...and hasn't muted it
+  cam: true, // ...and hasn't switched the camera off
+  // What the PEER says it is sending, from their media_state message.
+  //
+  // Deliberately not derived from the "track" event: because the audio and
+  // video m-lines are negotiated up front (see webrtc.js), `ontrack` fires for
+  // both of them the instant the connection opens, on every single match,
+  // carrying tracks that are live-but-muted and will stay that way forever if
+  // nobody touches a camera. Using that as the signal put an empty pair of
+  // black rectangles above the scoreboard for players who never opted in.
+  // The peer's own announcement is the only honest source for this.
+  remoteAudio: false,
+  remoteVideo: false,
+  remoteBlocked: false, // the browser refused to autoplay it (see playRemote)
+};
+
+// The opponent's tile carries AUDIO, and browsers refuse to autoplay audible
+// media without user activation - so `autoplay` on the element is not enough
+// on its own. When that happens the element sits there paused and perfectly
+// black while frames decode behind it, which looks exactly like a broken
+// connection and is miserable to diagnose.
+//
+// Note this is asymmetric on purpose: the LOCAL tile is muted (it has to be,
+// or it's a feedback loop), and muted video is always allowed to autoplay, so
+// only the remote side needs any of this.
+//
+// Usually the click that joined the challenge is activation enough. When it
+// isn't, the tile turns into a tap-to-play button rather than failing silently.
+function playRemote() {
+  const p = el.remoteVideo.play();
+  if (!p) return;
+  p.then(() => {
+    av.remoteBlocked = false;
+    renderAv();
+  }).catch(() => {
+    av.remoteBlocked = true;
+    renderAv();
+  });
+}
+
+el.remotePlaceholder.addEventListener("click", () => {
+  if (av.remoteBlocked && av.remoteVideo) playRemote();
+});
+
+el.avStartBtn.addEventListener("click", async () => {
+  if (!peerLink) return;
+  el.avStartBtn.disabled = true;
+  try {
+    const stream = await peerLink.startMedia({ audio: true, video: true });
+    el.localVideo.srcObject = stream;
+    av.on = true;
+    av.mic = true;
+    av.cam = true;
+  } catch (err) {
+    console.error(err);
+    // Separated because these need completely different fixes, and "couldn't
+    // start camera" alone sends people hunting through browser settings when
+    // the real problem is that the page isn't on HTTPS - the same trap as the
+    // Bluetooth button above.
+    if (!window.isSecureContext) {
+      alert(
+        "Camera and mic need a secure context - they're blocked because this page is loaded over plain HTTP. " +
+        "This works on http://localhost, but NOT on a plain http://<ip-address> address, even on your own network. " +
+        "Put the site behind HTTPS to fix this - see the README."
+      );
+    } else if (err.name === "NotAllowedError") {
+      alert("Camera/mic permission was denied. Allow it in the browser's address-bar icon and try again.");
+    } else if (err.name === "NotFoundError") {
+      alert("No camera or microphone was found on this device.");
+    } else {
+      alert(`Couldn't start camera and mic: ${err.message}`);
+    }
+  } finally {
+    el.avStartBtn.disabled = false;
+    renderAv();
+  }
+});
+
+el.avMicBtn.addEventListener("click", () => {
+  av.mic = !av.mic;
+  peerLink?.setMediaEnabled({ audio: av.mic });
+  renderAv();
+});
+
+el.avCamBtn.addEventListener("click", () => {
+  av.cam = !av.cam;
+  peerLink?.setMediaEnabled({ video: av.cam });
+  renderAv();
+});
+
+el.avStopBtn.addEventListener("click", () => {
+  peerLink?.stopMedia();
+  el.localVideo.srcObject = null;
+  av.on = false;
+  renderAv();
+});
+
+// Wipes the A/V half of the UI back to its opening state. Called when a
+// challenge ends, so the next one doesn't start out showing a dead tile and a
+// Mute button for a stream that no longer exists.
+function resetAv() {
+  av.on = false;
+  av.mic = true;
+  av.cam = true;
+  av.remoteAudio = false;
+  av.remoteVideo = false;
+  av.remoteBlocked = false;
+  el.localVideo.srcObject = null;
+  el.remoteVideo.srcObject = null;
+  renderAv();
+}
+
+function renderAv() {
+  // The strip earns its space only once there's something in it - an empty
+  // pair of black rectangles above the scoreboard would just be clutter for
+  // the players who never use this.
+  const remoteActive = av.remoteAudio || av.remoteVideo;
+  el.videoStrip.classList.toggle("hidden", !(av.on || remoteActive));
+
+  el.avStartBtn.classList.toggle("hidden", av.on);
+  el.avMicBtn.classList.toggle("hidden", !av.on);
+  el.avCamBtn.classList.toggle("hidden", !av.on);
+  el.avStopBtn.classList.toggle("hidden", !av.on);
+
+  el.avMicBtn.textContent = av.mic ? "🎤 Mute" : "🔇 Unmute";
+  el.avMicBtn.classList.toggle("off", !av.mic);
+  el.avCamBtn.textContent = av.cam ? "📹 Camera off" : "📹 Camera on";
+  el.avCamBtn.classList.toggle("off", !av.cam);
+
+  el.localPlaceholder.classList.toggle("hidden", av.on && av.cam);
+  el.localPlaceholder.textContent = av.on ? "Camera off" : "Camera not started";
+
+  // "Camera off", "hasn't started a camera" and "your browser blocked it" are
+  // three different states and worth distinguishing - one means the opponent
+  // chose privacy, one means they may not have noticed the feature exists, and
+  // one is fixable right here by tapping.
+  // Order matters: "they aren't sending video" outranks "your browser blocked
+  // playback", because when both are true, tapping would play nothing and the
+  // prompt would be a lie.
+  const blocked = av.remoteVideo && av.remoteBlocked;
+  const remoteVisible = av.remoteVideo && !av.remoteBlocked;
+  el.remotePlaceholder.classList.toggle("hidden", remoteVisible);
+  el.remotePlaceholder.classList.toggle("tappable", blocked);
+  if (blocked) {
+    el.remotePlaceholder.textContent = "▶ Tap to play opponent's video";
+  } else if (remoteActive) {
+    // Sending something (their mic) but no picture - a choice, not an absence.
+    el.remotePlaceholder.textContent = "Opponent's camera is off";
+  } else {
+    el.remotePlaceholder.textContent = "Waiting for opponent's camera…";
+  }
+}
+
+renderAv();
 
 function onLocalHit(segment) {
   if (!online.active || online.gameOver) return;
