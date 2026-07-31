@@ -76,8 +76,11 @@ async function checkDataDir() {
 //                   P2P (symmetric NAT, strict corporate firewalls - roughly
 //                   10-20% of connections). TURN relays the traffic instead,
 //                   so it always works but costs bandwidth on whoever hosts
-//                   it. For darts that bandwidth is trivial (a few bytes per
-//                   throw), so self-hosting coturn alongside this is cheap.
+//                   it. For scoring alone that's trivial (a few bytes per
+//                   throw) - but players can also switch on camera and mic,
+//                   and a relayed match with video is a video call's worth of
+//                   traffic (~0.5-1 Mbit/s each way). See the README before
+//                   enabling TURN on a metered connection.
 //                   Needs TURN_USERNAME and TURN_CREDENTIAL too.
 function buildConfig() {
   const stunUrls = (process.env.STUN_URLS || "stun:stun.l.google.com:19302")

@@ -93,6 +93,18 @@ it means changing all of them.
 `match_config` (host sends legs; guest adopts them, otherwise the two sides could
 play different games) → `dart`, `quick_total`, `end_turn`, `next_leg`. Host is
 player index 0, guest 1, on both sides. x01, cricket, and medleys all work online.
+`media_state` also rides the channel but is intercepted in `webrtc.js` and never
+reaches `online.js`'s `onMessage` — game code doesn't know about it.
+
+**Camera/mic uses pre-negotiated, initially empty transceivers.** `webrtc.js`
+calls `addTransceiver("audio"/"video", {direction:"sendrecv"})` before the one
+and only offer (host) and flips the auto-created ones to `sendrecv` before the
+answer (guest); `startMedia()` later fills them via `replaceTrack()`, which by
+spec needs no renegotiation. This is why there is no perfect-negotiation
+/glare/rollback code anywhere — don't "fix" it by adding tracks on demand, which
+would reintroduce all of it, since either player can start a camera at any time.
+The accepted cost is a/v m-lines in every match's SDP even when unused.
+`close()` must keep stopping local tracks or the webcam light stays on.
 
 `sw.js` is **network-first on purpose**. Cache-first would serve stale JS after a
 deploy. Adding a new front-end file means adding it to `PRECACHE`.
