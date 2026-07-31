@@ -288,7 +288,55 @@ el.nextLegBtn?.addEventListener("click", () => {
 const CAMERA_PREF_KEY = "granboard-camera-id";
 const MIC_PREF_KEY = "granboard-mic-id";
 
-const check = { stream: null, audioCtx: null, analyser: null, raf: null };
+const check = { stream: null, audioCtx: null, analyser: null, raf: null, muteTimer: null, recovering: false };
+
+// Which start-the-check attempt is currently the live one. getUserMedia takes
+// long enough that a player can press Create Challenge, collapse the panel, or
+// change camera while one is still in flight - and the stream then arrives for
+// a check that no longer exists. Assigning it to check.stream at that point
+// orphans a running camera that nothing will ever stop, and a leaked handle is
+// what makes one specific device report "busy" from then on while every other
+// camera keeps working.
+let checkRun = 0;
+
+// The preview has exactly the same problem the in-match tile does: on a phone
+// the camera track can stay "live" while the source quietly stops producing
+// frames, which looks like a stutter and then a black box. See the long note
+// on #watchLocalVideo in webrtc.js - this is the same watchdog for the stream
+// the check owns, which PeerLink never sees.
+function watchCheckVideo(track) {
+  if (!track) return;
+  clearTimeout(check.muteTimer);
+  track.addEventListener("ended", () => recoverCheckCamera(), { once: true });
+  track.addEventListener("mute", () => {
+    clearTimeout(check.muteTimer);
+    check.muteTimer = setTimeout(recoverCheckCamera, 1500);
+  });
+  track.addEventListener("unmute", () => clearTimeout(check.muteTimer));
+}
+
+function checkVideoStalled() {
+  const track = check.stream?.getVideoTracks()[0];
+  if (!track) return false;
+  return track.readyState === "ended" || track.muted;
+}
+
+// Reopens whatever camera the preview was already using. Restarting the whole
+// check is the right move here rather than a surgical track swap: the preview
+// owns its stream outright, so there is nothing to keep in sync.
+async function recoverCheckCamera() {
+  if (check.recovering || !check.stream) return;
+  // Same rule as the in-match watchdog: never reach for a camera while the
+  // page is hidden, because that's when the OS has it.
+  if (document.visibilityState !== "visible") return;
+  const deviceId = check.stream.getVideoTracks()[0]?.getSettings().deviceId || savedCameraId();
+  check.recovering = true;
+  try {
+    await startDeviceCheck(deviceId, savedMicId());
+  } finally {
+    check.recovering = false;
+  }
+}
 
 function savedCameraId() {
   return localStorage.getItem(CAMERA_PREF_KEY) || null;
@@ -386,19 +434,31 @@ async function startDeviceCheck(cameraId = savedCameraId(), micId = savedMicId()
   // Release whatever the check already holds first - same reason switchCamera
   // does: Android won't hand out the second camera while the first is open.
   stopDeviceCheck({ keepUi: true });
+  const myRun = ++checkRun;
   el.checkError.classList.add("hidden");
   el.checkBtn.disabled = true;
 
   try {
-    check.stream = await getCheckStream(cameraId, micId);
+    const stream = await getCheckStream(cameraId, micId);
+
+    // Something superseded this attempt while the camera was opening. Stop
+    // what we just acquired rather than leaving it running unreferenced.
+    if (myRun !== checkRun) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+
+    check.stream = stream;
     el.checkVideo.srcObject = check.stream;
     // The preview is muted, so it never needs the tap-to-play recovery the
     // in-match opponent tile does.
     el.checkVideo.play().catch(() => {});
     // Same mirroring rule as the in-match tile - a rear camera lined up on a
     // board here must not flip when the match starts.
-    const facingMode = check.stream.getVideoTracks()[0]?.getSettings().facingMode || null;
+    const videoTrack = check.stream.getVideoTracks()[0];
+    const facingMode = videoTrack?.getSettings().facingMode || null;
     el.checkPreview.classList.toggle("unmirrored", !shouldMirror(facingMode));
+    watchCheckVideo(videoTrack);
     await populateDeviceLists();
     startMicMeter();
     renderCheck(true);
@@ -490,8 +550,13 @@ function startMicMeter() {
 }
 
 function stopDeviceCheck({ keepUi = false } = {}) {
+  // Invalidates any start that's still waiting on getUserMedia, so its stream
+  // gets stopped on arrival instead of quietly holding the camera open.
+  checkRun++;
   if (check.raf) cancelAnimationFrame(check.raf);
   check.raf = null;
+  clearTimeout(check.muteTimer);
+  check.muteTimer = null;
   check.audioCtx?.close().catch(() => {});
   check.audioCtx = null;
   check.analyser = null;
@@ -677,6 +742,11 @@ function wirePeerLink() {
     // anyone switches a camera on - so this only wires the element up, and
     // deliberately does not touch the "is the opponent sending?" state.
     el.remoteVideo.srcObject = stream;
+    renderAv();
+  };
+
+  peerLink.onCameraRecovering = (recovering) => {
+    av.recovering = recovering;
     renderAv();
   };
 
@@ -903,6 +973,7 @@ const av = {
   remoteBlocked: false, // the browser refused to autoplay it (see playRemote)
   cameras: [], // videoinput devices, only trustworthy after permission
   facingMode: null, // what the active camera says it is: "user"/"environment"/null
+  recovering: false, // the camera died and is being reopened
 };
 
 // Re-reads the camera list and the active camera. Called after anything that
@@ -1056,6 +1127,17 @@ navigator.mediaDevices?.addEventListener?.("devicechange", () => {
   if (av.on) refreshCameras();
 });
 
+// Coming back from the background is the single most likely moment for a
+// camera to have quietly died - on a phone the OS reclaims it, and often
+// doesn't hand it back. No event necessarily fires to say so, because the
+// page wasn't running to hear one, so the state has to be re-checked here
+// rather than waited for.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  peerLink?.recoverCameraIfStalled();
+  if (checkVideoStalled()) recoverCheckCamera();
+});
+
 function renderAv() {
   // The strip earns its space only once there's something in it - an empty
   // pair of black rectangles above the scoreboard would just be clutter for
@@ -1078,8 +1160,11 @@ function renderAv() {
   el.avCamBtn.textContent = av.cam ? "📹 Camera off" : "📹 Camera on";
   el.avCamBtn.classList.toggle("off", !av.cam);
 
-  el.localPlaceholder.classList.toggle("hidden", av.on && av.cam);
-  el.localPlaceholder.textContent = av.on ? "Camera off" : "Camera not started";
+  // Recovering outranks everything: the tile is genuinely blank for a moment
+  // and saying why beats letting it look like the freeze that prompted it.
+  el.localPlaceholder.classList.toggle("hidden", av.on && av.cam && !av.recovering);
+  if (av.recovering) el.localPlaceholder.textContent = "Reconnecting camera…";
+  else el.localPlaceholder.textContent = av.on ? "Camera off" : "Camera not started";
 
   // "Camera off", "hasn't started a camera" and "your browser blocked it" are
   // three different states and worth distinguishing - one means the opponent

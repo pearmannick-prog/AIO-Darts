@@ -85,6 +85,10 @@ export class PeerLink {
   // The dormant m-lines described above, filled in by startMedia().
   #transceivers = { audio: null, video: null };
   #localStream = null;
+  // Camera-health watchdog state - see #watchLocalVideo.
+  #muteTimer = null;
+  #recovering = false;
+  #switching = false;
   // Built up as tracks arrive. Audio and video land in separate "track"
   // events, so this is created once and added to, rather than replaced -
   // otherwise the <video> element would be re-pointed halfway through and
@@ -95,6 +99,7 @@ export class PeerLink {
   onStatusChange = null; // (status: string) => void
   onRemoteStream = null; // (stream: MediaStream) => void
   onRemoteMediaChange = null; // ({ audio: bool, video: bool }) => void
+  onCameraRecovering = null; // (recovering: bool) => void
 
   constructor(signalingUrl, iceServers = DEFAULT_ICE_SERVERS) {
     this.signalingUrl = signalingUrl;
@@ -172,6 +177,7 @@ export class PeerLink {
       this.#localStream = stream;
     }
 
+    this.#watchLocalVideo(this.#localStream.getVideoTracks()[0]);
     this.#attachLocalTracks();
     return this.#localStream;
   }
@@ -217,6 +223,13 @@ export class PeerLink {
   async switchCamera({ deviceId, facingMode } = {}) {
     if (!this.#localStream) throw new Error("The camera isn't on yet.");
 
+    // Two camera opens racing each other is exactly the contention that
+    // produces NotReadableError, and there are now two callers that can start
+    // one: the player pressing Switch camera, and the stall watchdog firing on
+    // its own. Without this guard they fight over the same device.
+    if (this.#switching) return this.activeCamera;
+    this.#switching = true;
+
     const old = this.#localStream.getVideoTracks()[0];
     const wasEnabled = old ? old.enabled : true;
     const previousId = old ? old.getSettings().deviceId : null;
@@ -229,7 +242,10 @@ export class PeerLink {
     try {
       await this.#addVideoTrack({ deviceId, facingMode }, wasEnabled);
     } catch (err) {
-      if (previousId) {
+      // Only worth restoring if there's still something to restore into -
+      // #localStream going away mid-flight means the match is over, and
+      // reopening a camera for it would leak the handle all over again.
+      if (previousId && this.#localStream) {
         // Best effort. If even this fails there's nothing sensible left to do,
         // and the original error is the one worth reporting either way.
         try {
@@ -237,6 +253,8 @@ export class PeerLink {
         } catch { /* fall through to the rethrow */ }
       }
       throw err;
+    } finally {
+      this.#switching = false;
     }
 
     return this.activeCamera;
@@ -245,17 +263,126 @@ export class PeerLink {
   async #addVideoTrack(spec, enabled = true) {
     const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(spec) });
     const track = stream.getVideoTracks()[0];
+
+    // getUserMedia is slow enough that the world changes underneath it. The
+    // match can end, the player can press Stop, or the phone can lock - any of
+    // which clears #localStream while this is still waiting on the camera.
+    //
+    // Adding to it then threw "Cannot read properties of null (reading
+    // 'addTrack')", and far worse, left this freshly opened camera running
+    // with nothing holding a reference that could ever stop it. That leaked
+    // handle is why ONE camera then reports "busy" forever while every other
+    // camera on the device still works: the leak is per-device, and each
+    // failed retry leaks another handle to the same one.
+    if (!this.#localStream) {
+      track.stop();
+      return null;
+    }
+
     // Switching cameras must not silently un-mute a camera the player had
     // deliberately switched off.
     track.enabled = enabled;
     this.#localStream.addTrack(track);
+    this.#watchLocalVideo(track);
     this.#attachLocalTracks();
     return track;
+  }
+
+  // Watches the outgoing camera track for the failure mode that matters on
+  // phones: the track stays readyState === "live", so nothing looks wrong,
+  // but the underlying source stops producing frames. On screen that reads as
+  // a stutter and then a permanently black tile.
+  //
+  // It happens when Android reclaims the camera while the app is backgrounded
+  // and doesn't hand it back on return, and when a camera is reopened before
+  // the previous handle has finished being torn down - which is exactly the
+  // path from the pre-match device check into a match.
+  //
+  // The manual workaround players find is to switch cameras until they land
+  // back on the right one, because that acquires a fresh track. This just does
+  // that automatically.
+  #watchLocalVideo(track) {
+    if (!track) return;
+    clearTimeout(this.#muteTimer);
+
+    // A track that ENDS is unambiguous - the source is gone.
+    track.addEventListener("ended", () => this.#recoverCamera(), { once: true });
+
+    // A muted track is more delicate. Brief mutes are normal and self-heal
+    // (the source blips as the OS juggles it), so tearing the camera down on
+    // every one would cause more flicker than it fixes. Only a mute that
+    // outlasts the grace period is treated as a dead camera.
+    track.addEventListener("mute", () => {
+      clearTimeout(this.#muteTimer);
+      this.#muteTimer = setTimeout(() => this.#recoverCamera(), 1500);
+    });
+    track.addEventListener("unmute", () => clearTimeout(this.#muteTimer));
+  }
+
+  // True when the camera is nominally on but demonstrably not producing.
+  #videoStalled() {
+    const track = this.#localStream?.getVideoTracks()[0];
+    if (!track) return false;
+    return track.readyState === "ended" || track.muted;
+  }
+
+  // Reopens the camera currently in use. Goes through switchCamera so it takes
+  // the same stop-then-open path (required on Android) and the same
+  // replaceTrack hand-off, meaning the peer connection is never renegotiated
+  // and the opponent sees nothing but a brief freeze.
+  async #recoverCamera() {
+    if (this.#recovering || this.#switching || !this.#localStream) return;
+
+    // Never reach for a camera while the page is hidden. On a phone that is
+    // precisely when the OS has taken it - so the request either fails with
+    // NotReadableError or wins a fight it has no business starting, and either
+    // way it burns the one attempt at exactly the wrong moment. The
+    // visibilitychange handler retries on the way back in.
+    if (document.visibilityState !== "visible") return;
+
+    const track = this.#localStream.getVideoTracks()[0];
+    if (!track) return;
+
+    const deviceId = track.getSettings().deviceId || undefined;
+    this.#recovering = true;
+    this.onCameraRecovering?.(true);
+    try {
+      await this.switchCamera({ deviceId });
+    } catch (err) {
+      // A camera released only moments ago is often still busy for a beat.
+      // One unhurried retry turns most of those into a success instead of a
+      // dead tile the player has to fix by hand.
+      if (err.name === "NotReadableError" && this.#localStream) {
+        await new Promise((r) => setTimeout(r, 800));
+        try {
+          await this.switchCamera({ deviceId });
+        } catch (retryErr) {
+          console.warn("Couldn't recover the camera", retryErr);
+        }
+      } else {
+        // Nothing useful left to do automatically - the manual Switch camera
+        // button is still there, and the tile still reads as black.
+        console.warn("Couldn't recover the camera", err);
+      }
+    } finally {
+      this.#recovering = false;
+      this.onCameraRecovering?.(false);
+    }
+  }
+
+  // Called when the page comes back to the foreground. Returning from the
+  // background is where a camera most often comes back dead, and no event
+  // necessarily fires to say so - the track can simply have been muted while
+  // the page wasn't running to hear about it.
+  async recoverCameraIfStalled() {
+    if (document.visibilityState !== "visible") return;
+    if (this.#videoStalled()) await this.#recoverCamera();
   }
 
   // Turns everything off and releases the devices, so the browser's
   // camera-in-use indicator actually goes out.
   stopMedia() {
+    clearTimeout(this.#muteTimer);
     for (const kind of ["audio", "video"]) {
       this.#transceivers[kind]?.sender?.replaceTrack(null).catch(() => {});
     }
@@ -333,6 +460,7 @@ export class PeerLink {
   close() {
     // Before anything else: closing the peer connection does NOT release the
     // camera. Skip this and the webcam light stays on after the match ends.
+    clearTimeout(this.#muteTimer);
     this.#localStream?.getTracks().forEach((track) => track.stop());
     this.#localStream = null;
     this.#remoteStream = null;
