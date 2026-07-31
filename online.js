@@ -17,9 +17,10 @@ import {
 } from "./cricket.js";
 import {
   createMatch, currentLegConfig, recordLegWin, advanceLeg,
-  startingPlayerForLeg, legProgressText, normalizeLeg, MATCH_PRESETS, matchScoreText,
+  startingPlayerForLeg, legProgressText, normalizeLeg, matchScoreText,
 } from "./medley.js";
 import { renderCricketBoard, wireCricketBoard } from "./cricketboard.js";
+import { createMedleyBuilder } from "./medleybuilder.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
 
@@ -86,6 +87,8 @@ const el = {
   dartboardEl: document.querySelector("#online-mode .dartboard"),
   dartboardMarker: document.getElementById("online-dartboard-marker"),
   formatSelect: document.getElementById("online-format"),
+  medleyLegs: document.getElementById("online-medley-legs"),
+  addLegBtn: document.getElementById("online-add-leg-btn"),
   cricketBoard: document.getElementById("online-cricket-board"),
   matchBar: document.getElementById("online-match-bar"),
   nextLegBtn: document.getElementById("online-next-leg-btn"),
@@ -215,11 +218,17 @@ renderDartboard(el.dartboardEl, (segmentId) => {
   onLocalHit(createSegment(segmentId));
 });
 
-// The host picks the format; the guest is told it over the wire, so this is
-// only ever read on the host side.
+// The same Format control as local play - presets plus a fully editable leg
+// list, so an online match can be any custom medley too. Only ever read on
+// the host side; the guest is told the result over the wire.
+const onlineMedleyBuilder = createMedleyBuilder({
+  legs: el.medleyLegs,
+  addBtn: el.addLegBtn,
+  preset: el.formatSelect,
+});
+
 function selectedOnlineLegs() {
-  const key = el.formatSelect?.value || "single-501";
-  return (MATCH_PRESETS[key] || MATCH_PRESETS["single-501"]).map(normalizeLeg);
+  return onlineMedleyBuilder.getLegs().map(normalizeLeg);
 }
 
 // Same cricket board component as local play, so the two modes can't drift.

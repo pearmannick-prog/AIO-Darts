@@ -1,12 +1,13 @@
 // game.js - 501 scoring, board visualization, and all UI wiring.
 
 import { Granboard, SegmentType, createSegment, SegmentID } from "./granboard.js";
-import { resolveThrow, rulesFor, X01_SCORES, X01_RULES, segmentOpens } from "./scoring.js";
+import { resolveThrow, rulesFor } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
 import {
   renderCricketBoard as renderCricketBoard_, wireCricketBoard,
 } from "./cricketboard.js";
+import { createMedleyBuilder } from "./medleybuilder.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
   startingPlayerForLeg, matchScoreText, legProgressText, gameLabel, normalizeLeg,
@@ -243,109 +244,15 @@ function restore(snap) {
 const x01 = (score, rules = "double") => ({ game: "x01", score, rules });
 const CRICKET_LEG = { game: "cricket" };
 
-const MEDLEY_PRESETS = {
-  "single-301": [x01(301)],
-  "single-501": [x01(501)],
-  "single-701": [x01(701)],
-  "single-cricket": [CRICKET_LEG],
-  bo3: [x01(501), CRICKET_LEG, x01(501)],
-  bo5: [x01(501), CRICKET_LEG, x01(501), CRICKET_LEG, x01(501)],
-};
-
-function renderMedleyBuilder(legs) {
-  if (!el.medleyLegs) return;
-  el.medleyLegs.innerHTML = legs.map(normalizeLeg).map((leg, i) => {
-    const isX01 = leg.game === "x01";
-    // The score and rules selects only exist for x01 legs - cricket has
-    // neither a starting score nor an in/out rule.
-    const scoreOptions = X01_SCORES
-      .map((n) => `<option value="${n}"${isX01 && leg.score === n ? " selected" : ""}>${n}</option>`)
-      .join("");
-    const rulesOptions = Object.entries(X01_RULES)
-      .map(([key, r]) => `<option value="${key}"${isX01 && leg.rules === key ? " selected" : ""}>${r.label}</option>`)
-      .join("");
-
-    return `
-    <div class="leg-row">
-      <span class="leg-label">Leg ${i + 1}</span>
-      <select class="leg-game">
-        <option value="x01"${isX01 ? " selected" : ""}>x01</option>
-        <option value="cricket"${!isX01 ? " selected" : ""}>Cricket</option>
-      </select>
-      <select class="leg-score${isX01 ? "" : " hidden"}">${scoreOptions}</select>
-      <select class="leg-rules${isX01 ? "" : " hidden"}">${rulesOptions}</select>
-      <button type="button" class="leg-remove" title="Remove this leg">&times;</button>
-    </div>`;
-  }).join("");
-  el.medleyLegs.classList.toggle("single", legs.length <= 1);
-}
-
-// Changing a leg's game by hand means the preset no longer describes the
-// match, so the dropdown falls back to "Custom" rather than lying.
-function sameLeg(a, b) {
-  const x = normalizeLeg(a), y = normalizeLeg(b);
-  return x.game === y.game && x.score === y.score && x.rules === y.rules;
-}
-
-function markCustomIfNeeded() {
-  const legs = readMedleyLegs();
-  const match = Object.entries(MEDLEY_PRESETS)
-    .find(([, preset]) => preset.length === legs.length && preset.every((g, i) => sameLeg(g, legs[i])));
-  if (el.medleyPreset) el.medleyPreset.value = match ? match[0] : "custom";
-}
-
-el.medleyPreset?.addEventListener("change", () => {
-  const preset = MEDLEY_PRESETS[el.medleyPreset.value];
-  if (preset) renderMedleyBuilder(preset);
+// The Format control - shared with the online panel (see medleybuilder.js).
+const medleyBuilder = createMedleyBuilder({
+  legs: el.medleyLegs,
+  addBtn: el.addLegBtn,
+  preset: el.medleyPreset,
 });
 
-el.addLegBtn?.addEventListener("click", () => {
-  const legs = readMedleyLegs();
-  // Repeat the pattern rather than always appending 501 - in an alternating
-  // medley the next leg is almost always the other game.
-  const last = normalizeLeg(legs[legs.length - 1]);
-  const next = legs.length >= 2
-    ? legs[legs.length - 2]
-    : (last.game === "x01" ? { game: "cricket" } : { game: "x01", score: 501, rules: "double" });
-  renderMedleyBuilder([...legs, next]);
-  markCustomIfNeeded();
-});
-
-el.medleyLegs?.addEventListener("click", (event) => {
-  if (!event.target.classList.contains("leg-remove")) return;
-  const legs = readMedleyLegs();
-  if (legs.length <= 1) return;
-  const index = [...el.medleyLegs.querySelectorAll(".leg-row")].indexOf(event.target.closest(".leg-row"));
-  legs.splice(index, 1);
-  renderMedleyBuilder(legs);
-  markCustomIfNeeded();
-});
-
-el.medleyLegs?.addEventListener("change", (event) => {
-  // Switching between x01 and cricket changes which controls that row needs,
-  // so the row is rebuilt rather than just re-checked.
-  if (event.target.classList.contains("leg-game")) {
-    renderMedleyBuilder(readMedleyLegs());
-  }
-  markCustomIfNeeded();
-});
-
-renderMedleyBuilder([{ game: "x01", score: 501, rules: "double" }]);
-
-// Reads the medley builder into leg objects. One row is a normal single
-// game - there's no separate "single vs medley" mode.
 function readMedleyLegs() {
-  const rows = el.medleyLegs?.querySelectorAll(".leg-row") || [];
-  const legs = [...rows].map((row) => {
-    const game = row.querySelector(".leg-game")?.value;
-    if (game === "cricket") return { game: "cricket" };
-    return {
-      game: "x01",
-      score: Number(row.querySelector(".leg-score")?.value) || 501,
-      rules: row.querySelector(".leg-rules")?.value || "double",
-    };
-  });
-  return legs.length ? legs : [{ game: "x01", score: 501, rules: "double" }];
+  return medleyBuilder.getLegs();
 }
 
 // Sets up a fresh leg: new scores, but names and the match tally carry over.
