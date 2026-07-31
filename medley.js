@@ -48,7 +48,11 @@ export function normalizeLeg(leg) {
     return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double", bull: "split" };
   }
   if (!leg || typeof leg !== "object") return { game: "x01", score: 501, rules: "double", bull: "split" };
-  if (leg.game === "cricket") return { game: "cricket", bull: leg.bull === "full" ? "full" : "split" };
+  // Cricket is always split-bull: outer is one mark, inner is two. Full bull
+  // isn't a Cricket variant, so the leg pins itself to split rather than
+  // inheriting the match setting. That makes applyBullMode a no-op here
+  // without either game mode needing a special case.
+  if (leg.game === "cricket") return { game: "cricket", bull: "split" };
   const bull = leg.bull === "full" ? "full" : "split";
   if (leg.game === "countup") {
     return {
@@ -69,7 +73,7 @@ export function gameLabel(leg) {
   const l = normalizeLeg(leg);
   // Only mentioned when it isn't the default, so ordinary legs read cleanly.
   const bull = l.bull === "full" ? " · full bull" : "";
-  if (l.game === "cricket") return `Cricket${bull}`;
+  if (l.game === "cricket") return "Cricket"; // always split bull
   if (l.game === "countup") return `Count Up · ${l.rounds} rounds${bull}`;
   // "501 · Double out" - the variant matters as much as the number, so it's
   // always shown rather than only when it's unusual.
