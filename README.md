@@ -20,7 +20,9 @@ stats land, but that's a ways off.
 The Bluetooth service UUID and dart-hit decoding table in `granboard.js` are
 adapted from the open-source project
 [sobassy/gran-app](https://github.com/sobassy/gran-app) (MIT License). Credit
-to that project for reverse-engineering the protocol in the first place.
+to that project for reverse-engineering the protocol in the first place - that
+one piece keeps its original MIT terms even though the rest of this repo is
+licensed differently now (see [License](#license) below).
 
 ## Requirements
 
@@ -496,6 +498,35 @@ build bakes in the exact git commit it came from (see the root `Dockerfile`
 and `version.js`), so it always matches what's actually deployed with no
 manual version bumping. Running locally without Docker shows "local dev build"
 instead, since there's no build step to bake a commit into.
+
+## License
+
+This project is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE), with one exception: the
+Bluetooth UUID and segment-decoding table in `granboard.js`, adapted from
+[sobassy/gran-app](https://github.com/sobassy/gran-app), stays under its
+original MIT terms (both are in the [`LICENSE`](LICENSE) file).
+
+In plain terms:
+
+- **Free** to view, clone, self-host, modify, and use for personal or
+  noncommercial purposes - exactly what Sam and anyone else already running
+  this is doing, and nothing changes for that.
+- **Not free** to build a commercial product or paid hosted service from this
+  code without a separate agreement. That's the whole reason for picking this
+  license over something like MIT: a planned freemium tier (accounts,
+  persistent stats, cloud sync - see [Roadmap](#roadmap)) needs to actually
+  mean something, and a fully permissive license would let anyone stand up
+  the same paid service from the same code the day it's built.
+- This repo had no license file before now, which technically defaulted to
+  "all rights reserved" rather than the open-by-assumption state most people
+  read a public GitHub repo as. This makes the terms explicit instead of
+  ambiguous - it's a clarification of intent, not a new restriction on
+  anyone already using it.
+
+Full terms are in [`LICENSE`](LICENSE). This isn't legal advice - if you want
+to build something commercial on this code, reach out first rather than
+guessing at where the line is.
 
 ## Roadmap
 
