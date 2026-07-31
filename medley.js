@@ -10,6 +10,7 @@
 // can reuse it later without a second implementation.
 
 import { rulesLabel } from "./scoring.js";
+import { DEFAULT_ROUNDS } from "./countup.js";
 
 // A leg is an object rather than a bare game name, because x01 isn't one game
 // - a leg needs to carry its starting score and its in/out rules too:
@@ -24,6 +25,7 @@ export const MATCH_PRESETS = {
   "single-501": [{ game: "x01", score: 501, rules: "double" }],
   "single-701": [{ game: "x01", score: 701, rules: "double" }],
   "single-cricket": [{ game: "cricket" }],
+  "single-countup": [{ game: "countup", rounds: DEFAULT_ROUNDS }],
   bo3: [
     { game: "x01", score: 501, rules: "double" },
     { game: "cricket" },
@@ -40,25 +42,42 @@ export const MATCH_PRESETS = {
 
 export function normalizeLeg(leg) {
   if (typeof leg === "string") {
-    if (leg === "cricket") return { game: "cricket" };
+    if (leg === "cricket") return { game: "cricket", bull: "split" };
+    if (leg === "countup") return { game: "countup", rounds: DEFAULT_ROUNDS, bull: "split" };
     const score = Number(leg);
-    return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double" };
+    return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double", bull: "split" };
   }
-  if (!leg || typeof leg !== "object") return { game: "x01", score: 501, rules: "double" };
-  if (leg.game === "cricket") return { game: "cricket" };
+  if (!leg || typeof leg !== "object") return { game: "x01", score: 501, rules: "double", bull: "split" };
+  // Cricket is always split-bull: outer is one mark, inner is two. Full bull
+  // isn't a Cricket variant, so the leg pins itself to split rather than
+  // inheriting the match setting. That makes applyBullMode a no-op here
+  // without either game mode needing a special case.
+  if (leg.game === "cricket") return { game: "cricket", bull: "split" };
+  const bull = leg.bull === "full" ? "full" : "split";
+  if (leg.game === "countup") {
+    return {
+      game: "countup",
+      rounds: Number(leg.rounds) > 0 ? Number(leg.rounds) : DEFAULT_ROUNDS,
+      bull,
+    };
+  }
   return {
     game: "x01",
     score: Number(leg.score) > 0 ? Number(leg.score) : 501,
     rules: leg.rules || "double",
+    bull,
   };
 }
 
 export function gameLabel(leg) {
   const l = normalizeLeg(leg);
-  if (l.game === "cricket") return "Cricket";
+  // Only mentioned when it isn't the default, so ordinary legs read cleanly.
+  const bull = l.bull === "full" ? " · full bull" : "";
+  if (l.game === "cricket") return "Cricket"; // always split bull
+  if (l.game === "countup") return `Count Up · ${l.rounds} rounds${bull}`;
   // "501 · Double out" - the variant matters as much as the number, so it's
   // always shown rather than only when it's unusual.
-  return `${l.score} · ${rulesLabel(l.rules)}`;
+  return `${l.score} · ${rulesLabel(l.rules)}${bull}`;
 }
 
 export function createMatch(legGames, playerCount) {
@@ -124,9 +143,14 @@ export function clinchedBy(match) {
 
 // Records a leg win and decides whether the match is finished. Mutates the
 // match object the caller owns - the decision logic above stays pure.
+// winnerIndex may be null: Count Up legs can end level, and awarding the leg
+// to nobody is more honest than picking a winner arbitrarily. The match still
+// progresses - it just isn't credited to either player.
 export function recordLegWin(match, winnerIndex) {
   if (match.over) return match;
-  match.legsWon[winnerIndex] += 1;
+  if (winnerIndex !== null && winnerIndex !== undefined) {
+    match.legsWon[winnerIndex] += 1;
+  }
 
   const clinch = clinchedBy(match);
   if (clinch !== null) {

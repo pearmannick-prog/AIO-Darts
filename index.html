@@ -48,6 +48,23 @@
     font-family: 'Inter', sans-serif;
   }
 
+  /* Deliberately small and quiet - this is a hobby project, not a product
+     with a paywall, so the ask should read as optional rather than a banner
+     asking to be dismissed. */
+  #support-link {
+    text-align: center;
+    margin-top: 8px;
+    font-family: 'Inter', sans-serif;
+  }
+  #support-link a {
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: var(--cream);
+    opacity: 0.45;
+    text-decoration: none;
+  }
+  #support-link a:hover { opacity: 0.8; text-decoration: underline; }
+
   header {
     display: flex;
     align-items: center;
@@ -1018,6 +1035,7 @@
      the remaining width. Both disappear for a cricket leg. */
   .leg-row .leg-score { flex: 0 1 90px; }
   .leg-row .leg-rules { flex: 3 1 170px; }
+  .leg-row .leg-rounds { flex: 1 1 120px; }
   .leg-row .leg-game { flex: 1 1 100px; }
   .leg-row select { min-width: 0; }
   .leg-row select.hidden { display: none; }
@@ -1034,6 +1052,7 @@
     .leg-row .leg-game { flex: 1 1 90px; }
     .leg-row .leg-score { flex: 0 1 78px; }
     .leg-row .leg-rules { flex: 1 1 100%; }
+    .leg-row .leg-rounds { flex: 1 1 100%; }
     .setup-row label { flex: 1 0 100%; }
     .setup-row select { flex: 1 1 100%; }
   }
@@ -1299,9 +1318,10 @@
           <label for="medley-preset">Format</label>
           <select id="medley-preset">
             <option value="single-301">Single game &middot; 301</option>
-            <option value="single-501">Single game &middot; 501</option>
+            <option value="single-501" selected>Single game &middot; 501</option>
             <option value="single-701">Single game &middot; 701</option>
             <option value="single-cricket">Single game &middot; Cricket</option>
+            <option value="single-countup">Single game &middot; Count Up</option>
             <option value="bo3">Best of 3 &middot; 501 / Cricket / 501</option>
             <option value="bo5">Best of 5 &middot; alternating</option>
             <option value="custom">Custom&hellip;</option>
@@ -1310,6 +1330,14 @@
 
         <div id="medley-legs" class="medley-legs"></div>
         <button type="button" id="add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
+        <div class="setup-row">
+          <label for="bull-mode">Bull</label>
+          <select id="bull-mode">
+            <option value="split" selected>Split bull &middot; 25 / 50</option>
+            <option value="full">Full bull &middot; whole bull is 50</option>
+          </select>
+        </div>
+
 
         <div id="player-inputs"></div>
         <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
@@ -1391,6 +1419,7 @@
               <option value="single-501" selected>Single game &middot; 501</option>
               <option value="single-701">Single game &middot; 701</option>
               <option value="single-cricket">Single game &middot; Cricket</option>
+            <option value="single-countup">Single game &middot; Count Up</option>
               <option value="bo3">Best of 3 &middot; 501 / Cricket / 501</option>
               <option value="bo5">Best of 5 &middot; alternating</option>
               <option value="custom">Custom&hellip;</option>
@@ -1399,6 +1428,14 @@
 
           <div id="online-medley-legs" class="medley-legs"></div>
           <button type="button" id="online-add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
+          <div class="setup-row">
+            <label for="online-bull-mode">Bull</label>
+            <select id="online-bull-mode">
+              <option value="split" selected>Split bull &middot; 25 / 50</option>
+              <option value="full">Full bull &middot; whole bull is 50</option>
+            </select>
+          </div>
+
           <p class="format-note">
             The player who creates the challenge picks the format - whoever
             joins gets the same one automatically.
@@ -1589,6 +1626,11 @@
     </div>
 
     <footer id="app-version">&nbsp;</footer>
+    <div id="support-link">
+      <a href="https://ko-fi.com/nickpearman" target="_blank" rel="noopener">
+        &#9825; Support this project
+      </a>
+    </div>
   </div>
 
   <script type="module" src="./game.js"></script>

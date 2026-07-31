@@ -12,27 +12,40 @@
 
 import { X01_SCORES, X01_RULES } from "./scoring.js";
 import { MATCH_PRESETS, normalizeLeg, gameLabel } from "./medley.js";
+import { COUNTUP_ROUND_OPTIONS, DEFAULT_ROUNDS } from "./countup.js";
 
 const DEFAULT_LEG = { game: "x01", score: 501, rules: "double" };
 
 function sameLeg(a, b) {
   const x = normalizeLeg(a), y = normalizeLeg(b);
-  return x.game === y.game && x.score === y.score && x.rules === y.rules;
+  return x.game === y.game && x.score === y.score && x.rules === y.rules
+    && x.rounds === y.rounds && x.bull === y.bull;
 }
 
 // els: { legs, addBtn, preset } - any may be absent, in which case the
 // builder degrades quietly rather than throwing.
 export function createMedleyBuilder(els) {
-  const { legs: legsEl, addBtn, preset } = els || {};
+  const { legs: legsEl, addBtn, preset, bull: bullEl } = els || {};
+
+  // Bull mode is stored per leg (so it crosses the wire with the rest of the
+  // config) but chosen once for the whole match - a fifth dropdown on every
+  // leg row would be noise, and mixing bull modes between legs of one match
+  // isn't a thing anyone wants.
+  const bullMode = () => (bullEl?.value === "full" ? "full" : "split");
 
   function render(legs) {
     if (!legsEl) return;
     legsEl.innerHTML = legs.map(normalizeLeg).map((leg, i) => {
       const isX01 = leg.game === "x01";
+      const isCountUp = leg.game === "countup";
       // Score and rules only exist for x01 - cricket has neither a starting
       // score nor an in/out rule.
       const scoreOptions = X01_SCORES
         .map((n) => `<option value="${n}"${isX01 && leg.score === n ? " selected" : ""}>${n}</option>`)
+        .join("");
+      // Count Up's only setting is how many rounds it runs for.
+      const roundOptions = COUNTUP_ROUND_OPTIONS
+        .map((n) => `<option value="${n}"${isCountUp && leg.rounds === n ? " selected" : ""}>${n} rounds</option>`)
         .join("");
       const rulesOptions = Object.entries(X01_RULES)
         .map(([key, r]) => `<option value="${key}"${isX01 && leg.rules === key ? " selected" : ""}>${r.label}</option>`)
@@ -43,10 +56,12 @@ export function createMedleyBuilder(els) {
         <span class="leg-label">Leg ${i + 1}</span>
         <select class="leg-game">
           <option value="x01"${isX01 ? " selected" : ""}>x01</option>
-          <option value="cricket"${!isX01 ? " selected" : ""}>Cricket</option>
+          <option value="cricket"${leg.game === "cricket" ? " selected" : ""}>Cricket</option>
+          <option value="countup"${isCountUp ? " selected" : ""}>Count Up</option>
         </select>
         <select class="leg-score${isX01 ? "" : " hidden"}">${scoreOptions}</select>
         <select class="leg-rules${isX01 ? "" : " hidden"}">${rulesOptions}</select>
+        <select class="leg-rounds${isCountUp ? "" : " hidden"}">${roundOptions}</select>
         <button type="button" class="leg-remove" title="Remove this leg">&times;</button>
       </div>`;
     }).join("");
@@ -60,13 +75,18 @@ export function createMedleyBuilder(els) {
     const legs = [...rows].map((row) => {
       const game = row.querySelector(".leg-game")?.value;
       if (game === "cricket") return { game: "cricket" };
+      if (game === "countup") {
+        return { game: "countup", rounds: Number(row.querySelector(".leg-rounds")?.value) || DEFAULT_ROUNDS };
+      }
       return {
         game: "x01",
         score: Number(row.querySelector(".leg-score")?.value) || 501,
         rules: row.querySelector(".leg-rules")?.value || "double",
       };
     });
-    return legs.length ? legs : [{ ...DEFAULT_LEG }];
+    const mode = bullMode();
+    const withBull = (legs.length ? legs : [{ ...DEFAULT_LEG }]).map((l) => ({ ...l, bull: mode }));
+    return withBull;
   }
 
   // Editing a leg by hand means the preset no longer describes the match, so
@@ -75,7 +95,8 @@ export function createMedleyBuilder(els) {
     if (!preset) return;
     const legs = getLegs();
     const hit = Object.entries(MATCH_PRESETS)
-      .find(([, p]) => p.length === legs.length && p.every((g, i) => sameLeg(g, legs[i])));
+      .find(([, p]) => p.length === legs.length
+        && p.every((g, i) => sameLeg({ ...normalizeLeg(g), bull: legs[i].bull }, legs[i])));
     preset.value = hit ? hit[0] : "custom";
   }
 
@@ -113,7 +134,11 @@ export function createMedleyBuilder(els) {
     markCustomIfNeeded();
   });
 
-  render([{ ...DEFAULT_LEG }]);
+  // Seed from whatever the preset dropdown is showing, not from an
+  // independent default. These were two sources of truth: if the HTML's
+  // selected option didn't happen to match DEFAULT_LEG, the page loaded with
+  // the Format box saying one thing and the leg row showing another.
+  render(MATCH_PRESETS[preset?.value] || [{ ...DEFAULT_LEG }]);
 
   return { getLegs, render, describe: () => getLegs().map(gameLabel).join(" · ") };
 }

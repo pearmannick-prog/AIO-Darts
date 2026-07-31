@@ -9,12 +9,17 @@
 // in lockstep with no need for a rollback/replay system - see the
 // architecture notes in the top-level README.
 
-import { Granboard, SegmentID, SegmentType, createSegment } from "./granboard.js";
+import { Granboard, SegmentID, SegmentType, createSegment, applyBullMode } from "./granboard.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import {
   createCricketPlayer, resolveCricketThrow, applyCricketResult,
   checkCricketWin, describeCricketResult,
 } from "./cricket.js";
+import {
+  createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
+  checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
+  DEFAULT_ROUNDS,
+} from "./countup.js";
 import {
   createMatch, currentLegConfig, recordLegWin, advanceLeg,
   startingPlayerForLeg, legProgressText, normalizeLeg, matchScoreText,
@@ -259,6 +264,7 @@ const onlineMedleyBuilder = createMedleyBuilder({
   legs: el.medleyLegs,
   addBtn: el.addLegBtn,
   preset: el.formatSelect,
+  bull: document.getElementById("online-bull-mode"),
 });
 
 function selectedOnlineLegs() {
@@ -859,6 +865,7 @@ function showNotice(message) {
 // different shapes, which is why this is a function rather than a literal.
 function buildOnlinePlayer(name, legConfig) {
   if (legConfig.game === "cricket") return createCricketPlayer(name);
+  if (legConfig.game === "countup") return createCountUpPlayer(name);
   const rules = rulesFor(legConfig.rules);
   return {
     name,
@@ -910,10 +917,14 @@ function startOnlineLeg() {
 
 // A leg has been won. Both sides run this independently off the same inputs,
 // so neither has to be told the result.
+// side may be null: a Count Up leg can end level, in which case the leg is
+// credited to nobody rather than picking a winner arbitrarily.
 function finishOnlineLeg(side) {
   online.gameOver = true;
-  online.iWon = side === "me";
-  const winnerIndex = side === "me" ? online.myIndex : online.oppIndex;
+  online.iWon = side === null ? null : side === "me";
+  const winnerIndex = side === null
+    ? null
+    : (side === "me" ? online.myIndex : online.oppIndex);
   recordLegWin(online.match, winnerIndex);
   online.legOver = !online.match.over;
 }
@@ -1328,8 +1339,14 @@ function applyQuickTotalThrow(side, totalValue) {
   renderOnline();
 }
 
-function applyThrow(side, segment) {
+function applyThrow(side, rawSegment) {
   if (online.gameOver) return;
+
+  // Applied here rather than in each engine, and BEFORE the turn check, so
+  // both browsers transform the dart identically - the peer receives the raw
+  // segment and applies the same leg config to it.
+  const segment = applyBullMode(rawSegment, online.legConfig?.bull);
+
   if (online.activeSide !== side) {
     // Out-of-order message (shouldn't normally happen on an ordered
     // DataChannel) - ignore rather than corrupt state.
@@ -1338,6 +1355,7 @@ function applyThrow(side, segment) {
   }
 
   if (online.gameType === "cricket") return applyCricketThrowOnline(side, segment);
+  if (online.gameType === "countup") return applyCountUpThrowOnline(side, segment);
 
   const s = online[side];
   const rules = rulesFor(online.legConfig?.rules);
@@ -1370,6 +1388,39 @@ function applyThrow(side, segment) {
     if (isWin) {
       finishOnlineLeg(side);
     } else if (s.dartsThisTurn.length >= 3) {
+      endTurn(side);
+    }
+  }
+
+  renderOnline();
+}
+
+// Count Up: every dart adds face value, no bust, nothing to revert. The leg
+// isn't decided until BOTH players have thrown their full allocation, so the
+// check happens when a turn ends rather than after each dart.
+function applyCountUpThrowOnline(side, segment) {
+  const player = online[side];
+  const result = resolveCountUpThrow(segment);
+  applyCountUpResult(player, result);
+
+  if (side === "me") moveMarkerTo(el.dartboardMarker, segment);
+
+  player.dartsThisTurn.push(segment);
+  online.log.unshift({
+    side,
+    label: describeCountUpResult(segment, result),
+    remainingAfter: player.total,
+    bust: false,
+  });
+
+  if (player.dartsThisTurn.length >= 3) {
+    player.roundsPlayed += 1;
+    const rounds = online.legConfig?.rounds ?? DEFAULT_ROUNDS;
+    const players = [online.me, online.opp];
+    if (isLegComplete(players, rounds)) {
+      const winner = checkCountUpWin(players, rounds);
+      finishOnlineLeg(winner === null ? null : (winner === 0 ? "me" : "opp"));
+    } else {
       endTurn(side);
     }
   }
@@ -1411,13 +1462,14 @@ function endTurn(side) {
   const s = online[side];
   s.dartsThisTurn = [];
   // Cricket has no bust, so there's no start-of-turn value to revert to.
-  if (online.gameType !== "cricket") s.startOfTurn = s.remaining;
+  if (online.gameType !== "cricket" && online.gameType !== "countup") s.startOfTurn = s.remaining;
   online.activeSide = side === "me" ? "opp" : "me";
 }
 
 // ---------- Render ----------
 function renderOnline() {
   const cricket = online.gameType === "cricket";
+  const countup = online.gameType === "countup";
 
   // Cricket shows marks; x01 shows a remaining score. Only one at a time.
   el.cricketBoard?.classList.toggle("hidden", !cricket);
@@ -1433,6 +1485,9 @@ function renderOnline() {
       online.activeSide === "me" ? 0 : 1);
     el.meScore.textContent = online.me.points;
     el.oppScore.textContent = online.opp.points;
+  } else if (countup) {
+    el.meScore.textContent = online.me.total;
+    el.oppScore.textContent = online.opp.total;
   } else {
     el.meScore.textContent = online.me.remaining;
     el.oppScore.textContent = online.opp.remaining;
@@ -1461,9 +1516,22 @@ function renderOnline() {
 
   renderOnlineMatchBar();
 
-  el.turnLabel.textContent = online.gameOver
-    ? (online.iWon ? "You win the leg! 🎯" : "Opponent takes the leg.")
-    : online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+  if (online.gameOver) {
+    // Count Up can end level - iWon is null in that case.
+    el.turnLabel.textContent = online.iWon === null
+      ? "Leg drawn."
+      : online.iWon ? "You win the leg! 🎯" : "Opponent takes the leg.";
+  } else if (countup) {
+    // Rounds left and the running average are the numbers that matter in a
+    // practice game.
+    const rounds = online.legConfig?.rounds ?? DEFAULT_ROUNDS;
+    const p = online.activeSide === "me" ? online.me : online.opp;
+    const who = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+    el.turnLabel.textContent =
+      `${who} · round ${Math.min(p.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(p)}`;
+  } else {
+    el.turnLabel.textContent = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+  }
 
   el.turnDarts.innerHTML = "";
   const darts = online.activeSide === "me" ? online.me.dartsThisTurn : online.opp.dartsThisTurn;

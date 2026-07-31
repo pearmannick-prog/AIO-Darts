@@ -1,6 +1,6 @@
 // game.js - 501 scoring, board visualization, and all UI wiring.
 
-import { Granboard, SegmentType, createSegment, SegmentID } from "./granboard.js";
+import { Granboard, SegmentType, createSegment, SegmentID, applyBullMode } from "./granboard.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
@@ -16,6 +16,11 @@ import {
   createCricketPlayer, resolveCricketThrow, applyCricketResult,
   checkCricketWin, describeCricketResult,
 } from "./cricket.js";
+import {
+  createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
+  checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
+  DEFAULT_ROUNDS,
+} from "./countup.js";
 
 const STARTING_SCORE = 501;
 
@@ -253,6 +258,7 @@ const medleyBuilder = createMedleyBuilder({
   legs: el.medleyLegs,
   addBtn: el.addLegBtn,
   preset: el.medleyPreset,
+  bull: document.getElementById("bull-mode"),
 });
 
 function readMedleyLegs() {
@@ -268,11 +274,13 @@ function startLeg(names) {
   const start = state.legConfig.score ?? STARTING_SCORE;
   const rules = rulesFor(state.legConfig.rules);
 
-  state.players = state.gameType === "cricket"
-    ? names.map((name) => createCricketPlayer(name))
+  state.players = names.map((name) => {
+    if (state.gameType === "cricket") return createCricketPlayer(name);
+    if (state.gameType === "countup") return createCountUpPlayer(name);
     // `opened` tracks the double-in requirement: with a straight in, everyone
     // starts open and it never matters again.
-    : names.map((name) => ({ name, remaining: start, opened: rules.in !== "double" }));
+    return { name, remaining: start, opened: rules.in !== "double" };
+  });
   state.currentPlayerIndex = startingPlayerForLeg(state.match.currentLeg, names.length);
   state.dartsThisTurn = [];
   state.startOfTurnRemaining = start;
@@ -293,10 +301,16 @@ function finishLeg(winnerIndex) {
   state.legOver = !state.match.over;
 }
 
-function applyHit(segment) {
+function applyHit(rawSegment) {
   if (state.gameOver) return;
 
+  // One transform at the boundary, before any game logic sees the dart, so
+  // full-bull applies identically to x01, Cricket and Count Up - and to
+  // board hits, dartboard clicks and manual entry alike.
+  const segment = applyBullMode(rawSegment, state.legConfig?.bull);
+
   if (state.gameType === "cricket") return applyCricketHit(segment);
+  if (state.gameType === "countup") return applyCountUpHit(segment);
 
   undoStack.push(snapshot());
 
@@ -347,6 +361,7 @@ function applyQuickTotal(totalValue) {
   // numbers were hit, not what they added up to. The UI hides this mode in
   // cricket; this guard is here in case it's reached another way.
   if (state.gameType === "cricket") return;
+  if (state.gameType === "countup") return applyCountUpTotal(totalValue);
 
   undoStack.push(snapshot());
 
@@ -431,6 +446,10 @@ function winnerBannerText() {
       : `🏆 ${winner} wins!`;
   }
 
+  // A Count Up leg can end level, in which case it's credited to nobody.
+  if (state.winnerIndex === null || state.winnerIndex === undefined) {
+    return `Leg ${match.currentLeg + 1} drawn · ${matchScoreText(match, names)}`;
+  }
   const legWinner = names[state.winnerIndex] ?? "Winner";
   return `${legWinner} takes leg ${match.currentLeg + 1} · ${matchScoreText(match, names)}`;
 }
@@ -452,6 +471,72 @@ wireCricketBoard(el.cricketBoard, (segment) => {
   if (state.gameType !== "cricket" || state.gameOver) return;
   applyHit(segment);
 });
+
+// Count Up is the simplest path in the app: every dart adds its face value,
+// there's no bust and nothing to revert. The only real rule is that the leg
+// isn't decided until EVERY player has thrown their full allocation of
+// rounds, so the winner is checked at the end of a turn rather than after
+// each dart.
+// Quick Total suits Count Up well - a whole-turn total is exactly what this
+// game accumulates, so unlike Cricket there's no reason to hide it.
+function applyCountUpTotal(totalValue) {
+  undoStack.push(snapshot());
+
+  const player = state.players[state.currentPlayerIndex];
+  player.total += Number(totalValue) || 0;
+  player.roundsPlayed += 1;
+
+  state.throwLog.unshift({
+    playerName: player.name,
+    label: `Turn total: ${totalValue}`,
+    value: totalValue,
+    remainingAfter: player.total,
+    bust: false,
+  });
+
+  hideMarker(el.dartboardMarker); // no single position for a turn total
+
+  const rounds = state.legConfig.rounds ?? DEFAULT_ROUNDS;
+  if (isLegComplete(state.players, rounds)) {
+    finishLeg(checkCountUpWin(state.players, rounds));
+  } else {
+    endTurn();
+  }
+
+  render();
+}
+
+function applyCountUpHit(segment) {
+  undoStack.push(snapshot());
+
+  const player = state.players[state.currentPlayerIndex];
+  const result = resolveCountUpThrow(segment);
+  applyCountUpResult(player, result);
+
+  state.dartsThisTurn.push(segment);
+  state.throwLog.unshift({
+    playerName: player.name,
+    label: describeCountUpResult(segment, result),
+    value: result.points,
+    remainingAfter: player.total,
+    bust: false,
+  });
+
+  moveMarker(el.dartboardMarker, segment);
+
+  if (state.dartsThisTurn.length >= 3) {
+    player.roundsPlayed += 1;
+    if (isLegComplete(state.players, state.legConfig.rounds ?? DEFAULT_ROUNDS)) {
+      // checkCountUpWin returns null on a tie - finishLeg passes that through
+      // to medley.js, which credits the leg to nobody.
+      finishLeg(checkCountUpWin(state.players, state.legConfig.rounds ?? DEFAULT_ROUNDS));
+    } else {
+      endTurn();
+    }
+  }
+
+  render();
+}
 
 // Cricket's turn structure is simpler than 501's: there's no bust and no
 // start-of-turn value to revert to, so a turn is just three darts. All the
@@ -488,7 +573,7 @@ function endTurn() {
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   // Cricket players have no `remaining` - there's nothing to revert to,
   // since it has no bust rule.
-  if (state.gameType !== "cricket") {
+  if (state.gameType !== "cricket" && state.gameType !== "countup") {
     state.startOfTurnRemaining = state.players[state.currentPlayerIndex].remaining;
   }
 }
@@ -515,21 +600,37 @@ el.undoBtn.addEventListener("click", undo);
 // ---------- Render ----------
 function render() {
   const cricket = state.gameType === "cricket";
+  const countup = state.gameType === "countup";
+  // x01 counts down to zero; Cricket and Count Up both count up, just from
+  // different things.
+  const scoreOf = (p) => (cricket ? p.points : countup ? p.total : p.remaining);
 
   el.playerTabs.innerHTML = "";
   state.players.forEach((p, i) => {
     const tab = document.createElement("div");
     tab.className = "player-tab" + (i === state.currentPlayerIndex ? " active" : "");
-    const score = cricket ? p.points : p.remaining;
-    tab.innerHTML = `<span class="player-tab-name">${p.name}</span><span class="player-tab-score">${score}</span>`;
+    tab.innerHTML = `<span class="player-tab-name">${p.name}</span><span class="player-tab-score">${scoreOf(p)}</span>`;
     el.playerTabs.appendChild(tab);
   });
 
   const current = state.players[state.currentPlayerIndex];
-  el.bigScore.textContent = cricket ? current.points : current.remaining;
-  el.turnLabel.textContent = state.gameOver
-    ? `${state.players[state.winnerIndex].name} wins the leg! 🎯`
-    : `${current.name}'s turn`;
+  el.bigScore.textContent = scoreOf(current);
+
+  if (state.gameOver) {
+    // Count Up can end level, in which case there's no winner to name.
+    el.turnLabel.textContent = state.winnerIndex === null || state.winnerIndex === undefined
+      ? "Leg drawn."
+      : `${state.players[state.winnerIndex].name} wins the leg! 🎯`;
+  } else if (countup) {
+    // Rounds remaining and the running average are the two numbers that
+    // matter in a practice game, so they go where the turn label sits.
+    const rounds = state.legConfig.rounds ?? DEFAULT_ROUNDS;
+    const left = Math.max(0, rounds - current.roundsPlayed);
+    el.turnLabel.textContent =
+      `${current.name}'s turn · round ${Math.min(current.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(current)}`;
+  } else {
+    el.turnLabel.textContent = `${current.name}'s turn`;
+  }
 
   renderMatchBar();
 

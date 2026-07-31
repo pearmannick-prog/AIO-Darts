@@ -11,10 +11,18 @@ Everything runs as **one container on one port**. The static front-end and the
 WebRTC signaling server are served by the same process, which is what keeps
 deployment simple (see [Architecture](#architecture)).
 
+If you'd like to support the project, there's a small "Support this project"
+link in the app's footer, pointing to https://ko-fi.com/nickpearman. No
+paywall and nothing is gated behind it - it's just a tip jar for now. A free
+tier alongside a paid one is planned for later, once accounts and persistent
+stats land, but that's a ways off.
+
 The Bluetooth service UUID and dart-hit decoding table in `granboard.js` are
 adapted from the open-source project
 [sobassy/gran-app](https://github.com/sobassy/gran-app) (MIT License). Credit
-to that project for reverse-engineering the protocol in the first place.
+to that project for reverse-engineering the protocol in the first place - that
+one piece keeps its original MIT terms even though the rest of this repo is
+licensed differently now (see [License](#license) below).
 
 ## Requirements
 
@@ -102,7 +110,29 @@ what the above does.
    sit in a flanking column. Clicking the mini dartboard and a real Bluetooth
    board both work too - all three inputs run through identical scoring code.
 
-   Only 20, 19, 18, 17, 16, 15 and the bull count. Three marks
+   **Bull mode** applies to the whole match, whichever games it contains:
+
+   | Mode | Outer bull | Inner bull |
+   | --- | --- | --- |
+   | Split bull (default) | 25, counts as a single | 50, counts as a double |
+   | Full bull | 50, counts as a double | 50, counts as a double |
+
+   Full bull changes more than the number. Because the whole bull becomes a
+   double 25, it also becomes a legal finish in a double-out or master-out
+   leg, opens a double-in leg, and is worth **two** marks in Cricket instead
+   of one. It's applied as a single transform before any game logic sees the
+   dart, so board hits, dartboard clicks and manual entry all behave the same.
+
+   **Count Up** is the practice game: every dart simply adds its face value,
+   there's no bust and no double to start or finish, and after a fixed number
+   of rounds (8 by default, 5-20 selectable) the highest total wins. The turn
+   label shows the round and your running points-per-round average, which is
+   the number worth watching - a ton a round is the usual benchmark. Because
+   it's a pure accumulation it can genuinely end level, and a drawn leg is
+   reported as a draw rather than awarded to someone. Quick Total works well
+   here, since a whole-turn total is exactly what the game adds up.
+
+   In Cricket, only 20, 19, 18, 17, 16, 15 and the bull count. Three marks
    closes a number (a single is 1 mark, a double 2, a triple 3); after that,
    hits on it score its face value per mark until your opponent closes it too,
    at which point it's dead and the row greys out. You win by closing
@@ -469,10 +499,35 @@ and `version.js`), so it always matches what's actually deployed with no
 manual version bumping. Running locally without Docker shows "local dev build"
 instead, since there's no build step to bake a commit into.
 
+## License
+
+This project is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE), with one exception: the
+Bluetooth UUID and segment-decoding table in `granboard.js`, adapted from
+[sobassy/gran-app](https://github.com/sobassy/gran-app), stays under its
+original MIT terms (both are in the [`LICENSE`](LICENSE) file).
+
+In plain terms:
+
+- **Free** to view, clone, self-host, modify, and use for personal or
+  noncommercial purposes - nothing changes for anyone already self-hosting a
+  copy.
+- **Not free** to build a commercial product or paid hosted service from
+  this code without a separate agreement. A planned freemium tier (accounts,
+  persistent stats, cloud sync - see [Roadmap](#roadmap)) depends on that
+  restriction actually holding, rather than anyone being able to stand up the
+  same paid service from the same code.
+- No license file existed before this one, so the repository defaulted to
+  standard copyright ("all rights reserved") rather than the open-by-default
+  state a public GitHub repo is often assumed to have. This file makes the
+  actual terms explicit.
+
+Full terms are in [`LICENSE`](LICENSE). This isn't legal advice; commercial
+use requires a separate agreement with the licensor.
+
 ## Roadmap
 
-*Last reviewed: 30 July 2026. Date this list whenever it changes - a roadmap
-with no date can't be told apart from a stale one.*
+*Last reviewed: 30 July 2026.*
 
 - Persistent stats across sessions (accounts + SQLite, staying single-container)
 - Matchmaking and a lobby beyond invite codes
@@ -494,12 +549,9 @@ Done since the last review:
   microphone on the existing peer connection, so you can watch your opponent
   throw. The audio/video m-lines are negotiated up front and left empty, then
   filled in with `replaceTrack()`, which means switching a camera on needs no
-  renegotiation and two players can do it simultaneously without glare. Note
-  this changes the TURN bandwidth picture - see [Adding a TURN
+  renegotiation and two players can do it simultaneously without glare. This
+  changes the TURN bandwidth picture - see [Adding a TURN
   relay](#adding-a-turn-relay).
 - ✅ **Cricket and medley matches online** (30 July 2026) - the peer protocol now
   sends the host's chosen format on connect and carries per-dart segments, so
   marks and leg state stay in sync without a separate message type per game.
-
-Let me know how the current scoring and online matches behave with real boards,
-and we'll prioritize from there.
