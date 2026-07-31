@@ -194,7 +194,11 @@ el.connectBtn.addEventListener("click", async () => {
   }
 });
 
-// ---------- Manual entry (for misses/misreads, or testing without a board) ----------
+// ---------- Manual entry ----------
+// A first-class way to play, not a fallback: plenty of people score a plain
+// steel-tip board this way and never connect anything over Bluetooth. It's
+// also what fixes a miss or a misread when there IS a board, but that's the
+// secondary use, not the reason it exists.
 function manualSegmentFromRing(section, ringType) {
   // Reconstruct the same segmentId numbering scheme used in granboard.js:
   // 4 slots per section in order Single(inner), Triple, Single(outer), Double.
