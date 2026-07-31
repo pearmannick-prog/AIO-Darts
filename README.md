@@ -102,7 +102,16 @@ what the above does.
    sit in a flanking column. Clicking the mini dartboard and a real Bluetooth
    board both work too - all three inputs run through identical scoring code.
 
-   Only 20, 19, 18, 17, 16, 15 and the bull count. Three marks
+   **Count Up** is the practice game: every dart simply adds its face value,
+   there's no bust and no double to start or finish, and after a fixed number
+   of rounds (8 by default, 5-20 selectable) the highest total wins. The turn
+   label shows the round and your running points-per-round average, which is
+   the number worth watching - a ton a round is the usual benchmark. Because
+   it's a pure accumulation it can genuinely end level, and a drawn leg is
+   reported as a draw rather than awarded to someone. Quick Total works well
+   here, since a whole-turn total is exactly what the game adds up.
+
+   In Cricket, only 20, 19, 18, 17, 16, 15 and the bull count. Three marks
    closes a number (a single is 1 mark, a double 2, a triple 3); after that,
    hits on it score its face value per mark until your opponent closes it too,
    at which point it's dead and the row greys out. You win by closing
