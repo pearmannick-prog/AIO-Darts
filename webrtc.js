@@ -12,6 +12,14 @@
 // offer/answer exchange, with no track attached to them yet - then
 // startMedia() fills them in later with replaceTrack().
 //
+// TWO video m-lines are reserved, not one, because a player may run a second
+// camera: one on their face, one on their board. That is opt-in and most
+// matches never use it, but reserving the m-line is the only way to allow it
+// without renegotiation - see below for why renegotiation is off the table.
+// Slot order is the contract: video m-line 0 is the main camera, m-line 1 is
+// the second one, on both sides. getTransceivers() returns them in m-line
+// order per spec, so neither peer has to be told which is which.
+//
 // That is the whole reason there is no renegotiation code in this file, and
 // it's worth spelling out because the obvious implementation is the other
 // way round. Adding a track to a live connection fires "negotiationneeded"
@@ -26,8 +34,8 @@
 // purely local operation that can happen at any time, in any order, on both
 // sides simultaneously, and cannot desync the connection.
 //
-// The cost, accepted deliberately: every online match negotiates audio and
-// video m-lines even when nobody ever turns a camera on. That is a slightly
+// The cost, accepted deliberately: every online match negotiates one audio and
+// two video m-lines even when nobody ever turns a camera on. That is a slightly
 // longer SDP once per match and nothing else - no media flows, no ports are
 // opened (everything is bundled onto the DataChannel's transport), and no
 // permission prompt appears, because getUserMedia is never called until a
@@ -82,9 +90,16 @@ export class PeerLink {
   #channel;
   #role = null;
 
-  // The dormant m-lines described above, filled in by startMedia().
-  #transceivers = { audio: null, video: null };
+  // The dormant m-lines described above, filled in by startMedia(). `video2`
+  // is the optional second camera's slot and stays empty in most matches.
+  #transceivers = { audio: null, video: null, video2: null };
   #localStream = null;
+  // The second camera is held in its OWN stream rather than added to
+  // #localStream. Everything in this file that says getVideoTracks()[0] means
+  // "the main camera" - the watchdog, the stall check, switchCamera's
+  // stop-then-open dance - and quietly making that [0] of two would have given
+  // all of it a 50/50 chance of acting on the wrong camera.
+  #secondStream = null;
   // Camera-health watchdog state - see #watchLocalVideo.
   #muteTimer = null;
   #recovering = false;
@@ -94,12 +109,17 @@ export class PeerLink {
   // otherwise the <video> element would be re-pointed halfway through and
   // drop whichever track arrived first.
   #remoteStream = null;
+  // The peer's second camera, kept separate for the same reason ours is: two
+  // pictures need two <video> elements, and one stream carrying both would
+  // paint whichever track happened to arrive first.
+  #remoteStream2 = null;
 
   onMessage = null; // (gameMessage: object) => void
   onStatusChange = null; // (status: string) => void
-  onRemoteStream = null; // (stream: MediaStream) => void
-  onRemoteMediaChange = null; // ({ audio: bool, video: bool }) => void
+  onRemoteStream = null; // (stream: MediaStream, slot: 0 | 1) => void
+  onRemoteMediaChange = null; // ({ audio: bool, video: bool, video2: bool }) => void
   onCameraRecovering = null; // (recovering: bool) => void
+  onSecondCameraLost = null; // () => void - the 2nd camera's track ended on its own
 
   constructor(signalingUrl, iceServers = DEFAULT_ICE_SERVERS) {
     this.signalingUrl = signalingUrl;
@@ -206,6 +226,84 @@ export class PeerLink {
     if (!navigator.mediaDevices?.enumerateDevices) return [];
     const devices = await navigator.mediaDevices.enumerateDevices();
     return devices.filter((d) => d.kind === "videoinput");
+  }
+
+  // The optional second camera - the one pointed at the board while the main
+  // one is pointed at you. Opt-in and off by default.
+  //
+  // The hard limit this lives inside: a great deal of Android hardware cannot
+  // hold two cameras open at once and fails the second request with
+  // NotReadableError (the same constraint that forces switchCamera() to stop
+  // before it opens). There is no way to detect that in advance, so this makes
+  // no attempt to - it asks, and lets the caller report the refusal. A laptop
+  // with a built-in camera and a USB webcam is the setup this is really for; a
+  // phone player simply never presses the button.
+  //
+  // Deliberately NOT routed through startMedia(): that owns the mic and the
+  // main camera together, and running it again to add a second video track
+  // would tear down the audio track it has no business touching.
+  async startSecondCamera({ deviceId, facingMode } = {}) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("This browser doesn't support camera access.");
+    }
+    if (this.#secondStream) return this.secondCamera;
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: videoConstraints({ deviceId, facingMode }),
+    });
+    const track = stream.getVideoTracks()[0];
+
+    // Same race #addVideoTrack guards: getUserMedia is slow enough that the
+    // match can end while it's in flight, and a track nobody holds a reference
+    // to is a leaked camera handle that makes that device report "busy"
+    // forever afterwards.
+    if (!this.#pc) {
+      track.stop();
+      return null;
+    }
+
+    // A camera turned off before the second one was added applies to it too -
+    // "camera off" means both, or it isn't off.
+    track.enabled = this.#localStream
+      ? this.#localStream.getVideoTracks().every((t) => t.enabled)
+      : true;
+
+    // No recovery ladder here, unlike the main camera. Recovery works by
+    // reopening the same device through switchCamera(), which is written
+    // around there being exactly one camera track to stop and replace. A
+    // second camera that dies just goes away and takes its tile with it, which
+    // is honest and leaves the match otherwise untouched.
+    track.addEventListener("ended", () => {
+      this.stopSecondCamera();
+      this.onSecondCameraLost?.();
+    }, { once: true });
+
+    this.#secondStream = stream;
+    this.#attachLocalTracks();
+    return this.secondCamera;
+  }
+
+  stopSecondCamera() {
+    this.#transceivers.video2?.sender?.replaceTrack(null).catch(() => {});
+    this.#secondStream?.getTracks().forEach((track) => track.stop());
+    this.#secondStream = null;
+    this.#announceMediaState();
+  }
+
+  get secondStream() {
+    return this.#secondStream;
+  }
+
+  // Mirrors activeCamera, for the second camera. Null when there isn't one.
+  get secondCamera() {
+    const track = this.#secondStream?.getVideoTracks()[0];
+    if (!track) return null;
+    const settings = track.getSettings();
+    return {
+      deviceId: settings.deviceId || null,
+      facingMode: settings.facingMode || null,
+      label: track.label || "",
+    };
   }
 
   // Swaps the camera without touching the mic, the connection, or the SDP -
@@ -383,6 +481,9 @@ export class PeerLink {
   // camera-in-use indicator actually goes out.
   stopMedia() {
     clearTimeout(this.#muteTimer);
+    // Stop means stop: a second camera left running would keep its light on
+    // and keep publishing after the player has said they're done.
+    this.stopSecondCamera();
     for (const kind of ["audio", "video"]) {
       this.#transceivers[kind]?.sender?.replaceTrack(null).catch(() => {});
     }
@@ -403,6 +504,10 @@ export class PeerLink {
     }
     if (video !== undefined) {
       this.#localStream.getVideoTracks().forEach((t) => { t.enabled = video; });
+      // Camera off covers BOTH cameras. Anything else means the button that
+      // says "camera off" leaves a live picture of the room on the opponent's
+      // screen, which is the one thing a privacy control must never do.
+      this.#secondStream?.getVideoTracks().forEach((t) => { t.enabled = video; });
     }
     this.#announceMediaState();
   }
@@ -415,6 +520,10 @@ export class PeerLink {
     const state = {
       audio: !!this.#localStream?.getAudioTracks().some((t) => t.enabled),
       video: !!this.#localStream?.getVideoTracks().some((t) => t.enabled),
+      // Absent from an older peer's messages, which reads as false - exactly
+      // right, since a peer that doesn't know about second cameras hasn't got
+      // one.
+      video2: !!this.#secondStream?.getVideoTracks().some((t) => t.enabled),
     };
     if (this.#channel?.readyState === "open") {
       this.#channel.send(JSON.stringify({ type: "media_state", ...state }));
@@ -425,14 +534,21 @@ export class PeerLink {
   // or after the transceivers are created, and this way neither order needs a
   // special case.
   #attachLocalTracks() {
-    if (!this.#localStream) return;
     for (const kind of ["audio", "video"]) {
       const sender = this.#transceivers[kind]?.sender;
       if (!sender) continue;
-      const track = this.#localStream.getTracks().find((t) => t.kind === kind) || null;
+      const track = this.#localStream?.getTracks().find((t) => t.kind === kind) || null;
       if (track && sender.track !== track) {
         sender.replaceTrack(track).catch((err) => console.warn(`Couldn't send ${kind}`, err));
       }
+    }
+    // The second camera has its own slot and its own stream, so it can't be
+    // folded into the loop above - and it must be able to attach on its own,
+    // since it can be added long after the main camera is already running.
+    const sender2 = this.#transceivers.video2?.sender;
+    const track2 = this.#secondStream?.getVideoTracks()[0] || null;
+    if (sender2 && track2 && sender2.track !== track2) {
+      sender2.replaceTrack(track2).catch((err) => console.warn("Couldn't send the 2nd camera", err));
     }
     this.#announceMediaState();
   }
@@ -462,9 +578,12 @@ export class PeerLink {
     // camera. Skip this and the webcam light stays on after the match ends.
     clearTimeout(this.#muteTimer);
     this.#localStream?.getTracks().forEach((track) => track.stop());
+    this.#secondStream?.getTracks().forEach((track) => track.stop());
     this.#localStream = null;
+    this.#secondStream = null;
     this.#remoteStream = null;
-    this.#transceivers = { audio: null, video: null };
+    this.#remoteStream2 = null;
+    this.#transceivers = { audio: null, video: null, video2: null };
 
     this.#channel?.close();
     this.#pc?.close();
@@ -492,11 +611,17 @@ export class PeerLink {
     });
 
     this.#pc.addEventListener("track", (event) => {
+      if (this.#remoteSlot(event) === 1) {
+        if (!this.#remoteStream2) this.#remoteStream2 = new MediaStream();
+        this.#remoteStream2.addTrack(event.track);
+        this.onRemoteStream?.(this.#remoteStream2, 1);
+        return;
+      }
       if (!this.#remoteStream) this.#remoteStream = new MediaStream();
       this.#remoteStream.addTrack(event.track);
       // Fired on every arriving track; the caller just re-points the same
       // <video> at the same stream, which is a no-op after the first time.
-      this.onRemoteStream?.(this.#remoteStream);
+      this.onRemoteStream?.(this.#remoteStream, 0);
     });
 
     this.#pc.addEventListener("connectionstatechange", () => {
@@ -506,6 +631,23 @@ export class PeerLink {
     });
 
     this.#ws.addEventListener("message", (event) => this.#handleSignal(JSON.parse(event.data)));
+  }
+
+  // Which of the peer's two cameras a just-arrived track belongs to.
+  //
+  // Resolved from the live connection rather than from #transceivers, because
+  // this fires DURING setRemoteDescription on the guest - before the loop in
+  // the "offer" case has had a chance to record which transceiver is which.
+  // The m-line order is already correct at that point, so it's the one thing
+  // that can be trusted this early.
+  //
+  // Audio deliberately always lands in slot 0: that stream feeds the one
+  // <video> element that is never hidden, so sound doesn't depend on which
+  // pictures happen to be on screen.
+  #remoteSlot(event) {
+    if (event.track.kind !== "video") return 0;
+    const videos = this.#pc.getTransceivers().filter((t) => t.receiver?.track?.kind === "video");
+    return videos.indexOf(event.transceiver) > 0 ? 1 : 0;
   }
 
   async #handleSignal(msg) {
@@ -521,7 +663,11 @@ export class PeerLink {
           // file: reserving the m-lines now is what lets a camera be switched
           // on later without a second offer/answer round.
           this.#transceivers.audio = this.#pc.addTransceiver("audio", { direction: "sendrecv" });
+          // Two video slots, in this order. The second is for the optional
+          // board camera; adding it later would mean renegotiation, which is
+          // the one thing this design exists to avoid.
           this.#transceivers.video = this.#pc.addTransceiver("video", { direction: "sendrecv" });
+          this.#transceivers.video2 = this.#pc.addTransceiver("video", { direction: "sendrecv" });
           this.#attachLocalTracks();
         } else {
           this.#pc.addEventListener("datachannel", (e) => {
@@ -549,13 +695,25 @@ export class PeerLink {
         // would be able to see the host and never be seen back. Flipping them
         // to sendrecv BEFORE createAnswer bakes two-way media into the
         // original answer, which is the whole point: no renegotiation later.
+        //
+        // The video transceivers are taken IN ORDER rather than by kind: there
+        // are two of them now, and keying both to "video" would file the
+        // second one on top of the first, leaving the main camera pointed at
+        // the host's board slot. getTransceivers() is in m-line order, which
+        // is the host's order, so index is the whole mapping.
+        const videos = [];
         for (const t of this.#pc.getTransceivers()) {
           const kind = t.receiver?.track?.kind;
-          if (kind === "audio" || kind === "video") {
+          if (kind === "audio") {
             t.direction = "sendrecv";
-            this.#transceivers[kind] = t;
+            this.#transceivers.audio = t;
+          } else if (kind === "video") {
+            t.direction = "sendrecv";
+            videos.push(t);
           }
         }
+        this.#transceivers.video = videos[0] || null;
+        this.#transceivers.video2 = videos[1] || null;
         this.#attachLocalTracks();
 
         const answer = await this.#pc.createAnswer();
@@ -606,7 +764,11 @@ export class PeerLink {
         // handled here so the game controller never has to know the peer
         // protocol carries anything other than darts.
         if (msg.type === "media_state") {
-          this.onRemoteMediaChange?.({ audio: !!msg.audio, video: !!msg.video });
+          this.onRemoteMediaChange?.({
+            audio: !!msg.audio,
+            video: !!msg.video,
+            video2: !!msg.video2,
+          });
           return;
         }
         this.onMessage?.(msg);

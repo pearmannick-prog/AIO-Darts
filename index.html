@@ -221,10 +221,16 @@
 
   /* Camera/mic tiles. Placed above the scoreboard rather than below the
      dartboard so that on a phone the opponent is visible without scrolling
-     past the whole scoring UI first - watching them throw is the point. */
+     past the whole scoring UI first - watching them throw is the point.
+
+     A player may add a second camera, so this is sized for anywhere from one
+     to four tiles rather than exactly two. auto-fit is what makes that one
+     rule instead of a set of count-specific ones: empty tracks collapse, so
+     two tiles still take half the width each, while four share it. Hidden
+     tiles are `display: none` and so aren't grid items at all. */
   .video-strip {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 10px;
     margin-bottom: 14px;
   }
@@ -501,6 +507,7 @@
     width: 100%;
     object-fit: cover;
     z-index: 0;
+    /* Overridden to a half each by .stage-split below. */
     /* Never mirrored at stage size, even for your own front camera. Mirroring
        is a convention for a small self-view you glance at; at full size this
        is what you use to aim a camera at a board, and a reversed board is
@@ -520,8 +527,30 @@
       rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.15) 26%,
       rgba(0,0,0,0.15) 52%, rgba(0,0,0,0.86) 100%);
   }
+  /* A player who has two cameras puts both on the stage, splitting it down the
+     middle: the camera on them at the left, the one on their board at the
+     right. Those two views belong side by side at the same size - the whole
+     reason for a board camera is to watch the darts land while you watch the
+     player throw, and shrinking either one to a thumbnail undoes that.
+
+     Same selector shape as the full-width rule above, and for the same reason:
+     the tile is `position: static`, so these resolve against the panel. `left`
+     rather than `right` for the second half, because the panel is the
+     containing block and 50% of it is exactly the halfway line. */
+  .immersive.stage-split #online-video-strip > .video-tile.as-stage.stage-0 > video { width: 50%; }
+  .immersive.stage-split #online-video-strip > .video-tile.as-stage.stage-1 > video {
+    width: 50%;
+    left: 50%;
+    /* A seam, so two similarly-lit rooms don't read as one wide picture. */
+    border-left: 1px solid rgba(12,11,7,0.85);
+  }
   .immersive #online-video-strip { position: static; display: block; margin: 0; }
   .immersive .video-tile.as-stage .tile-score { display: none; }
+  /* Same reason, and one trap in particular: the stage tile is `position:
+     static`, so anything absolutely positioned inside it resolves against the
+     PANEL - and this label is anchored by `bottom`, which would strand it at
+     the bottom of the manual-entry controls rather than on the picture. */
+  .immersive .video-tile.as-stage .video-tile-label { display: none; }
   /* The stage's own placeholder would be a caption stranded in the middle of
      the picture; the tile that ISN'T showing gets to explain itself instead. */
   .immersive .video-tile.as-stage .video-tile-placeholder { display: none; }
@@ -587,8 +616,20 @@
     text-shadow: 0 2px 8px rgba(0,0,0,0.8);
   }
 
-  /* The smaller feed sits bottom-left, the way the reference lines players up
-     along the bottom edge. */
+  /* The other player's cameras sit in the bottom-left corner, the way the
+     reference lines players up along the bottom edge. At most two, because the
+     stage holds one player's cameras and the corner holds the other's - which
+     is what keeps this band from filling up. Two 124px thumbnails end at 270px
+     and the score bar is centred, so on the narrowest desktop panel they still
+     clear each other.
+
+     JS assigns thumb-0/1 (see renderAv) because CSS can't do it alone: these
+     are absolutely positioned, which takes them out of flow, and WHICH tiles
+     are thumbnails changes as feeds come and go, so nth-child can't be relied
+     on either. Wrapping them in a flex container would solve it - and would
+     also make that wrapper a positioning context, which is precisely the bug
+     that once let the stage video escape and cover the whole page. An index
+     class is the cheaper half of that trade. */
   .immersive .video-tile.as-thumb {
     left: 14px; top: calc(var(--stage-h) - 108px);
     width: 124px;
@@ -596,8 +637,17 @@
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.55);
   }
+  .immersive .video-tile.as-thumb.thumb-1 { left: 146px; }
   .immersive .video-tile.as-thumb .tile-score { padding: 16px 7px 5px; }
   .immersive .video-tile.as-thumb .tile-score-label { font-size: 9px; }
+  /* The board tiles caption themselves instead of carrying a score, and at
+     thumbnail size the full-size label would cover most of the picture. */
+  .immersive .video-tile.as-thumb .video-tile-label {
+    font-size: 8px;
+    left: 4px; bottom: 4px;
+    padding: 1px 4px;
+    letter-spacing: 0.03em;
+  }
   /* That player's score is already in the bar beside this thumbnail. Printing
      it twice, a couple of inches apart, just makes the reader check whether
      the two numbers agree. */
@@ -678,7 +728,11 @@
   @media (max-width: 560px) {
     #online-game-panel.immersive { --stage-h: 380px; }
     .immersive .dartboard-wrap { display: none; }
-    .immersive .video-tile.as-thumb { width: 88px; left: 10px; top: calc(var(--stage-h) - 80px); }
+    .immersive .video-tile.as-thumb { width: 78px; left: 10px; top: calc(var(--stage-h) - 72px); }
+    /* Stacked, not side by side. On a phone the score bar reaches much closer
+       to the left edge, so a second thumbnail beside the first would sit on top
+       of it; upwards is the only free direction left in this corner. */
+    .immersive .video-tile.as-thumb.thumb-1 { left: 10px; top: calc(var(--stage-h) - 138px); }
     .immersive .online-score-value { font-size: 30px; }
     .immersive #online-cricket-board { width: 74%; }
     .immersive #online-turn-label { right: 10px; top: 10px; }
@@ -1524,8 +1578,29 @@
           <span class="match-score"></span>
         </div>
 
-        <!-- The local <video> MUST stay muted: it's playing this machine's own
-             microphone, so unmuted it is a howling feedback loop. -->
+        <!-- The local <video>s MUST stay muted: they're playing this machine's
+             own microphone, so unmuted they are a howling feedback loop.
+
+             Each player's board tile follows their main one, so that when all
+             four are up in the plain layout they read as two pairs rather than
+             asking you to match cameras to owners across the row.
+
+             The `-2` tiles are the optional second cameras - the board views.
+             Both start hidden and are only shown when that feed is actually
+             live, so a match where nobody adds one looks exactly as it did
+             before. Three things about them are deliberate:
+
+               * They carry no score. A score belongs to a player, not to a
+                 camera, and printing it twice per player would just invite you
+                 to check the two copies against each other.
+               * The local one is NOT `.self`, which is the class that mirrors a
+                 tile. Mirroring is a courtesy for a view of your own face; this
+                 one is pointed at a board, where a flipped picture is actively
+                 misleading - the same reason the opponent's tiles never mirror.
+               * The remote one is muted because it can never carry sound: audio
+                 is pinned to the primary remote stream (see #remoteSlot in
+                 webrtc.js), and a muted element is guaranteed to autoplay, so
+                 this tile can never land in the tap-to-play state. -->
         <div id="online-video-strip" class="video-strip hidden">
           <div id="online-local-tile" class="video-tile self">
             <video id="online-local-video" autoplay playsinline muted></video>
@@ -1535,6 +1610,10 @@
               <span id="online-tile-me-score" class="tile-score-value">501</span>
             </div>
           </div>
+          <div id="online-local-tile-2" class="video-tile hidden">
+            <video id="online-local-video-2" autoplay playsinline muted></video>
+            <span class="video-tile-label">You &middot; board</span>
+          </div>
           <div id="online-remote-tile" class="video-tile">
             <video id="online-remote-video" autoplay playsinline></video>
             <div id="online-remote-placeholder" class="video-tile-placeholder">Waiting for opponent's camera&hellip;</div>
@@ -1542,6 +1621,10 @@
               <span class="tile-score-label">Opponent</span>
               <span id="online-tile-opp-score" class="tile-score-value">501</span>
             </div>
+          </div>
+          <div id="online-remote-tile-2" class="video-tile hidden">
+            <video id="online-remote-video-2" autoplay playsinline muted></video>
+            <span class="video-tile-label">Opponent &middot; board</span>
           </div>
         </div>
 
@@ -1552,6 +1635,11 @@
           <!-- Only revealed when more than one camera actually exists, which
                can't be known until permission has been granted. -->
           <button type="button" id="online-av-swap-btn" class="av-btn hidden">🔄 Switch camera</button>
+          <!-- Opt-in second camera: one on you, one on the board. Shown only
+               when this machine has a spare camera to give it, and never
+               required - a phone player, whose hardware usually can't hold two
+               cameras open at once, simply never sees a reason to press it. -->
+          <button type="button" id="online-av-add-cam-btn" class="av-btn hidden">➕ Add 2nd camera</button>
           <!-- Which feed gets the big view. Opponent by default; putting your
                own on the stage is how you frame a camera on your board. -->
           <button type="button" id="online-av-view-btn" class="av-btn hidden">🖥 Big view: Opponent</button>
