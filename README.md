@@ -510,28 +510,24 @@ original MIT terms (both are in the [`LICENSE`](LICENSE) file).
 In plain terms:
 
 - **Free** to view, clone, self-host, modify, and use for personal or
-  noncommercial purposes - exactly what Sam and anyone else already running
-  this is doing, and nothing changes for that.
-- **Not free** to build a commercial product or paid hosted service from this
-  code without a separate agreement. That's the whole reason for picking this
-  license over something like MIT: a planned freemium tier (accounts,
-  persistent stats, cloud sync - see [Roadmap](#roadmap)) needs to actually
-  mean something, and a fully permissive license would let anyone stand up
-  the same paid service from the same code the day it's built.
-- This repo had no license file before now, which technically defaulted to
-  "all rights reserved" rather than the open-by-assumption state most people
-  read a public GitHub repo as. This makes the terms explicit instead of
-  ambiguous - it's a clarification of intent, not a new restriction on
-  anyone already using it.
+  noncommercial purposes - nothing changes for anyone already self-hosting a
+  copy.
+- **Not free** to build a commercial product or paid hosted service from
+  this code without a separate agreement. A planned freemium tier (accounts,
+  persistent stats, cloud sync - see [Roadmap](#roadmap)) depends on that
+  restriction actually holding, rather than anyone being able to stand up the
+  same paid service from the same code.
+- No license file existed before this one, so the repository defaulted to
+  standard copyright ("all rights reserved") rather than the open-by-default
+  state a public GitHub repo is often assumed to have. This file makes the
+  actual terms explicit.
 
-Full terms are in [`LICENSE`](LICENSE). This isn't legal advice - if you want
-to build something commercial on this code, reach out first rather than
-guessing at where the line is.
+Full terms are in [`LICENSE`](LICENSE). This isn't legal advice; commercial
+use requires a separate agreement with the licensor.
 
 ## Roadmap
 
-*Last reviewed: 30 July 2026. Date this list whenever it changes - a roadmap
-with no date can't be told apart from a stale one.*
+*Last reviewed: 30 July 2026.*
 
 - Persistent stats across sessions (accounts + SQLite, staying single-container)
 - Matchmaking and a lobby beyond invite codes
@@ -553,12 +549,9 @@ Done since the last review:
   microphone on the existing peer connection, so you can watch your opponent
   throw. The audio/video m-lines are negotiated up front and left empty, then
   filled in with `replaceTrack()`, which means switching a camera on needs no
-  renegotiation and two players can do it simultaneously without glare. Note
-  this changes the TURN bandwidth picture - see [Adding a TURN
+  renegotiation and two players can do it simultaneously without glare. This
+  changes the TURN bandwidth picture - see [Adding a TURN
   relay](#adding-a-turn-relay).
 - ✅ **Cricket and medley matches online** (30 July 2026) - the peer protocol now
   sends the host's chosen format on connect and carries per-dart segments, so
   marks and leg state stay in sync without a separate message type per game.
-
-Let me know how the current scoring and online matches behave with real boards,
-and we'll prioritize from there.
