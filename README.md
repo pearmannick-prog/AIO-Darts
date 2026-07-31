@@ -175,6 +175,26 @@ show you, *except* on a rear-facing camera, where it isn't - a mirrored board
 would be actively misleading. The opponent's tile is never mirrored, for the
 same reason.
 
+### Checking your camera and mic first
+
+The setup screen has a collapsed **🎥 Camera & mic check** section. Open it and
+press *Start check* to see your camera and watch a live level meter move when
+you speak - without creating a challenge or making an opponent wait while you
+work out why nobody can hear you.
+
+If you have more than one camera or more than one microphone, a picker appears
+for each. Whatever you choose is remembered and reused when you turn the camera
+on in a match, so you set your devices up once rather than every game. The
+pickers only appear when there's actually a choice to make.
+
+The check releases the camera and mic as soon as you create or join a challenge
+(and when you collapse the section), so it never holds a device the match then
+needs - which matters on Android, where a camera can only be open once.
+
+Remembered devices are stored per browser. If one is later unplugged, the check
+works out which preference died, forgets just that one, and falls back - your
+chosen mic survives a swapped-out webcam.
+
 ### Ending a match
 
 **End match** at the bottom of the game panel drops the connection and releases
@@ -457,6 +477,10 @@ with no date can't be told apart from a stale one.*
 
 Done since the last review:
 
+- ✅ **Pre-match camera & mic check** (30 July 2026) - preview, level meter, and
+  camera/mic pickers on the setup screen, so devices can be tested and chosen
+  without starting a match. Choices persist and carry into the game; a stale
+  device preference is worked out and dropped individually.
 - ✅ **Camera switching and End match** (30 July 2026) - front/rear (or any
   multi-camera) switching that keeps the mic and connection untouched, with
   self-view mirroring that follows the camera's facing direction; plus a

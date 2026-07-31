@@ -108,6 +108,18 @@ would reintroduce all of it, since either player can start a camera at any time.
 The accepted cost is a/v m-lines in every match's SDP even when unused.
 `close()` must keep stopping local tracks or the webcam light stays on.
 
+The pre-match **device check** (`online.js`, setup panel) deliberately does not
+go through `PeerLink` — there isn't one before you create/join, and coupling a
+hardware check to a live connection would mean the only way to test a camera is
+to start a match. It holds its own stream and must release it on create/join and
+on collapsing the panel. Device choices persist in `localStorage` as
+`granboard-camera-id` / `granboard-mic-id` and are passed to `startMedia()`.
+Stale IDs are expected: the check walks a ladder dropping one preference at a
+time so a dead webcam doesn't wipe a good mic preference; `startMedia()` does the
+coarser "drop both" retry. The mic meter's `AudioContext` needs an explicit
+`resume()` — it's created after an `await`, so the click's user activation may be
+gone, and a suspended context reads as silence.
+
 `switchCamera()` stops the old video track **before** requesting the new one.
 That looks backwards but is required: much Android hardware won't open the rear
 camera while the front is still held (`NotReadableError`). It restores the

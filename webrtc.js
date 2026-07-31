@@ -57,6 +57,12 @@ function videoConstraints({ facingMode, deviceId } = {}) {
   return video;
 }
 
+function audioConstraints({ deviceId } = {}) {
+  const audio = { ...DEFAULT_MEDIA_CONSTRAINTS.audio };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  return audio;
+}
+
 // Fallback only. Normally the caller passes servers in, sourced from the
 // deployment's /config.json - that's what allows a self-hosted TURN relay to
 // be added later without touching this file.
@@ -114,7 +120,7 @@ export class PeerLink {
   // Throws if the player denies permission or there's no device; the caller is
   // expected to surface that, since a silently dead camera button is worse
   // than an error.
-  async startMedia({ audio = true, video = true, facingMode, deviceId } = {}) {
+  async startMedia({ audio = true, video = true, facingMode, cameraId, micId } = {}) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error(
         window.isSecureContext
@@ -124,12 +130,33 @@ export class PeerLink {
     }
 
     const constraints = {
-      audio: audio ? DEFAULT_MEDIA_CONSTRAINTS.audio : false,
-      video: video ? videoConstraints({ facingMode, deviceId }) : false,
+      audio: audio ? audioConstraints({ deviceId: micId }) : false,
+      video: video ? videoConstraints({ facingMode, deviceId: cameraId }) : false,
     };
     if (!constraints.audio && !constraints.video) return null;
 
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    // Device IDs handed in from saved preferences go stale: browsers reissue
+    // them when site permissions are reset, and hardware gets unplugged. They
+    // are requested as `exact`, so a dead ID throws rather than degrading, and
+    // a remembered camera or mic that no longer exists would break the Start
+    // button outright. Retry once with no device preferences at all.
+    //
+    // Coarser than the pre-match check's recovery, which works out WHICH
+    // preference died and keeps the other. That precision is worth having when
+    // someone is deliberately setting devices up; here, mid-match, getting a
+    // working camera and mic on screen matters more than honouring a
+    // preference, and the check is where they'd go to fix it properly.
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      const hadPreference = cameraId || micId;
+      const stale = err.name === "OverconstrainedError" || err.name === "NotFoundError";
+      if (!hadPreference || !stale) throw err;
+      if (constraints.audio) constraints.audio = audioConstraints();
+      if (constraints.video) constraints.video = videoConstraints({ facingMode });
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    }
 
     // Calling startMedia twice (e.g. mic first, then camera) must not leave
     // the first stream's tracks running and orphaned.

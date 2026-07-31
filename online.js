@@ -115,6 +115,19 @@ const el = {
   throwLog: document.getElementById("online-throw-log"),
   endMatchBtn: document.getElementById("online-end-match-btn"),
   setupNotice: document.getElementById("online-setup-notice"),
+
+  checkPanel: document.querySelector(".device-check"),
+  checkVideo: document.getElementById("device-preview-video"),
+  checkPlaceholder: document.getElementById("device-preview-placeholder"),
+  checkBtn: document.getElementById("device-check-btn"),
+  checkStopBtn: document.getElementById("device-check-stop-btn"),
+  checkCameraRow: document.getElementById("device-camera-row"),
+  checkCameraSelect: document.getElementById("device-camera-select"),
+  checkMicRow: document.getElementById("device-mic-row"),
+  checkMicSelect: document.getElementById("device-mic-select"),
+  checkLevelRow: document.getElementById("device-level-row"),
+  checkMicLevel: document.getElementById("device-mic-level"),
+  checkError: document.getElementById("device-check-error"),
 };
 
 // ---------- Signaling / ICE configuration ----------
@@ -262,6 +275,253 @@ el.nextLegBtn?.addEventListener("click", () => {
   renderOnline();
 });
 
+// ---------- Camera & mic check (before a match) ----------
+// Lets someone confirm their gear works without creating a challenge first and
+// making an opponent sit waiting while they debug it.
+//
+// Deliberately does NOT go through PeerLink. There isn't one yet at this point
+// in the flow, and coupling a hardware check to a live connection would mean
+// the only way to test your camera is to start a match - which is precisely
+// the problem this exists to remove.
+
+const CAMERA_PREF_KEY = "granboard-camera-id";
+const MIC_PREF_KEY = "granboard-mic-id";
+
+const check = { stream: null, audioCtx: null, analyser: null, raf: null };
+
+function savedCameraId() {
+  return localStorage.getItem(CAMERA_PREF_KEY) || null;
+}
+
+function rememberCamera(deviceId) {
+  if (deviceId) localStorage.setItem(CAMERA_PREF_KEY, deviceId);
+  else localStorage.removeItem(CAMERA_PREF_KEY);
+}
+
+function savedMicId() {
+  return localStorage.getItem(MIC_PREF_KEY) || null;
+}
+
+function rememberMic(deviceId) {
+  if (deviceId) localStorage.setItem(MIC_PREF_KEY, deviceId);
+  else localStorage.removeItem(MIC_PREF_KEY);
+}
+
+// Shared by the check and the in-match Start button, so the same failure
+// never gets explained two different ways.
+function mediaErrorMessage(err) {
+  if (!window.isSecureContext) {
+    return "Camera and mic need a secure context - they're blocked because this page is loaded over plain HTTP. " +
+      "This works on http://localhost, but NOT on a plain http://<ip-address> address, even on your own network. " +
+      "Put the site behind HTTPS to fix this - see the README.";
+  }
+  if (err.name === "NotAllowedError") {
+    return "Camera/mic permission was denied. Allow it in the browser's address-bar icon and try again.";
+  }
+  if (err.name === "NotFoundError") return "No camera or microphone was found on this device.";
+  if (err.name === "NotReadableError") {
+    return "The camera is busy - close anything else using it (including other tabs) and try again.";
+  }
+  return `Couldn't start camera and mic: ${err.message}`;
+}
+
+// Remembered device IDs go stale more often than you'd expect: browsers
+// reissue them when site permissions are reset, and hardware gets unplugged.
+// An `exact` request then throws OverconstrainedError, which would strand
+// someone on a dead preference with no obvious way back.
+//
+// With two preferences in play the error alone doesn't reliably say which one
+// died - OverconstrainedError carries a `constraint` field, but what browsers
+// put in it isn't consistent enough to branch on. So this walks a ladder,
+// dropping one preference at a time, and forgets exactly the ones it had to
+// drop. Someone whose webcam was unplugged keeps their chosen mic, and vice
+// versa, rather than having both preferences wiped by one dead device.
+async function getCheckStream(cameraId, micId) {
+  const video = { width: { ideal: 640 }, height: { ideal: 480 } };
+  const build = (cam, mic) => ({
+    audio: mic ? { deviceId: { exact: mic } } : true,
+    video: cam ? { ...video, deviceId: { exact: cam } } : video,
+  });
+
+  // Most-preferred first. Duplicates are skipped so a player with no saved
+  // preferences makes exactly one request.
+  const ladder = [[cameraId, micId], [cameraId, null], [null, micId], [null, null]];
+  const seen = new Set();
+  let lastErr = null;
+
+  for (const [cam, mic] of ladder) {
+    const key = `${cam}|${mic}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(build(cam, mic));
+      // Whatever had to be given up to get here was pointing at nothing.
+      if (cameraId && !cam) rememberCamera(null);
+      if (micId && !mic) rememberMic(null);
+      return stream;
+    } catch (err) {
+      lastErr = err;
+      // Only a dead device is worth stepping down the ladder for. A denied
+      // permission or a missing secure context fails identically every time,
+      // and retrying just produces the same refusal three more times.
+      if (err.name !== "OverconstrainedError" && err.name !== "NotFoundError") throw err;
+    }
+  }
+  throw lastErr;
+}
+
+async function startDeviceCheck(cameraId = savedCameraId(), micId = savedMicId()) {
+  // Release whatever the check already holds first - same reason switchCamera
+  // does: Android won't hand out the second camera while the first is open.
+  stopDeviceCheck({ keepUi: true });
+  el.checkError.classList.add("hidden");
+  el.checkBtn.disabled = true;
+
+  try {
+    check.stream = await getCheckStream(cameraId, micId);
+    el.checkVideo.srcObject = check.stream;
+    // The preview is muted, so it never needs the tap-to-play recovery the
+    // in-match opponent tile does.
+    el.checkVideo.play().catch(() => {});
+    await populateDeviceLists();
+    startMicMeter();
+    renderCheck(true);
+  } catch (err) {
+    console.error(err);
+    el.checkError.textContent = mediaErrorMessage(err);
+    el.checkError.classList.remove("hidden");
+    renderCheck(false);
+  } finally {
+    el.checkBtn.disabled = false;
+  }
+}
+
+async function populateDeviceLists() {
+  let devices = [];
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } catch { /* leave the pickers hidden */ }
+
+  fillDevicePicker(
+    el.checkCameraSelect,
+    el.checkCameraRow,
+    devices.filter((d) => d.kind === "videoinput"),
+    check.stream?.getVideoTracks()[0]?.getSettings().deviceId,
+    "Camera"
+  );
+  fillDevicePicker(
+    el.checkMicSelect,
+    el.checkMicRow,
+    devices.filter((d) => d.kind === "audioinput"),
+    check.stream?.getAudioTracks()[0]?.getSettings().deviceId,
+    "Mic"
+  );
+}
+
+function fillDevicePicker(select, row, devices, activeId, fallbackLabel) {
+  select.innerHTML = "";
+  devices.forEach((device, i) => {
+    const opt = document.createElement("option");
+    opt.value = device.deviceId;
+    // Labels are blank until permission is granted - by now it has been, but
+    // virtual devices and some browsers still return nothing useful.
+    opt.textContent = device.label || `${fallbackLabel} ${i + 1}`;
+    opt.selected = device.deviceId === activeId;
+    select.appendChild(opt);
+  });
+  // A picker with one entry can't pick anything.
+  row.classList.toggle("hidden", devices.length < 2);
+}
+
+function startMicMeter() {
+  if (!check.stream?.getAudioTracks().length) return;
+
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  check.audioCtx = new Ctx();
+  // Audio contexts are commonly created in the "suspended" state, and this one
+  // is built AFTER an `await` on getUserMedia - by which point the click that
+  // started the check may no longer count as user activation. A suspended
+  // context's analyser reads pure silence, so the meter would sit at zero and
+  // be indistinguishable from a genuinely dead microphone. Resume explicitly
+  // rather than trusting the gesture to have survived.
+  if (check.audioCtx.state === "suspended") check.audioCtx.resume().catch(() => {});
+
+  const source = check.audioCtx.createMediaStreamSource(check.stream);
+  check.analyser = check.audioCtx.createAnalyser();
+  check.analyser.fftSize = 512;
+  // NOTE: connected to the analyser and nothing else. Routing this on to
+  // audioCtx.destination would play the mic out of the speakers, which is an
+  // instant feedback loop - the exact thing the muted preview avoids.
+  source.connect(check.analyser);
+
+  const data = new Uint8Array(check.analyser.fftSize);
+  const tick = () => {
+    check.analyser.getByteTimeDomainData(data);
+    // RMS around 128, which is what digital silence reads as.
+    let sum = 0;
+    for (const v of data) {
+      const d = (v - 128) / 128;
+      sum += d * d;
+    }
+    const rms = Math.sqrt(sum / data.length);
+    // Scaled hard on purpose: ordinary speech sits near 0.05-0.15 RMS, which
+    // at 1:1 would be a bar you can't see moving.
+    el.checkMicLevel.style.width = `${Math.min(100, Math.round(rms * 400))}%`;
+    check.raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function stopDeviceCheck({ keepUi = false } = {}) {
+  if (check.raf) cancelAnimationFrame(check.raf);
+  check.raf = null;
+  check.audioCtx?.close().catch(() => {});
+  check.audioCtx = null;
+  check.analyser = null;
+  check.stream?.getTracks().forEach((t) => t.stop());
+  check.stream = null;
+  el.checkVideo.srcObject = null;
+  el.checkMicLevel.style.width = "0%";
+  if (!keepUi) renderCheck(false);
+}
+
+function renderCheck(on) {
+  el.checkBtn.classList.toggle("hidden", on);
+  el.checkStopBtn.classList.toggle("hidden", !on);
+  el.checkPlaceholder.classList.toggle("hidden", on);
+  el.checkLevelRow.classList.toggle("hidden", !on);
+  // The pickers are driven by how many devices exist, which is only known
+  // while the check is running - so stopping hides them outright rather than
+  // leaving a stale list on screen.
+  if (!on) {
+    el.checkCameraRow.classList.add("hidden");
+    el.checkMicRow.classList.add("hidden");
+  }
+}
+
+el.checkBtn.addEventListener("click", () => startDeviceCheck());
+el.checkStopBtn.addEventListener("click", () => stopDeviceCheck());
+
+el.checkCameraSelect.addEventListener("change", () => {
+  const id = el.checkCameraSelect.value;
+  rememberCamera(id);
+  startDeviceCheck(id, savedMicId());
+});
+
+el.checkMicSelect.addEventListener("change", () => {
+  const id = el.checkMicSelect.value;
+  rememberMic(id);
+  startDeviceCheck(savedCameraId(), id);
+});
+
+// Collapsing the section is the natural "I'm done" gesture, and leaving the
+// camera live behind a closed panel would leave the webcam light on with
+// nothing on screen explaining why.
+el.checkPanel.addEventListener("toggle", () => {
+  if (!el.checkPanel.open) stopDeviceCheck();
+});
+
 // ---------- Create / Join ----------
 el.createBtn.addEventListener("click", async () => {
   await ensurePeerLinkLoaded();
@@ -269,6 +529,11 @@ el.createBtn.addEventListener("click", async () => {
   peerLink = new PeerLink(currentSignalingUrl(), iceServers);
   wirePeerLink();
   resetAv();
+
+  // Hand the devices back before the match asks for them. Android in
+  // particular will not open a camera that the check is still holding, and
+  // the preview has no reason to keep running once a match is starting.
+  stopDeviceCheck();
 
   // Whatever ended the last match is no longer news.
   el.setupNotice.classList.add("hidden");
@@ -294,6 +559,11 @@ el.joinBtn.addEventListener("click", async () => {
   peerLink = new PeerLink(currentSignalingUrl(), iceServers);
   wirePeerLink();
   resetAv();
+
+  // Hand the devices back before the match asks for them. Android in
+  // particular will not open a camera that the check is still holding, and
+  // the preview has no reason to keep running once a match is starting.
+  stopDeviceCheck();
 
   // Whatever ended the last match is no longer news.
   el.setupNotice.classList.add("hidden");
@@ -643,6 +913,9 @@ el.avSwapBtn.addEventListener("click", async () => {
     const at = av.cameras.findIndex((d) => d.deviceId === currentId);
     const next = av.cameras[(at + 1) % av.cameras.length];
     await peerLink.switchCamera({ deviceId: next.deviceId });
+    // The camera you last chose mid-match is the one to open next time, same
+    // as one chosen in the pre-match check - they write the same preference.
+    rememberCamera(next.deviceId);
   } catch (err) {
     console.error(err);
     // NotReadableError is the common one on Android: the camera is held by
@@ -691,7 +964,16 @@ el.avStartBtn.addEventListener("click", async () => {
   if (!peerLink) return;
   el.avStartBtn.disabled = true;
   try {
-    const stream = await peerLink.startMedia({ audio: true, video: true });
+    // Whatever camera the pre-match check settled on is the one to use here -
+    // otherwise picking a camera before the match would be quietly discarded
+    // the moment it mattered. Falls back to the browser's default when there
+    // is no saved preference, or when startMedia rejects a stale ID.
+    const stream = await peerLink.startMedia({
+      audio: true,
+      video: true,
+      cameraId: savedCameraId() || undefined,
+      micId: savedMicId() || undefined,
+    });
     el.localVideo.srcObject = stream;
     av.on = true;
     av.mic = true;
@@ -701,23 +983,11 @@ el.avStartBtn.addEventListener("click", async () => {
     await refreshCameras();
   } catch (err) {
     console.error(err);
-    // Separated because these need completely different fixes, and "couldn't
-    // start camera" alone sends people hunting through browser settings when
-    // the real problem is that the page isn't on HTTPS - the same trap as the
-    // Bluetooth button above.
-    if (!window.isSecureContext) {
-      alert(
-        "Camera and mic need a secure context - they're blocked because this page is loaded over plain HTTP. " +
-        "This works on http://localhost, but NOT on a plain http://<ip-address> address, even on your own network. " +
-        "Put the site behind HTTPS to fix this - see the README."
-      );
-    } else if (err.name === "NotAllowedError") {
-      alert("Camera/mic permission was denied. Allow it in the browser's address-bar icon and try again.");
-    } else if (err.name === "NotFoundError") {
-      alert("No camera or microphone was found on this device.");
-    } else {
-      alert(`Couldn't start camera and mic: ${err.message}`);
-    }
+    // mediaErrorMessage distinguishes these because they need completely
+    // different fixes: "couldn't start camera" alone sends people hunting
+    // through browser settings when the real problem is that the page isn't on
+    // HTTPS - the same trap as the Bluetooth button above.
+    alert(mediaErrorMessage(err));
   } finally {
     el.avStartBtn.disabled = false;
     renderAv();

@@ -292,6 +292,81 @@
     color: var(--cream);
   }
 
+  /* Device check (setup panel) */
+  .device-check {
+    border: 1px solid #cfc4a3;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+  .device-check summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .device-check-note { font-size: 13px; opacity: 0.75; margin: 8px 0 12px; }
+  .device-preview {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 4 / 3;
+    background: #12110c;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .device-preview video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* Mirrored like any self-view. Unlike the in-match tile this never flips
+       back for a rear camera: this is a "does it work" check, not something
+       anyone lines a board up in. */
+    transform: scaleX(-1);
+  }
+  .device-check-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .device-check-row.hidden { display: none; }
+  .device-check-row label { font-size: 13px; font-weight: 600; min-width: 52px; }
+  #device-camera-select, #device-mic-select {
+    flex: 1 1 180px;
+    min-width: 0;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+  }
+  .mic-meter {
+    flex: 1 1 160px;
+    height: 10px;
+    background: rgba(27,26,20,0.12);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .mic-meter-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--green-ring);
+    /* Rises instantly, falls smoothly - a meter that decays as fast as speech
+       does just flickers and tells you nothing. */
+    transition: width 0.08s linear;
+  }
+  .device-check-error {
+    font-size: 13px;
+    color: var(--red);
+    font-weight: 600;
+    margin: 4px 0 0;
+  }
+  .device-check-error.hidden { display: none; }
+
   .setup-notice {
     background: var(--gold);
     color: var(--ink);
@@ -1039,6 +1114,49 @@
             joins gets the same one automatically.
           </p>
         </div>
+
+        <!-- Optional, and collapsed by default: nobody who plays without a
+             camera should have to scroll past it. Sits above Create/Join
+             because "check my gear" is a thing you do BEFORE you make someone
+             wait on a challenge code. -->
+        <details class="device-check">
+          <summary>🎥 Camera &amp; mic check</summary>
+          <p class="device-check-note">
+            Try your camera and mic here first, without starting a match or
+            bothering an opponent. Whichever camera you pick is remembered and
+            used when you turn the camera on in a game.
+          </p>
+
+          <div class="device-preview">
+            <video id="device-preview-video" autoplay playsinline muted></video>
+            <div id="device-preview-placeholder" class="video-tile-placeholder">Not started</div>
+          </div>
+
+          <div class="device-check-row">
+            <button type="button" id="device-check-btn" class="av-btn">▶ Start check</button>
+            <button type="button" id="device-check-stop-btn" class="av-btn hidden">Stop check</button>
+          </div>
+
+          <div id="device-camera-row" class="device-check-row hidden">
+            <label for="device-camera-select">Camera</label>
+            <select id="device-camera-select"></select>
+          </div>
+
+          <div id="device-mic-row" class="device-check-row hidden">
+            <label for="device-mic-select">Mic</label>
+            <select id="device-mic-select"></select>
+          </div>
+
+          <div id="device-level-row" class="device-check-row hidden">
+            <label>Level</label>
+            <!-- Speak and the bar moves: the only way to tell a working mic
+                 from a muted one without playing your own audio back, which
+                 would be a feedback loop. -->
+            <div class="mic-meter"><div id="device-mic-level" class="mic-meter-fill"></div></div>
+          </div>
+
+          <p id="device-check-error" class="device-check-error hidden"></p>
+        </details>
 
         <div class="setup-actions">
           <button id="create-challenge-btn" class="btn-primary">Create Challenge</button>
