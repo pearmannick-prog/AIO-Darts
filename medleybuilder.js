@@ -12,12 +12,13 @@
 
 import { X01_SCORES, X01_RULES } from "./scoring.js";
 import { MATCH_PRESETS, normalizeLeg, gameLabel } from "./medley.js";
+import { COUNTUP_ROUND_OPTIONS, DEFAULT_ROUNDS } from "./countup.js";
 
 const DEFAULT_LEG = { game: "x01", score: 501, rules: "double" };
 
 function sameLeg(a, b) {
   const x = normalizeLeg(a), y = normalizeLeg(b);
-  return x.game === y.game && x.score === y.score && x.rules === y.rules;
+  return x.game === y.game && x.score === y.score && x.rules === y.rules && x.rounds === y.rounds;
 }
 
 // els: { legs, addBtn, preset } - any may be absent, in which case the
@@ -29,10 +30,15 @@ export function createMedleyBuilder(els) {
     if (!legsEl) return;
     legsEl.innerHTML = legs.map(normalizeLeg).map((leg, i) => {
       const isX01 = leg.game === "x01";
+      const isCountUp = leg.game === "countup";
       // Score and rules only exist for x01 - cricket has neither a starting
       // score nor an in/out rule.
       const scoreOptions = X01_SCORES
         .map((n) => `<option value="${n}"${isX01 && leg.score === n ? " selected" : ""}>${n}</option>`)
+        .join("");
+      // Count Up's only setting is how many rounds it runs for.
+      const roundOptions = COUNTUP_ROUND_OPTIONS
+        .map((n) => `<option value="${n}"${isCountUp && leg.rounds === n ? " selected" : ""}>${n} rounds</option>`)
         .join("");
       const rulesOptions = Object.entries(X01_RULES)
         .map(([key, r]) => `<option value="${key}"${isX01 && leg.rules === key ? " selected" : ""}>${r.label}</option>`)
@@ -43,10 +49,12 @@ export function createMedleyBuilder(els) {
         <span class="leg-label">Leg ${i + 1}</span>
         <select class="leg-game">
           <option value="x01"${isX01 ? " selected" : ""}>x01</option>
-          <option value="cricket"${!isX01 ? " selected" : ""}>Cricket</option>
+          <option value="cricket"${leg.game === "cricket" ? " selected" : ""}>Cricket</option>
+          <option value="countup"${isCountUp ? " selected" : ""}>Count Up</option>
         </select>
         <select class="leg-score${isX01 ? "" : " hidden"}">${scoreOptions}</select>
         <select class="leg-rules${isX01 ? "" : " hidden"}">${rulesOptions}</select>
+        <select class="leg-rounds${isCountUp ? "" : " hidden"}">${roundOptions}</select>
         <button type="button" class="leg-remove" title="Remove this leg">&times;</button>
       </div>`;
     }).join("");
@@ -60,6 +68,9 @@ export function createMedleyBuilder(els) {
     const legs = [...rows].map((row) => {
       const game = row.querySelector(".leg-game")?.value;
       if (game === "cricket") return { game: "cricket" };
+      if (game === "countup") {
+        return { game: "countup", rounds: Number(row.querySelector(".leg-rounds")?.value) || DEFAULT_ROUNDS };
+      }
       return {
         game: "x01",
         score: Number(row.querySelector(".leg-score")?.value) || 501,
