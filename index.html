@@ -320,11 +320,13 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    /* Mirrored like any self-view. Unlike the in-match tile this never flips
-       back for a rear camera: this is a "does it work" check, not something
-       anyone lines a board up in. */
+    /* Mirrored like any self-view, and un-mirrored for a rear camera by
+       exactly the same rule as the in-match tile - see .video-tile.self.
+       These two must agree: lining a board up in the preview and then seeing
+       it flip when the match starts is worse than either choice on its own. */
     transform: scaleX(-1);
   }
+  .device-preview.unmirrored video { transform: none; }
   .device-check-row {
     display: flex;
     align-items: center;
