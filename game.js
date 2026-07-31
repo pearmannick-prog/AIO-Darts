@@ -1,6 +1,6 @@
 // game.js - 501 scoring, board visualization, and all UI wiring.
 
-import { Granboard, SegmentType, createSegment, SegmentID } from "./granboard.js";
+import { Granboard, SegmentType, createSegment, SegmentID, applyBullMode } from "./granboard.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
@@ -258,6 +258,7 @@ const medleyBuilder = createMedleyBuilder({
   legs: el.medleyLegs,
   addBtn: el.addLegBtn,
   preset: el.medleyPreset,
+  bull: document.getElementById("bull-mode"),
 });
 
 function readMedleyLegs() {
@@ -300,8 +301,13 @@ function finishLeg(winnerIndex) {
   state.legOver = !state.match.over;
 }
 
-function applyHit(segment) {
+function applyHit(rawSegment) {
   if (state.gameOver) return;
+
+  // One transform at the boundary, before any game logic sees the dart, so
+  // full-bull applies identically to x01, Cricket and Count Up - and to
+  // board hits, dartboard clicks and manual entry alike.
+  const segment = applyBullMode(rawSegment, state.legConfig?.bull);
 
   if (state.gameType === "cricket") return applyCricketHit(segment);
   if (state.gameType === "countup") return applyCountUpHit(segment);

@@ -18,13 +18,20 @@ const DEFAULT_LEG = { game: "x01", score: 501, rules: "double" };
 
 function sameLeg(a, b) {
   const x = normalizeLeg(a), y = normalizeLeg(b);
-  return x.game === y.game && x.score === y.score && x.rules === y.rules && x.rounds === y.rounds;
+  return x.game === y.game && x.score === y.score && x.rules === y.rules
+    && x.rounds === y.rounds && x.bull === y.bull;
 }
 
 // els: { legs, addBtn, preset } - any may be absent, in which case the
 // builder degrades quietly rather than throwing.
 export function createMedleyBuilder(els) {
-  const { legs: legsEl, addBtn, preset } = els || {};
+  const { legs: legsEl, addBtn, preset, bull: bullEl } = els || {};
+
+  // Bull mode is stored per leg (so it crosses the wire with the rest of the
+  // config) but chosen once for the whole match - a fifth dropdown on every
+  // leg row would be noise, and mixing bull modes between legs of one match
+  // isn't a thing anyone wants.
+  const bullMode = () => (bullEl?.value === "full" ? "full" : "split");
 
   function render(legs) {
     if (!legsEl) return;
@@ -77,7 +84,9 @@ export function createMedleyBuilder(els) {
         rules: row.querySelector(".leg-rules")?.value || "double",
       };
     });
-    return legs.length ? legs : [{ ...DEFAULT_LEG }];
+    const mode = bullMode();
+    const withBull = (legs.length ? legs : [{ ...DEFAULT_LEG }]).map((l) => ({ ...l, bull: mode }));
+    return withBull;
   }
 
   // Editing a leg by hand means the preset no longer describes the match, so
@@ -86,7 +95,8 @@ export function createMedleyBuilder(els) {
     if (!preset) return;
     const legs = getLegs();
     const hit = Object.entries(MATCH_PRESETS)
-      .find(([, p]) => p.length === legs.length && p.every((g, i) => sameLeg(g, legs[i])));
+      .find(([, p]) => p.length === legs.length
+        && p.every((g, i) => sameLeg({ ...normalizeLeg(g), bull: legs[i].bull }, legs[i])));
     preset.value = hit ? hit[0] : "custom";
   }
 

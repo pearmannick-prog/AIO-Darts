@@ -102,6 +102,19 @@ what the above does.
    sit in a flanking column. Clicking the mini dartboard and a real Bluetooth
    board both work too - all three inputs run through identical scoring code.
 
+   **Bull mode** applies to the whole match, whichever games it contains:
+
+   | Mode | Outer bull | Inner bull |
+   | --- | --- | --- |
+   | Split bull (default) | 25, counts as a single | 50, counts as a double |
+   | Full bull | 50, counts as a double | 50, counts as a double |
+
+   Full bull changes more than the number. Because the whole bull becomes a
+   double 25, it also becomes a legal finish in a double-out or master-out
+   leg, opens a double-in leg, and is worth **two** marks in Cricket instead
+   of one. It's applied as a single transform before any game logic sees the
+   dart, so board hits, dartboard clicks and manual entry all behave the same.
+
    **Count Up** is the practice game: every dart simply adds its face value,
    there's no bust and no double to start or finish, and after a fixed number
    of rounds (8 by default, 5-20 selectable) the highest total wins. The turn

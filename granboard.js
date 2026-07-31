@@ -99,6 +99,46 @@ export function createSegment(segmentId) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Bull mode
+// ---------------------------------------------------------------------------
+// Boards can be scored two ways, and it changes the rules rather than just the
+// number:
+//
+//   split - the standard. Outer bull 25, inner bull 50. Only the inner bull is
+//           a double, so only the inner bull can check out a double-out leg.
+//   full  - the whole bull counts as 50, i.e. the outer ring is treated as if
+//           it were the inner. Because it's then a double 25, the whole bull
+//           ALSO becomes a legal double-out finish, and is worth two marks in
+//           Cricket rather than one.
+//
+// Applying it as a segment transform at the input boundary - rather than
+// teaching each game about bull modes - means x01, Cricket and Count Up all
+// get consistent behaviour with no rules code of their own.
+export const BULL_MODES = {
+  split: "Split bull (25 / 50)",
+  full: "Full bull (50)",
+};
+
+export function bullModeLabel(mode) {
+  return BULL_MODES[mode] || BULL_MODES.split;
+}
+
+export function applyBullMode(segment, bullMode) {
+  if (bullMode !== "full") return segment;
+  if (segment?.id !== SegmentID.BULL) return segment;
+  // Promote the outer bull to the inner bull's scoring, but keep a name that
+  // reflects what was actually thrown - calling it "Double Bullseye" in the
+  // throw log would misreport the dart.
+  return {
+    ...createSegment(SegmentID.DBL_BULL),
+    id: SegmentID.BULL,
+    longName: "Bullseye (full bull, 50)",
+    shortName: "BULL",
+    ring: "bull",
+  };
+}
+
 export class Granboard {
   #characteristic;
   segmentHitCallback = null;

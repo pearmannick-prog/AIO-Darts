@@ -1025,6 +1025,14 @@
 
         <div id="medley-legs" class="medley-legs"></div>
         <button type="button" id="add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
+        <div class="setup-row">
+          <label for="bull-mode">Bull</label>
+          <select id="bull-mode">
+            <option value="split" selected>Split bull &middot; 25 / 50</option>
+            <option value="full">Full bull &middot; whole bull is 50</option>
+          </select>
+        </div>
+
 
         <div id="player-inputs"></div>
         <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
@@ -1115,6 +1123,14 @@
 
           <div id="online-medley-legs" class="medley-legs"></div>
           <button type="button" id="online-add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
+          <div class="setup-row">
+            <label for="online-bull-mode">Bull</label>
+            <select id="online-bull-mode">
+              <option value="split" selected>Split bull &middot; 25 / 50</option>
+              <option value="full">Full bull &middot; whole bull is 50</option>
+            </select>
+          </div>
+
           <p class="format-note">
             The player who creates the challenge picks the format - whoever
             joins gets the same one automatically.

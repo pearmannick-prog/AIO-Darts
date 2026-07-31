@@ -9,7 +9,7 @@
 // in lockstep with no need for a rollback/replay system - see the
 // architecture notes in the top-level README.
 
-import { Granboard, SegmentID, SegmentType, createSegment } from "./granboard.js";
+import { Granboard, SegmentID, SegmentType, createSegment, applyBullMode } from "./granboard.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import {
   createCricketPlayer, resolveCricketThrow, applyCricketResult,
@@ -258,6 +258,7 @@ const onlineMedleyBuilder = createMedleyBuilder({
   legs: el.medleyLegs,
   addBtn: el.addLegBtn,
   preset: el.formatSelect,
+  bull: document.getElementById("online-bull-mode"),
 });
 
 function selectedOnlineLegs() {
@@ -1286,8 +1287,14 @@ function applyQuickTotalThrow(side, totalValue) {
   renderOnline();
 }
 
-function applyThrow(side, segment) {
+function applyThrow(side, rawSegment) {
   if (online.gameOver) return;
+
+  // Applied here rather than in each engine, and BEFORE the turn check, so
+  // both browsers transform the dart identically - the peer receives the raw
+  // segment and applies the same leg config to it.
+  const segment = applyBullMode(rawSegment, online.legConfig?.bull);
+
   if (online.activeSide !== side) {
     // Out-of-order message (shouldn't normally happen on an ordered
     // DataChannel) - ignore rather than corrupt state.

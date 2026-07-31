@@ -42,30 +42,38 @@ export const MATCH_PRESETS = {
 
 export function normalizeLeg(leg) {
   if (typeof leg === "string") {
-    if (leg === "cricket") return { game: "cricket" };
-    if (leg === "countup") return { game: "countup", rounds: DEFAULT_ROUNDS };
+    if (leg === "cricket") return { game: "cricket", bull: "split" };
+    if (leg === "countup") return { game: "countup", rounds: DEFAULT_ROUNDS, bull: "split" };
     const score = Number(leg);
-    return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double" };
+    return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double", bull: "split" };
   }
-  if (!leg || typeof leg !== "object") return { game: "x01", score: 501, rules: "double" };
-  if (leg.game === "cricket") return { game: "cricket" };
+  if (!leg || typeof leg !== "object") return { game: "x01", score: 501, rules: "double", bull: "split" };
+  if (leg.game === "cricket") return { game: "cricket", bull: leg.bull === "full" ? "full" : "split" };
+  const bull = leg.bull === "full" ? "full" : "split";
   if (leg.game === "countup") {
-    return { game: "countup", rounds: Number(leg.rounds) > 0 ? Number(leg.rounds) : DEFAULT_ROUNDS };
+    return {
+      game: "countup",
+      rounds: Number(leg.rounds) > 0 ? Number(leg.rounds) : DEFAULT_ROUNDS,
+      bull,
+    };
   }
   return {
     game: "x01",
     score: Number(leg.score) > 0 ? Number(leg.score) : 501,
     rules: leg.rules || "double",
+    bull,
   };
 }
 
 export function gameLabel(leg) {
   const l = normalizeLeg(leg);
-  if (l.game === "cricket") return "Cricket";
-  if (l.game === "countup") return `Count Up · ${l.rounds} rounds`;
+  // Only mentioned when it isn't the default, so ordinary legs read cleanly.
+  const bull = l.bull === "full" ? " · full bull" : "";
+  if (l.game === "cricket") return `Cricket${bull}`;
+  if (l.game === "countup") return `Count Up · ${l.rounds} rounds${bull}`;
   // "501 · Double out" - the variant matters as much as the number, so it's
   // always shown rather than only when it's unusual.
-  return `${l.score} · ${rulesLabel(l.rules)}`;
+  return `${l.score} · ${rulesLabel(l.rules)}${bull}`;
 }
 
 export function createMatch(legGames, playerCount) {
