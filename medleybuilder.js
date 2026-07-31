@@ -113,7 +113,11 @@ export function createMedleyBuilder(els) {
     markCustomIfNeeded();
   });
 
-  render([{ ...DEFAULT_LEG }]);
+  // Seed from whatever the preset dropdown is showing, not from an
+  // independent default. These were two sources of truth: if the HTML's
+  // selected option didn't happen to match DEFAULT_LEG, the page loaded with
+  // the Format box saying one thing and the leg row showing another.
+  render(MATCH_PRESETS[preset?.value] || [{ ...DEFAULT_LEG }]);
 
   return { getLegs, render, describe: () => getLegs().map(gameLabel).join(" · ") };
 }
