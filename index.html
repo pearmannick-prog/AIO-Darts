@@ -229,6 +229,11 @@
      deliberately NOT mirrored: that one may be pointed at a board, and a
      flipped board would be actively misleading. */
   .video-tile.self video { transform: scaleX(-1); }
+  /* ...unless it's the REAR camera, which on a phone is the one pointed at a
+     board. Mirroring a board is actively misleading, for the same reason the
+     opponent's tile above is never mirrored. Set by online.js from the track's
+     reported facingMode. */
+  .video-tile.self.unmirrored video { transform: none; }
   .video-tile-label {
     position: absolute;
     left: 8px;
@@ -263,6 +268,40 @@
     font-weight: 600;
   }
   .video-tile-placeholder.tappable:hover { background: #1d1b13; }
+
+  /* Kept away from the scoring controls, and never gold or cream like the
+     buttons you press every turn - this is the one that ends things. */
+  .end-match-row {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(27,26,20,0.15);
+    display: flex;
+    justify-content: flex-end;
+  }
+  .end-match-btn {
+    font-size: 13px;
+    padding: 8px 14px;
+    background: transparent;
+    color: var(--red);
+    border: 1px solid var(--red);
+  }
+  .end-match-btn:hover { background: rgba(183,48,42,0.08); }
+  /* Armed = one more tap actually does it, so it stops looking optional. */
+  .end-match-btn.armed {
+    background: var(--red);
+    color: var(--cream);
+  }
+
+  .setup-notice {
+    background: var(--gold);
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .setup-notice.hidden { display: none; }
 
   .av-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .av-btn {
@@ -972,6 +1011,10 @@
     </div>
 
     <div id="online-mode" class="hidden">
+      <!-- Says why you're back on this screen when a match ends. Lives out
+           here rather than in the game panel, which is hidden by then. -->
+      <div id="online-setup-notice" class="setup-notice hidden"></div>
+
       <!-- Signaling server config + create/join -->
       <div id="online-setup-panel" class="panel">
         <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
@@ -1039,7 +1082,7 @@
         <!-- The local <video> MUST stay muted: it's playing this machine's own
              microphone, so unmuted it is a howling feedback loop. -->
         <div id="online-video-strip" class="video-strip hidden">
-          <div class="video-tile self">
+          <div id="online-local-tile" class="video-tile self">
             <video id="online-local-video" autoplay playsinline muted></video>
             <div id="online-local-placeholder" class="video-tile-placeholder">Camera off</div>
             <span class="video-tile-label">You</span>
@@ -1055,6 +1098,9 @@
           <button type="button" id="online-av-start-btn" class="av-btn">📹 Start camera &amp; mic</button>
           <button type="button" id="online-av-mic-btn" class="av-btn hidden">🎤 Mute</button>
           <button type="button" id="online-av-cam-btn" class="av-btn hidden">📹 Camera off</button>
+          <!-- Only revealed when more than one camera actually exists, which
+               can't be known until permission has been granted. -->
+          <button type="button" id="online-av-swap-btn" class="av-btn hidden">🔄 Switch camera</button>
           <button type="button" id="online-av-stop-btn" class="av-btn hidden">Stop</button>
         </div>
 
@@ -1112,6 +1158,12 @@
         </div>
 
         <div id="online-throw-log"></div>
+
+        <!-- Deliberately last on the page and visually separated: this is the
+             one control here that throws away an in-progress match. -->
+        <div class="end-match-row">
+          <button type="button" id="online-end-match-btn" class="end-match-btn">End match</button>
+        </div>
       </div>
     </div>
 

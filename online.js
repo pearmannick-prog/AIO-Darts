@@ -88,9 +88,11 @@ const el = {
   remoteVideo: document.getElementById("online-remote-video"),
   localPlaceholder: document.getElementById("online-local-placeholder"),
   remotePlaceholder: document.getElementById("online-remote-placeholder"),
+  localTile: document.getElementById("online-local-tile"),
   avStartBtn: document.getElementById("online-av-start-btn"),
   avMicBtn: document.getElementById("online-av-mic-btn"),
   avCamBtn: document.getElementById("online-av-cam-btn"),
+  avSwapBtn: document.getElementById("online-av-swap-btn"),
   avStopBtn: document.getElementById("online-av-stop-btn"),
 
   manualSection: document.getElementById("online-manual-section"),
@@ -111,6 +113,8 @@ const el = {
   manualMiss: document.getElementById("online-manual-miss"),
 
   throwLog: document.getElementById("online-throw-log"),
+  endMatchBtn: document.getElementById("online-end-match-btn"),
+  setupNotice: document.getElementById("online-setup-notice"),
 };
 
 // ---------- Signaling / ICE configuration ----------
@@ -266,6 +270,8 @@ el.createBtn.addEventListener("click", async () => {
   wirePeerLink();
   resetAv();
 
+  // Whatever ended the last match is no longer news.
+  el.setupNotice.classList.add("hidden");
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
 
@@ -289,6 +295,8 @@ el.joinBtn.addEventListener("click", async () => {
   wirePeerLink();
   resetAv();
 
+  // Whatever ended the last match is no longer news.
+  el.setupNotice.classList.add("hidden");
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
   el.codeDisplay.textContent = code.toUpperCase();
@@ -309,6 +317,62 @@ el.cancelBtn.addEventListener("click", () => {
   el.waitingPanel.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
 });
+
+// ---------- Ending a match ----------
+// A hard stop: drops the peer connection AND releases the camera and mic.
+// Those are deliberately one action rather than two - a player who has "left"
+// a match while their webcam light is still on has not left in any sense they
+// would recognise, and hunting for a second button to make the light go out is
+// exactly the moment someone stops trusting the feature.
+let endArmTimeout = null;
+
+el.endMatchBtn.addEventListener("click", () => {
+  // Two taps, not a confirm() dialog: a modal is poor on a phone mid-match,
+  // but ending someone's leg on one stray tap is worth guarding against. The
+  // arming lapses on its own so it can't sit primed for the rest of the game.
+  if (el.endMatchBtn.dataset.armed !== "1") {
+    el.endMatchBtn.dataset.armed = "1";
+    el.endMatchBtn.textContent = "Tap again to end";
+    el.endMatchBtn.classList.add("armed");
+    clearTimeout(endArmTimeout);
+    endArmTimeout = setTimeout(disarmEndMatch, 4000);
+    return;
+  }
+  // Tell the opponent BEFORE tearing down - once the connection is closed
+  // there's nothing left to send it on, and they'd be left staring at a live
+  // scoreboard for a match that no longer exists.
+  peerLink?.sendGameMessage({ type: "end_match" });
+  teardownMatch("You ended the match.");
+});
+
+function disarmEndMatch() {
+  clearTimeout(endArmTimeout);
+  el.endMatchBtn.dataset.armed = "0";
+  el.endMatchBtn.textContent = "End match";
+  el.endMatchBtn.classList.remove("armed");
+}
+
+function teardownMatch(message) {
+  disarmEndMatch();
+  // close() stops the local camera and mic tracks as well as the connection -
+  // see the comment at the top of webrtc.js's close().
+  peerLink?.close();
+  peerLink = null;
+
+  online.active = false;
+  online.gameOver = false;
+  online.legOver = false;
+  online.match = null;
+
+  resetAv();
+
+  el.gamePanel.classList.add("hidden");
+  el.waitingPanel.classList.add("hidden");
+  el.winnerBanner.classList.add("hidden");
+  el.setupPanel.classList.remove("hidden");
+  el.setupNotice.textContent = message;
+  el.setupNotice.classList.remove("hidden");
+}
 
 async function ensurePeerLinkLoaded() {
   if (!PeerLink) {
@@ -370,6 +434,11 @@ function wirePeerLink() {
       if (online.active) return;
       startOnlineGame("guest", msg.legs);
       renderOnline();
+      return;
+    }
+
+    if (msg.type === "end_match") {
+      teardownMatch("Your opponent ended the match.");
       return;
     }
 
@@ -543,7 +612,52 @@ const av = {
   remoteAudio: false,
   remoteVideo: false,
   remoteBlocked: false, // the browser refused to autoplay it (see playRemote)
+  cameras: [], // videoinput devices, only trustworthy after permission
+  facingMode: null, // what the active camera says it is: "user"/"environment"/null
 };
+
+// Re-reads the camera list and the active camera. Called after anything that
+// could change either, which includes simply being granted permission - the
+// device list is under-reported until then.
+async function refreshCameras() {
+  if (!peerLink) return;
+  try {
+    av.cameras = await peerLink.listCameras();
+  } catch {
+    av.cameras = [];
+  }
+  av.facingMode = peerLink.activeCamera?.facingMode || null;
+  renderAv();
+}
+
+// Cycles to the next camera in the list. A cycle rather than a front/back
+// toggle because "next" is the only thing that generalises: phones have two,
+// desktops often have one, and a laptop with a plugged-in USB webcam has two
+// that both report no facingMode at all, which a front/back toggle can't
+// express.
+el.avSwapBtn.addEventListener("click", async () => {
+  if (!peerLink || av.cameras.length < 2) return;
+  el.avSwapBtn.disabled = true;
+  try {
+    const currentId = peerLink.activeCamera?.deviceId;
+    const at = av.cameras.findIndex((d) => d.deviceId === currentId);
+    const next = av.cameras[(at + 1) % av.cameras.length];
+    await peerLink.switchCamera({ deviceId: next.deviceId });
+  } catch (err) {
+    console.error(err);
+    // NotReadableError is the common one on Android: the camera is held by
+    // another app, or by another tab of this one.
+    alert(
+      err.name === "NotReadableError"
+        ? "That camera is busy - close anything else using it and try again."
+        : `Couldn't switch camera: ${err.message}`
+    );
+  } finally {
+    el.avSwapBtn.disabled = false;
+    // Whether it worked or was rolled back, the active camera may have moved.
+    await refreshCameras();
+  }
+});
 
 // The opponent's tile carries AUDIO, and browsers refuse to autoplay audible
 // media without user activation - so `autoplay` on the element is not enough
@@ -582,6 +696,9 @@ el.avStartBtn.addEventListener("click", async () => {
     av.on = true;
     av.mic = true;
     av.cam = true;
+    // Only now is the device list complete enough to decide whether a switch
+    // button is worth showing.
+    await refreshCameras();
   } catch (err) {
     console.error(err);
     // Separated because these need completely different fixes, and "couldn't
@@ -623,6 +740,7 @@ el.avStopBtn.addEventListener("click", () => {
   peerLink?.stopMedia();
   el.localVideo.srcObject = null;
   av.on = false;
+  av.facingMode = null;
   renderAv();
 });
 
@@ -636,10 +754,18 @@ function resetAv() {
   av.remoteAudio = false;
   av.remoteVideo = false;
   av.remoteBlocked = false;
+  av.cameras = [];
+  av.facingMode = null;
   el.localVideo.srcObject = null;
   el.remoteVideo.srcObject = null;
   renderAv();
 }
+
+// A webcam plugged in (or unplugged) mid-match changes whether switching is
+// possible at all, so the button has to keep up.
+navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+  if (av.on) refreshCameras();
+});
 
 function renderAv() {
   // The strip earns its space only once there's something in it - an empty
@@ -651,7 +777,17 @@ function renderAv() {
   el.avStartBtn.classList.toggle("hidden", av.on);
   el.avMicBtn.classList.toggle("hidden", !av.on);
   el.avCamBtn.classList.toggle("hidden", !av.on);
+  // A switch button on a machine with one camera is a button that can only
+  // disappoint, so it only exists when there's somewhere to switch to.
+  el.avSwapBtn.classList.toggle("hidden", !(av.on && av.cameras.length > 1));
   el.avStopBtn.classList.toggle("hidden", !av.on);
+
+  // Mirror the self-view unless the camera is explicitly rear-facing. Note the
+  // default: an unknown facingMode (every ordinary desktop webcam) mirrors,
+  // because those point at a face. Only "environment" is treated as pointing
+  // at the world - and therefore at a board, where a flipped image would be
+  // worse than useless.
+  el.localTile.classList.toggle("unmirrored", av.facingMode === "environment");
 
   el.avMicBtn.textContent = av.mic ? "🎤 Mute" : "🔇 Unmute";
   el.avMicBtn.classList.toggle("off", !av.mic);

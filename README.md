@@ -160,11 +160,28 @@ appears and no media is sent otherwise, so a match between two people who never
 touch the button behaves exactly as it did before the feature existed.
 
 Once on, you get **Mute**, **Camera off**, and **Stop** (which releases the
-devices - the camera light really does go out). Your own tile is mirrored, the
-way video-call apps show you; the opponent's is not, so a board pointed at the
-camera reads the right way round. If your opponent switches their camera off
-their tile says so, rather than going black and looking like a dropped
-connection.
+devices - the camera light really does go out). If your opponent switches their
+camera off their tile says so, rather than going black and looking like a
+dropped connection.
+
+**Switch camera** appears when there's more than one camera to switch to - the
+front/rear pair on a phone, or a laptop with a USB webcam plugged in. On a phone
+the rear camera is the one worth using: point it at your board and your opponent
+can watch the darts land. Switching keeps the mic, the match, and the connection
+untouched.
+
+Mirroring follows the camera. Your own tile is mirrored the way video-call apps
+show you, *except* on a rear-facing camera, where it isn't - a mirrored board
+would be actively misleading. The opponent's tile is never mirrored, for the
+same reason.
+
+### Ending a match
+
+**End match** at the bottom of the game panel drops the connection and releases
+the camera and mic in one action, and tells your opponent so they're not left
+staring at a scoreboard for a match that no longer exists. It takes two taps -
+the first arms it, and lapses after a few seconds - so a stray tap mid-leg
+doesn't end your game.
 
 This rides the *same* peer-to-peer connection as the scoring data, so it needs
 no extra ports, no second service, and no configuration. Two caveats:
@@ -440,6 +457,11 @@ with no date can't be told apart from a stale one.*
 
 Done since the last review:
 
+- ✅ **Camera switching and End match** (30 July 2026) - front/rear (or any
+  multi-camera) switching that keeps the mic and connection untouched, with
+  self-view mirroring that follows the camera's facing direction; plus a
+  two-tap End match that drops the connection and releases the devices
+  together, and tells the opponent.
 - ✅ **Camera and mic in online matches** (30 July 2026) - opt-in webcam and
   microphone on the existing peer connection, so you can watch your opponent
   throw. The audio/video m-lines are negotiated up front and left empty, then
