@@ -419,17 +419,7 @@
   .video-tile.active-turn .tile-score-value { color: var(--gold); }
 
   /* ---- Immersive layout ----------------------------------------------
-     With a camera on, the opponent's video becomes the surface and the
-     scoring floats on top of it, instead of the video being one more block
-     to scroll past. This is what makes Cricket usable: the mark pad is tall
-     enough that in the stacked layout, reaching it puts your opponent off
-     screen entirely - which rather defeats watching them throw.
-
-     Everything below is presentation only, scoped to .immersive, and no
-     element moves in the DOM - the remote <video> escapes its tile purely by
-     the tile giving up `position: relative`, so every id online.js talks to
-     stays exactly where it was. */
-  /* The stage is the top band of the panel: full-bleed video with the scoring
+     The stage is the top band of the panel: full-bleed video with the scoring
      floating on it. Everything that needs TAPPING and doesn't fit the display
      - manual entry, the throw log, End match - flows normally underneath on
      the usual cream surface. That's the one place this departs from the
@@ -444,16 +434,19 @@
      is exactly where it was. */
   #online-game-panel.immersive {
     --stage-h: 460px;
-  }
-  /* Cricket needs a taller stage: seven rows plus Miss simply don't fit in
-     the x01 height, and a mark pad you have to scroll is worse than no pad. */
-  #online-game-panel.immersive.cricket-stage {
-    --stage-h: 580px;
+    /* Load-bearing: the stage video is absolutely positioned and resolves
+       against this. Without it the video escapes to the viewport and covers
+       the entire page - which is exactly what happened when this rule was
+       once split and the positioning left behind on the Cricket variant. */
     position: relative;
     padding: 0 0 16px;
     padding-top: var(--stage-h);
     overflow: hidden;
   }
+  /* Cricket needs a taller stage: seven rows plus Miss simply don't fit in
+     the x01 height, and a mark pad you have to scroll is worse than no pad.
+     Only the variable changes - everything above still applies. */
+  #online-game-panel.immersive.cricket-stage { --stage-h: 580px; }
   /* Stage backdrop, so the band is still solid before any video arrives. */
   .immersive::before {
     content: "";
@@ -463,22 +456,39 @@
     background: #0c0b07;
     z-index: 0;
   }
-  /* The tile stops being a positioning context, so its absolutely-positioned
-     video resolves against the panel instead and fills the stage. */
-  .immersive #online-remote-tile {
+  /* Which feed is big and which is the thumbnail is decided by JS putting
+     .as-stage / .as-thumb on the tiles, rather than by naming the remote one
+     here. Written symmetrically on purpose: swapping them is then a class
+     change, not a second copy of the layout that can drift out of step with
+     this one. */
+
+  /* The stage tile stops being a positioning context, so its absolutely
+     positioned video resolves against the panel instead and fills the band. */
+  .immersive .video-tile.as-stage {
     position: static;
     aspect-ratio: auto;
     height: 0;
     background: none;
     overflow: visible;
   }
-  .immersive #online-remote-video {
+  /* Scoped to a DIRECT child of the strip, because .video-tile.as-stage is
+     `position: static` - so this <video> resolves against the nearest
+     positioned ancestor, which must be the panel. The strip and the tile both
+     have to stay static for that to hold; if either regains `position:
+     relative` the video pins to it instead, and if neither the panel nor they
+     are positioned it escapes to the viewport and covers the page. */
+  .immersive #online-video-strip > .video-tile.as-stage > video {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: var(--stage-h);
     width: 100%;
     object-fit: cover;
     z-index: 0;
+    /* Never mirrored at stage size, even for your own front camera. Mirroring
+       is a convention for a small self-view you glance at; at full size this
+       is what you use to aim a camera at a board, and a reversed board is
+       worse than useless. The thumbnail keeps the mirror. */
+    transform: none;
   }
   /* Readability floor. Without it the scoring is at the mercy of whatever is
      behind it, and an opponent in a bright room makes it unreadable. */
@@ -494,12 +504,14 @@
       rgba(0,0,0,0.15) 52%, rgba(0,0,0,0.86) 100%);
   }
   .immersive #online-video-strip { position: static; display: block; margin: 0; }
-  .immersive #online-remote-tile .tile-score,
-  .immersive #online-remote-tile .video-tile-placeholder { display: none; }
+  .immersive .video-tile.as-stage .tile-score { display: none; }
+  /* The stage's own placeholder would be a caption stranded in the middle of
+     the picture; the tile that ISN'T showing gets to explain itself instead. */
+  .immersive .video-tile.as-stage .video-tile-placeholder { display: none; }
 
   /* --- stage furniture, positioned by zone --- */
   .immersive .dartboard-wrap,
-  .immersive #online-local-tile,
+  .immersive .video-tile.as-thumb,
   .immersive .online-scoreboard,
   .immersive #online-turn-darts,
   .immersive #online-turn-label,
@@ -558,22 +570,22 @@
     text-shadow: 0 2px 8px rgba(0,0,0,0.8);
   }
 
-  /* Self-view as a bottom-left thumbnail, the way the reference lines players
-     up along the bottom edge. */
-  .immersive #online-local-tile {
+  /* The smaller feed sits bottom-left, the way the reference lines players up
+     along the bottom edge. */
+  .immersive .video-tile.as-thumb {
     left: 14px; top: calc(var(--stage-h) - 108px);
     width: 124px;
     aspect-ratio: 4 / 3;
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.55);
   }
-  .immersive #online-local-tile .tile-score { padding: 16px 7px 5px; }
-  .immersive #online-local-tile .tile-score-label { font-size: 9px; }
-  /* Your score is already in the bar immediately to the right of this
-     thumbnail. Printing it twice, two inches apart, just makes the reader
-     check whether the two numbers agree. */
-  .immersive #online-local-tile .tile-score-value { display: none; }
-  .immersive #online-local-tile .video-tile-placeholder { font-size: 10px; padding: 4px; }
+  .immersive .video-tile.as-thumb .tile-score { padding: 16px 7px 5px; }
+  .immersive .video-tile.as-thumb .tile-score-label { font-size: 9px; }
+  /* That player's score is already in the bar beside this thumbnail. Printing
+     it twice, a couple of inches apart, just makes the reader check whether
+     the two numbers agree. */
+  .immersive .video-tile.as-thumb .tile-score-value { display: none; }
+  .immersive .video-tile.as-thumb .video-tile-placeholder { font-size: 10px; padding: 4px; }
 
   /* "501 vs 501" across the bottom. */
   .immersive .online-scoreboard {
@@ -649,7 +661,7 @@
   @media (max-width: 560px) {
     #online-game-panel.immersive { --stage-h: 380px; }
     .immersive .dartboard-wrap { display: none; }
-    .immersive #online-local-tile { width: 88px; left: 10px; bottom: 10px; }
+    .immersive .video-tile.as-thumb { width: 88px; left: 10px; top: calc(var(--stage-h) - 80px); }
     .immersive .online-score-value { font-size: 30px; }
     .immersive #online-cricket-board { width: 74%; }
     .immersive #online-turn-label { right: 10px; top: 10px; }
@@ -1503,6 +1515,9 @@
           <!-- Only revealed when more than one camera actually exists, which
                can't be known until permission has been granted. -->
           <button type="button" id="online-av-swap-btn" class="av-btn hidden">🔄 Switch camera</button>
+          <!-- Which feed gets the big view. Opponent by default; putting your
+               own on the stage is how you frame a camera on your board. -->
+          <button type="button" id="online-av-view-btn" class="av-btn hidden">🖥 Big view: Opponent</button>
           <button type="button" id="online-av-stop-btn" class="av-btn hidden">Stop</button>
         </div>
 

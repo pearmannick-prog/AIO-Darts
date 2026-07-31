@@ -98,6 +98,7 @@ const el = {
   avMicBtn: document.getElementById("online-av-mic-btn"),
   avCamBtn: document.getElementById("online-av-cam-btn"),
   avSwapBtn: document.getElementById("online-av-swap-btn"),
+  avViewBtn: document.getElementById("online-av-view-btn"),
   avStopBtn: document.getElementById("online-av-stop-btn"),
 
   manualSection: document.getElementById("online-manual-section"),
@@ -979,8 +980,18 @@ const av = {
   cameras: [], // videoinput devices, only trustworthy after permission
   facingMode: null, // what the active camera says it is: "user"/"environment"/null
   recovering: false, // the camera died and is being reopened
-  immersive: false, // opponent's video is the surface, scoring floats on it
+  immersive: false, // a camera is the surface, with the scoring floating on it
+  // Which feed gets the big view. Always starts on the opponent - that's the
+  // one you're here to watch - and deliberately isn't remembered between
+  // matches, so a swap made to aim your own camera doesn't quietly become the
+  // way every future match opens.
+  stage: "opponent", // "opponent" | "self"
 };
+
+el.avViewBtn.addEventListener("click", () => {
+  av.stage = av.stage === "opponent" ? "self" : "opponent";
+  renderAv();
+});
 
 // Re-reads the camera list and the active camera. Called after anything that
 // could change either, which includes simply being granted permission - the
@@ -1122,6 +1133,7 @@ function resetAv() {
   av.remoteBlocked = false;
   av.cameras = [];
   av.facingMode = null;
+  av.stage = "opponent";
   el.localVideo.srcObject = null;
   el.remoteVideo.srcObject = null;
   renderAv();
@@ -1156,8 +1168,25 @@ function renderAv() {
   // behind the scoring. With no video it would be a black slab with the
   // numbers floating on it, which is strictly worse than the plain layout -
   // so the stacked layout stays the default and this is what video turns on.
-  av.immersive = av.remoteVideo && !av.remoteBlocked;
+  //
+  // Which feed is required depends on which one you've asked to enlarge: your
+  // own camera being on says nothing about whether the opponent's is.
+  const opponentLive = av.remoteVideo && !av.remoteBlocked;
+  const selfLive = av.on && av.cam;
+  const wantSelf = av.stage === "self";
+  av.immersive = wantSelf ? selfLive : opponentLive;
   el.gamePanel.classList.toggle("immersive", av.immersive);
+
+  // Symmetric by design: the CSS knows only "the big one" and "the small one",
+  // so swapping is a class change rather than a second layout to maintain.
+  el.localTile.classList.toggle("as-stage", wantSelf);
+  el.localTile.classList.toggle("as-thumb", !wantSelf);
+  el.remoteTile.classList.toggle("as-stage", !wantSelf);
+  el.remoteTile.classList.toggle("as-thumb", wantSelf);
+
+  el.avViewBtn.textContent = wantSelf ? "🖥 Big view: You" : "🖥 Big view: Opponent";
+  // Only worth offering once there are two feeds to choose between.
+  el.avViewBtn.classList.toggle("hidden", !(selfLive && opponentLive));
   // The bottom "501 vs 501" bar is the scoreboard restyled, so it stays in
   // immersive; in the plain layout with tiles up top it would just repeat
   // what the tiles already say.
