@@ -93,8 +93,10 @@ it means changing all of them.
 `match_config` (host sends legs; guest adopts them, otherwise the two sides could
 play different games) → `dart`, `quick_total`, `end_turn`, `next_leg`. Host is
 player index 0, guest 1, on both sides. x01, cricket, and medleys all work online.
-`media_state` also rides the channel but is intercepted in `webrtc.js` and never
-reaches `online.js`'s `onMessage` — game code doesn't know about it.
+`end_match` tears both sides down (sent *before* closing, or there's no channel
+left to send it on). `media_state` also rides the channel but is intercepted in
+`webrtc.js` and never reaches `online.js`'s `onMessage` — game code doesn't know
+about it.
 
 **Camera/mic uses pre-negotiated, initially empty transceivers.** `webrtc.js`
 calls `addTransceiver("audio"/"video", {direction:"sendrecv"})` before the one
@@ -105,6 +107,13 @@ spec needs no renegotiation. This is why there is no perfect-negotiation
 would reintroduce all of it, since either player can start a camera at any time.
 The accepted cost is a/v m-lines in every match's SDP even when unused.
 `close()` must keep stopping local tracks or the webcam light stays on.
+
+`switchCamera()` stops the old video track **before** requesting the new one.
+That looks backwards but is required: much Android hardware won't open the rear
+camera while the front is still held (`NotReadableError`). It restores the
+previous camera if the new request fails. Self-view mirroring is off only for
+`facingMode === "environment"` — an unknown facingMode (most desktop webcams)
+still mirrors.
 
 `sw.js` is **network-first on purpose**. Cache-first would serve stale JS after a
 deploy. Adding a new front-end file means adding it to `PRECACHE`.

@@ -42,6 +42,21 @@ const DEFAULT_MEDIA_CONSTRAINTS = {
   video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } },
 };
 
+// deviceId wins over facingMode when both are given: a specific camera the
+// player picked is a stronger statement of intent than "front-ish".
+//
+// `deviceId` is exact but `facingMode` is only a preference, on purpose. An
+// exact facingMode throws OverconstrainedError on any device that doesn't have
+// a camera facing that way - which includes most desktops, where asking for
+// "environment" would fail outright rather than just handing back the only
+// webcam there is.
+function videoConstraints({ facingMode, deviceId } = {}) {
+  const video = { ...DEFAULT_MEDIA_CONSTRAINTS.video };
+  if (deviceId) video.deviceId = { exact: deviceId };
+  else if (facingMode) video.facingMode = facingMode;
+  return video;
+}
+
 // Fallback only. Normally the caller passes servers in, sourced from the
 // deployment's /config.json - that's what allows a self-hosted TURN relay to
 // be added later without touching this file.
@@ -99,7 +114,7 @@ export class PeerLink {
   // Throws if the player denies permission or there's no device; the caller is
   // expected to surface that, since a silently dead camera button is worse
   // than an error.
-  async startMedia({ audio = true, video = true } = {}) {
+  async startMedia({ audio = true, video = true, facingMode, deviceId } = {}) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error(
         window.isSecureContext
@@ -110,7 +125,7 @@ export class PeerLink {
 
     const constraints = {
       audio: audio ? DEFAULT_MEDIA_CONSTRAINTS.audio : false,
-      video: video ? DEFAULT_MEDIA_CONSTRAINTS.video : false,
+      video: video ? videoConstraints({ facingMode, deviceId }) : false,
     };
     if (!constraints.audio && !constraints.video) return null;
 
@@ -132,6 +147,83 @@ export class PeerLink {
 
     this.#attachLocalTracks();
     return this.#localStream;
+  }
+
+  // What the camera in use reports about itself, or null if there isn't one.
+  // facingMode is absent on most desktop webcams - they genuinely don't know
+  // which way they point - so callers must treat null as "unknown", not "front".
+  get activeCamera() {
+    const track = this.#localStream?.getVideoTracks()[0];
+    if (!track) return null;
+    const settings = track.getSettings();
+    return {
+      deviceId: settings.deviceId || null,
+      facingMode: settings.facingMode || null,
+      label: track.label || "",
+    };
+  }
+
+  // Cameras this browser will admit to having.
+  //
+  // Worth knowing: before permission is granted, browsers return entries with
+  // blank labels, and some return only one entry however many cameras exist -
+  // so calling this before startMedia() will under-report. The UI only calls
+  // it after the camera is already running, which is when the list is honest.
+  async listCameras() {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === "videoinput");
+  }
+
+  // Swaps the camera without touching the mic, the connection, or the SDP -
+  // the new track goes into the SAME sender via replaceTrack(), the identical
+  // no-renegotiation path startMedia() uses. Mute state carries across.
+  //
+  // Note the ORDER: the old track is stopped BEFORE the new one is requested.
+  // That looks backwards - it would be safer to get the new camera working and
+  // only then let go of the old one - but a lot of Android hardware refuses to
+  // open the back camera while the front one is still held, failing with
+  // NotReadableError. Stopping first is the only order that works there.
+  //
+  // The cost of that order is that a failed request leaves you with no camera
+  // at all, so this puts the previous one back before rethrowing.
+  async switchCamera({ deviceId, facingMode } = {}) {
+    if (!this.#localStream) throw new Error("The camera isn't on yet.");
+
+    const old = this.#localStream.getVideoTracks()[0];
+    const wasEnabled = old ? old.enabled : true;
+    const previousId = old ? old.getSettings().deviceId : null;
+
+    if (old) {
+      old.stop();
+      this.#localStream.removeTrack(old);
+    }
+
+    try {
+      await this.#addVideoTrack({ deviceId, facingMode }, wasEnabled);
+    } catch (err) {
+      if (previousId) {
+        // Best effort. If even this fails there's nothing sensible left to do,
+        // and the original error is the one worth reporting either way.
+        try {
+          await this.#addVideoTrack({ deviceId: previousId }, wasEnabled);
+        } catch { /* fall through to the rethrow */ }
+      }
+      throw err;
+    }
+
+    return this.activeCamera;
+  }
+
+  async #addVideoTrack(spec, enabled = true) {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(spec) });
+    const track = stream.getVideoTracks()[0];
+    // Switching cameras must not silently un-mute a camera the player had
+    // deliberately switched off.
+    track.enabled = enabled;
+    this.#localStream.addTrack(track);
+    this.#attachLocalTracks();
+    return track;
   }
 
   // Turns everything off and releases the devices, so the browser's
