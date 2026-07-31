@@ -11,6 +11,12 @@ Everything runs as **one container on one port**. The static front-end and the
 WebRTC signaling server are served by the same process, which is what keeps
 deployment simple (see [Architecture](#architecture)).
 
+If you'd like to support the project, there's a small "Support this project"
+link in the app's footer, pointing to https://ko-fi.com/nickpearman. No
+paywall and nothing is gated behind it - it's just a tip jar for now. A free
+tier alongside a paid one is planned for later, once accounts and persistent
+stats land, but that's a ways off.
+
 The Bluetooth service UUID and dart-hit decoding table in `granboard.js` are
 adapted from the open-source project
 [sobassy/gran-app](https://github.com/sobassy/gran-app) (MIT License). Credit
