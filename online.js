@@ -117,6 +117,7 @@ const el = {
   setupNotice: document.getElementById("online-setup-notice"),
 
   checkPanel: document.querySelector(".device-check"),
+  checkPreview: document.querySelector(".device-preview"),
   checkVideo: document.getElementById("device-preview-video"),
   checkPlaceholder: document.getElementById("device-preview-placeholder"),
   checkBtn: document.getElementById("device-check-btn"),
@@ -298,6 +299,17 @@ function rememberCamera(deviceId) {
   else localStorage.removeItem(CAMERA_PREF_KEY);
 }
 
+// The one rule for self-view mirroring, shared by the pre-match preview and
+// the in-match tile so they can't disagree - they did once, and a board that
+// flips over the moment the match starts is worse than either choice alone.
+//
+// Note the default: an UNKNOWN facing mode mirrors. That's every ordinary
+// desktop webcam, and those point at a face. Only a camera that explicitly
+// says it faces the world is treated as pointing at a board.
+function shouldMirror(facingMode) {
+  return facingMode !== "environment";
+}
+
 function savedMicId() {
   return localStorage.getItem(MIC_PREF_KEY) || null;
 }
@@ -383,6 +395,10 @@ async function startDeviceCheck(cameraId = savedCameraId(), micId = savedMicId()
     // The preview is muted, so it never needs the tap-to-play recovery the
     // in-match opponent tile does.
     el.checkVideo.play().catch(() => {});
+    // Same mirroring rule as the in-match tile - a rear camera lined up on a
+    // board here must not flip when the match starts.
+    const facingMode = check.stream.getVideoTracks()[0]?.getSettings().facingMode || null;
+    el.checkPreview.classList.toggle("unmirrored", !shouldMirror(facingMode));
     await populateDeviceLists();
     startMicMeter();
     renderCheck(true);
@@ -483,6 +499,9 @@ function stopDeviceCheck({ keepUi = false } = {}) {
   check.stream = null;
   el.checkVideo.srcObject = null;
   el.checkMicLevel.style.width = "0%";
+  // Back to the mirrored default, so a failed restart can't leave the previous
+  // camera's orientation applied to a different camera.
+  el.checkPreview.classList.remove("unmirrored");
   if (!keepUi) renderCheck(false);
 }
 
@@ -1052,12 +1071,7 @@ function renderAv() {
   el.avSwapBtn.classList.toggle("hidden", !(av.on && av.cameras.length > 1));
   el.avStopBtn.classList.toggle("hidden", !av.on);
 
-  // Mirror the self-view unless the camera is explicitly rear-facing. Note the
-  // default: an unknown facingMode (every ordinary desktop webcam) mirrors,
-  // because those point at a face. Only "environment" is treated as pointing
-  // at the world - and therefore at a board, where a flipped image would be
-  // worse than useless.
-  el.localTile.classList.toggle("unmirrored", av.facingMode === "environment");
+  el.localTile.classList.toggle("unmirrored", !shouldMirror(av.facingMode));
 
   el.avMicBtn.textContent = av.mic ? "🎤 Mute" : "🔇 Unmute";
   el.avMicBtn.classList.toggle("off", !av.mic);
