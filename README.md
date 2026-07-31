@@ -133,10 +133,17 @@ what the above does.
 ## Online 1v1 challenges
 
 The "Online Challenge" tab lets two people, each with their own board, play a
-remote 1v1 501 match. Gameplay runs over a **direct peer-to-peer WebRTC
+remote 1v1 match. Gameplay runs over a **direct peer-to-peer WebRTC
 connection** - the signaling server is only involved in the initial handshake
 (helping the two browsers find each other and swap connection details), never
 in gameplay traffic.
+
+Online play uses the same **Format** control as local play - every x01 variant,
+Cricket, the best-of presets, and hand-built medleys all work. The player who
+creates the challenge picks the format and it's sent to whoever joins, so both
+sides are always playing the same thing rather than each guessing. Multi-leg
+matches show the leg tally and a **Next leg** button exactly as they do
+locally, and either player can advance the match.
 
 In online mode you have the same three input methods as local play: a real
 Bluetooth board, the clickable dartboard, and manual entry (Per-Dart or Quick
@@ -388,11 +395,19 @@ instead, since there's no build step to bake a commit into.
 
 ## Roadmap
 
-- 🎯 **Cricket and medley matches online** - both work in local play; online needs the peer message protocol extended to carry marks and leg state instead of just a running score
+*Last reviewed: 30 July 2026. Date this list whenever it changes - a roadmap
+with no date can't be told apart from a stale one.*
+
 - Persistent stats across sessions (accounts + SQLite, staying single-container)
 - Matchmaking and a lobby beyond invite codes
 - Native Windows (C#/.NET) version
 - Webcam-based hit detection for standard steel-tip boards
 
-Let me know how the current 501 scoring and online matches behave with real
-boards, and we'll prioritize from there.
+Done since the last review:
+
+- ✅ **Cricket and medley matches online** (30 July 2026) - the peer protocol now
+  sends the host's chosen format on connect and carries per-dart segments, so
+  marks and leg state stay in sync without a separate message type per game.
+
+Let me know how the current scoring and online matches behave with real boards,
+and we'll prioritize from there.
