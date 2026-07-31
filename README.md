@@ -2,9 +2,10 @@
 
 An "all-in-one" darts app: local pass-and-play scoring, online 1v1 challenges
 over a direct P2P connection with optional camera and mic so you can watch your
-opponent throw, Granboard Bluetooth support with a manual-entry fallback (so it
-also works with a plain steel-tip board), and room to grow from there -
-camera-based hit detection is on the roadmap.
+opponent throw, and three equal ways to score: a Granboard over Bluetooth, a
+clickable dartboard, or manual entry - so a plain steel-tip board works just as
+well as an electronic one. Room to grow from there, too: camera-based hit
+detection is on the roadmap.
 
 Everything runs as **one container on one port**. The static front-end and the
 WebRTC signaling server are served by the same process, which is what keeps
@@ -108,16 +109,19 @@ what the above does.
    everything **and** being level or ahead on points - closing out while
    behind doesn't end the game. Quick Total entry is hidden in Cricket, since
    a turn total says nothing about which numbers were hit.
-2. Click **Connect Board** - a browser popup will ask you to pick your
-   Granboard from a list of nearby Bluetooth devices. Select it and click
-   "Pair"/"Connect".
+2. *If you have a Granboard*, click **Connect Board** - a browser popup will
+   ask you to pick it from a list of nearby Bluetooth devices. Select it and
+   click "Pair"/"Connect". This step is entirely optional: the clickable
+   dartboard and manual entry are complete ways to play on their own, so a
+   plain steel-tip board (or no board at all) works fine.
 3. Throw darts - hits should show up automatically, update the score, and
    move a marker on the mini dartboard. You can also just **click directly on
    the mini dartboard** to score that segment - a third input method alongside
    a real board and manual entry, available in both local and online mode.
-4. Use **Undo last dart** if a throw gets misread, and the **manual entry**
-   section at the bottom to record a miss or fix a misread by hand. It has two
-   modes:
+4. **Manual entry**, at the bottom, is a full input method in its own right -
+   plenty of people play a plain steel-tip board this way and never connect
+   anything over Bluetooth. If you *do* have a board, it's also what records a
+   miss or fixes a misread (alongside **Undo last dart**). Two modes:
    - **Per-Dart** - pick a ring and tap the exact segment hit, one dart at a
      time (what the board's own hits look like too).
    - **Quick Total** - a DartConnect-style numeric keypad for entering a whole
