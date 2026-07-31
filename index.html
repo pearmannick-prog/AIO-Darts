@@ -288,7 +288,15 @@
   .player-remove:hover { opacity: 1; color: var(--gold); }
   /* Two players is the minimum for a match, so there's nothing to remove. */
   #player-inputs.at-minimum .player-remove { visibility: hidden; }
-  .setup-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .setup-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  /* Flex children refuse to shrink below their content by default, which is
+     what pushes a narrow screen into sideways scrolling. */
+  .setup-actions > * { min-width: 0; }
+
+  /* The format picker and leg list are stacked blocks, NOT columns in the
+     button row - they were briefly inside .setup-actions, which laid them
+     out side by side and overflowed the page. */
+  .format-block { margin-top: 16px; }
 
   /* Game panel layout */
   .game-top {
@@ -518,10 +526,27 @@
   }
   /* The starting score is a short field; the rules label is long, so it gets
      the remaining width. Both disappear for a cricket leg. */
-  .leg-row .leg-score { flex: 0 0 82px; }
-  .leg-row .leg-rules { flex: 2 1 190px; }
-  .leg-row .leg-game { flex: 1 1 110px; }
+  .leg-row .leg-score { flex: 0 1 90px; }
+  .leg-row .leg-rules { flex: 3 1 170px; }
+  .leg-row .leg-game { flex: 1 1 100px; }
+  .leg-row select { min-width: 0; }
   .leg-row select.hidden { display: none; }
+
+  /* On a phone the four controls can't share one line legibly, so the label
+     takes the full width and the selects wrap beneath it. */
+  @media (max-width: 560px) {
+    .leg-row {
+      gap: 6px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(27,26,20,0.08);
+    }
+    .leg-row .leg-label { flex: 1 0 100%; min-width: 0; }
+    .leg-row .leg-game { flex: 1 1 90px; }
+    .leg-row .leg-score { flex: 0 1 78px; }
+    .leg-row .leg-rules { flex: 1 1 100%; }
+    .setup-row label { flex: 1 0 100%; }
+    .setup-row select { flex: 1 1 100%; }
+  }
   .leg-row .leg-label {
     font-size: 13px;
     font-weight: 600;
@@ -586,8 +611,10 @@
     align-items: center;
     gap: 10px;
     margin-bottom: 12px;
+    flex-wrap: wrap;
   }
   .setup-row label { font-weight: 600; }
+  .setup-row select { flex: 1 1 220px; min-width: 0; max-width: 100%; }
   .setup-row select {
     padding: 6px 10px;
     border-radius: 6px;
@@ -608,7 +635,8 @@
     font-size: 12.5px;
     opacity: 0.75;
     line-height: 1.5;
-    margin: 0 0 12px;
+    margin: 0 0 4px;
+    max-width: 52ch;
   }
 
   .dartboard-marker {
@@ -861,7 +889,7 @@
       <!-- Signaling server config + create/join -->
       <div id="online-setup-panel" class="panel">
         <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
-        <div class="setup-actions">
+        <div class="format-block">
           <div class="setup-row">
             <label for="online-format">Format</label>
             <select id="online-format">
@@ -881,6 +909,9 @@
             The player who creates the challenge picks the format - whoever
             joins gets the same one automatically.
           </p>
+        </div>
+
+        <div class="setup-actions">
           <button id="create-challenge-btn" class="btn-primary">Create Challenge</button>
         </div>
         <div class="setup-actions">
