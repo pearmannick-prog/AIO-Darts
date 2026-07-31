@@ -75,6 +75,11 @@ const el = {
   oppBox: document.getElementById("online-opp-box"),
   meScore: document.getElementById("online-me-score"),
   oppScore: document.getElementById("online-opp-score"),
+  scoreboard: document.getElementById("online-scoreboard"),
+  bigScore: document.getElementById("online-big-score"),
+  tileMeScore: document.getElementById("online-tile-me-score"),
+  tileOppScore: document.getElementById("online-tile-opp-score"),
+  remoteTile: document.getElementById("online-remote-tile"),
   turnLabel: document.getElementById("online-turn-label"),
   turnDarts: document.getElementById("online-turn-darts"),
   winnerBanner: document.getElementById("online-winner-banner"),
@@ -974,6 +979,7 @@ const av = {
   cameras: [], // videoinput devices, only trustworthy after permission
   facingMode: null, // what the active camera says it is: "user"/"environment"/null
   recovering: false, // the camera died and is being reopened
+  immersive: false, // opponent's video is the surface, scoring floats on it
 };
 
 // Re-reads the camera list and the active camera. Called after anything that
@@ -1143,7 +1149,19 @@ function renderAv() {
   // pair of black rectangles above the scoreboard would just be clutter for
   // the players who never use this.
   const remoteActive = av.remoteAudio || av.remoteVideo;
-  el.videoStrip.classList.toggle("hidden", !(av.on || remoteActive));
+  const anyone = av.on || remoteActive;
+  el.videoStrip.classList.toggle("hidden", !anyone);
+
+  // Immersive only earns its keep once there's actually a picture to put
+  // behind the scoring. With no video it would be a black slab with the
+  // numbers floating on it, which is strictly worse than the plain layout -
+  // so the stacked layout stays the default and this is what video turns on.
+  av.immersive = av.remoteVideo && !av.remoteBlocked;
+  el.gamePanel.classList.toggle("immersive", av.immersive);
+  // The bottom "501 vs 501" bar is the scoreboard restyled, so it stays in
+  // immersive; in the plain layout with tiles up top it would just repeat
+  // what the tiles already say.
+  el.scoreboard.classList.toggle("hidden", anyone && !av.immersive);
 
   el.avStartBtn.classList.toggle("hidden", av.on);
   el.avMicBtn.classList.toggle("hidden", !av.on);
@@ -1175,6 +1193,11 @@ function renderAv() {
   // prompt would be a lie.
   const blocked = av.remoteVideo && av.remoteBlocked;
   const remoteVisible = av.remoteVideo && !av.remoteBlocked;
+  // Switching into or out of immersive changes which score elements are on
+  // screen, so the game render has to follow. Safe from recursion:
+  // renderOnline never calls back into here.
+  if (online.active) renderOnline();
+
   el.remotePlaceholder.classList.toggle("hidden", remoteVisible);
   el.remotePlaceholder.classList.toggle("tappable", blocked);
   if (blocked) {
@@ -1370,6 +1393,9 @@ function renderOnline() {
   // Cricket shows marks; x01 shows a remaining score. Only one at a time.
   el.cricketBoard?.classList.toggle("hidden", !cricket);
   el.manualSection?.classList.toggle("cricket-mode", cricket);
+  // Cricket's mark pad lives on the stage, and needs a taller one than the
+  // single big number x01 shows.
+  el.gamePanel.classList.toggle("cricket-stage", cricket);
 
   if (cricket) {
     // "me" first so the local player always reads on the left, whichever
@@ -1383,8 +1409,26 @@ function renderOnline() {
     el.oppScore.textContent = online.opp.remaining;
   }
 
-  el.meBox.classList.toggle("active-turn", online.activeSide === "me" && !online.gameOver);
-  el.oppBox.classList.toggle("active-turn", online.activeSide === "opp" && !online.gameOver);
+  const myTurn = online.activeSide === "me" && !online.gameOver;
+  const theirTurn = online.activeSide === "opp" && !online.gameOver;
+  el.meBox.classList.toggle("active-turn", myTurn);
+  el.oppBox.classList.toggle("active-turn", theirTurn);
+
+  // The tiles carry the same scores and the same active-turn ring, so they
+  // stand in for the scoreboard when the camera is on.
+  el.tileMeScore.textContent = el.meScore.textContent;
+  el.tileOppScore.textContent = el.oppScore.textContent;
+  el.localTile.classList.toggle("active-turn", myTurn);
+  el.remoteTile.classList.toggle("active-turn", theirTurn);
+
+  // The giant central figure: what the player who is throwing has left. It
+  // only means anything in x01 - in Cricket the mark pad IS the display, and
+  // a points total in 120px type would say almost nothing about the game.
+  const showBig = av.immersive && !cricket && !online.gameOver;
+  el.bigScore.classList.toggle("hidden", !showBig);
+  if (showBig) {
+    el.bigScore.textContent = myTurn ? online.me.remaining : online.opp.remaining;
+  }
 
   renderOnlineMatchBar();
 

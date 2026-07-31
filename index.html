@@ -380,6 +380,282 @@
   }
   .setup-notice.hidden { display: none; }
 
+  /* Score painted onto the tile rather than given a row of its own. Merging
+     the two reclaims a whole band of vertical space and ties each score to
+     the face it belongs to, instead of asking you to pair them up yourself. */
+  .tile-score {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    z-index: 2;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 26px 12px 8px;
+    /* A gradient scrim, not a solid panel. The video underneath is arbitrary -
+       a bright wall or a dark room - and only a gradient stays readable over
+       both without blanking out the picture the tile exists to show. */
+    background: linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.4) 50%, transparent);
+    pointer-events: none;
+  }
+  .tile-score-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(239,230,210,0.85);
+  }
+  .tile-score-value {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 34px;
+    line-height: 1;
+    color: var(--cream);
+    text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  }
+  /* Whose turn it is has to be readable at a glance from the oche, so it's a
+     ring around the whole tile rather than a subtle colour change. */
+  .video-tile.active-turn { box-shadow: 0 0 0 3px var(--gold) inset; }
+  .video-tile.active-turn .tile-score-value { color: var(--gold); }
+
+  /* ---- Immersive layout ----------------------------------------------
+     With a camera on, the opponent's video becomes the surface and the
+     scoring floats on top of it, instead of the video being one more block
+     to scroll past. This is what makes Cricket usable: the mark pad is tall
+     enough that in the stacked layout, reaching it puts your opponent off
+     screen entirely - which rather defeats watching them throw.
+
+     Everything below is presentation only, scoped to .immersive, and no
+     element moves in the DOM - the remote <video> escapes its tile purely by
+     the tile giving up `position: relative`, so every id online.js talks to
+     stays exactly where it was. */
+  /* The stage is the top band of the panel: full-bleed video with the scoring
+     floating on it. Everything that needs TAPPING and doesn't fit the display
+     - manual entry, the throw log, End match - flows normally underneath on
+     the usual cream surface. That's the one place this departs from the
+     reference, and it has to: Granboard reads the board automatically, so
+     theirs is pure display, whereas half of ours is an input surface.
+     Cricket is the exception - our mark pad is already the same shape as
+     their centre column, so it goes ON the stage and doubles as the display.
+
+     No element moves in the DOM. Stage pieces are absolutely positioned
+     inside the top `--stage-h` band, the panel reserves that band with
+     padding-top, and the rest flows below - so every id online.js talks to
+     is exactly where it was. */
+  #online-game-panel.immersive {
+    --stage-h: 460px;
+  }
+  /* Cricket needs a taller stage: seven rows plus Miss simply don't fit in
+     the x01 height, and a mark pad you have to scroll is worse than no pad. */
+  #online-game-panel.immersive.cricket-stage {
+    --stage-h: 580px;
+    position: relative;
+    padding: 0 0 16px;
+    padding-top: var(--stage-h);
+    overflow: hidden;
+  }
+  /* Stage backdrop, so the band is still solid before any video arrives. */
+  .immersive::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: var(--stage-h);
+    background: #0c0b07;
+    z-index: 0;
+  }
+  /* The tile stops being a positioning context, so its absolutely-positioned
+     video resolves against the panel instead and fills the stage. */
+  .immersive #online-remote-tile {
+    position: static;
+    aspect-ratio: auto;
+    height: 0;
+    background: none;
+    overflow: visible;
+  }
+  .immersive #online-remote-video {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: var(--stage-h);
+    width: 100%;
+    object-fit: cover;
+    z-index: 0;
+  }
+  /* Readability floor. Without it the scoring is at the mercy of whatever is
+     behind it, and an opponent in a bright room makes it unreadable. */
+  .immersive::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: var(--stage-h);
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(to bottom,
+      rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.15) 26%,
+      rgba(0,0,0,0.15) 52%, rgba(0,0,0,0.86) 100%);
+  }
+  .immersive #online-video-strip { position: static; display: block; margin: 0; }
+  .immersive #online-remote-tile .tile-score,
+  .immersive #online-remote-tile .video-tile-placeholder { display: none; }
+
+  /* --- stage furniture, positioned by zone --- */
+  .immersive .dartboard-wrap,
+  .immersive #online-local-tile,
+  .immersive .online-scoreboard,
+  .immersive #online-turn-darts,
+  .immersive #online-turn-label,
+  .immersive #online-big-score,
+  .immersive #online-match-bar,
+  .immersive #online-cricket-board {
+    position: absolute;
+    z-index: 2;
+  }
+
+  /* Board reference, top-left and dimmed - it's a target picker here, not the
+     main event, so it recedes until you reach for it. */
+  .immersive .dartboard-wrap {
+    top: 14px; left: 14px;
+    width: 168px;
+    opacity: 0.72;
+    transition: opacity 0.15s ease;
+  }
+  .immersive .dartboard-wrap:hover { opacity: 1; }
+
+  .immersive #online-match-bar {
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(12,11,7,0.5);
+    color: var(--cream);
+    border: 1px solid rgba(239,230,210,0.2);
+    white-space: nowrap;
+  }
+
+  /* Everything on the stage is anchored from the TOP of the panel, never the
+     bottom. The panel is far taller than the stage - it reserves the stage
+     band with padding-top and then flows the controls underneath - so a
+     `bottom` here would pin things to the bottom of the controls instead,
+     leaving the score floating over the manual-entry keypad. */
+
+  /* The giant central figure: whoever's turn it is, and what they need. */
+  #online-big-score {
+    top: calc(var(--stage-h) * 0.44); left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: clamp(64px, 13vw, 132px);
+    line-height: 1;
+    color: var(--cream);
+    text-shadow: 0 6px 26px rgba(0,0,0,0.75);
+    pointer-events: none;
+  }
+  #online-big-score.hidden { display: none; }
+
+  .immersive #online-turn-label {
+    top: 12px; right: 146px;
+    margin: 0;
+    font-size: 13px;
+    text-align: right;
+    color: rgba(239,230,210,0.92);
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  }
+
+  /* Self-view as a bottom-left thumbnail, the way the reference lines players
+     up along the bottom edge. */
+  .immersive #online-local-tile {
+    left: 14px; top: calc(var(--stage-h) - 108px);
+    width: 124px;
+    aspect-ratio: 4 / 3;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.55);
+  }
+  .immersive #online-local-tile .tile-score { padding: 16px 7px 5px; }
+  .immersive #online-local-tile .tile-score-label { font-size: 9px; }
+  /* Your score is already in the bar immediately to the right of this
+     thumbnail. Printing it twice, two inches apart, just makes the reader
+     check whether the two numbers agree. */
+  .immersive #online-local-tile .tile-score-value { display: none; }
+  .immersive #online-local-tile .video-tile-placeholder { font-size: 10px; padding: 4px; }
+
+  /* "501 vs 501" across the bottom. */
+  .immersive .online-scoreboard {
+    display: flex;
+    top: calc(var(--stage-h) - 78px); left: 50%;
+    transform: translateX(-50%);
+    gap: 22px;
+    align-items: flex-end;
+    justify-content: center;
+    grid-template-columns: none;
+  }
+  .immersive .online-score-box { background: none; padding: 0; }
+  .immersive .online-score-box.active-turn { background: none; }
+  .immersive .online-score-label { color: rgba(239,230,210,0.75); }
+  .immersive .online-score-value {
+    color: var(--cream);
+    font-size: 40px;
+    text-shadow: 0 3px 12px rgba(0,0,0,0.8);
+  }
+  .immersive .online-score-box.active-turn .online-score-value { color: var(--gold); }
+
+  .immersive #online-turn-darts {
+    right: 14px; top: calc(var(--stage-h) - 62px);
+    margin: 0;
+    gap: 6px;
+  }
+  .immersive .dart-slot {
+    background: rgba(12,11,7,0.5);
+    border-color: rgba(239,230,210,0.4);
+    color: var(--cream);
+  }
+
+  /* Cricket's mark pad IS the display, so it sits on the stage. */
+  .immersive #online-cricket-board {
+    top: calc(var(--stage-h) * 0.46); left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(400px, 62%);
+    max-height: calc(var(--stage-h) - 150px);
+    overflow-y: auto;
+    background: rgba(12,11,7,0.55);
+    border: 1px solid rgba(239,230,210,0.18);
+    border-radius: 12px;
+    color: var(--cream);
+  }
+  .immersive .ck-row { border-bottom-color: rgba(239,230,210,0.16); }
+  /* The pad's own name/points header says exactly what the score bar under it
+     says. On the stage that's two copies of the same numbers a few inches
+     apart, and dropping it buys back the height that was forcing the pad to
+     scroll. */
+  .immersive .ck-header { display: none; }
+  .immersive .ck-name, .immersive .ck-points { color: var(--cream); }
+  .immersive .ck-mark { color: var(--cream); }
+
+  /* --- below the stage: ordinary cream surface, ordinary controls --- */
+  .immersive #online-status-label,
+  .immersive #online-manual-section,
+  .immersive #online-connect-row,
+  .immersive #online-throw-log,
+  .immersive .end-match-row,
+  .immersive #online-next-leg-btn,
+  .immersive #online-winner-banner,
+  .immersive #online-av-row {
+    position: relative;
+    z-index: 2;
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+  .immersive #online-av-row { margin-top: 14px; }
+
+  /* A phone has no room for a 460px stage AND controls, so the stage gives
+     way: the board reference goes, the thumbnail shrinks, and the mark pad
+     takes the width it needs to stay tappable. */
+  @media (max-width: 560px) {
+    #online-game-panel.immersive { --stage-h: 380px; }
+    .immersive .dartboard-wrap { display: none; }
+    .immersive #online-local-tile { width: 88px; left: 10px; bottom: 10px; }
+    .immersive .online-score-value { font-size: 30px; }
+    .immersive #online-cricket-board { width: 74%; }
+    .immersive #online-turn-label { right: 10px; top: 10px; }
+    #online-big-score { font-size: clamp(52px, 16vw, 96px); }
+  }
+
   .av-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .av-btn {
     font-size: 13px;
@@ -1205,12 +1481,18 @@
           <div id="online-local-tile" class="video-tile self">
             <video id="online-local-video" autoplay playsinline muted></video>
             <div id="online-local-placeholder" class="video-tile-placeholder">Camera off</div>
-            <span class="video-tile-label">You</span>
+            <div class="tile-score">
+              <span class="tile-score-label">You</span>
+              <span id="online-tile-me-score" class="tile-score-value">501</span>
+            </div>
           </div>
-          <div class="video-tile">
+          <div id="online-remote-tile" class="video-tile">
             <video id="online-remote-video" autoplay playsinline></video>
             <div id="online-remote-placeholder" class="video-tile-placeholder">Waiting for opponent's camera&hellip;</div>
-            <span class="video-tile-label">Opponent</span>
+            <div class="tile-score">
+              <span class="tile-score-label">Opponent</span>
+              <span id="online-tile-opp-score" class="tile-score-value">501</span>
+            </div>
           </div>
         </div>
 
@@ -1224,7 +1506,7 @@
           <button type="button" id="online-av-stop-btn" class="av-btn hidden">Stop</button>
         </div>
 
-        <div class="online-scoreboard">
+        <div id="online-scoreboard" class="online-scoreboard">
           <div id="online-me-box" class="online-score-box">
             <div class="online-score-label">You</div>
             <div id="online-me-score" class="online-score-value">501</div>
@@ -1234,6 +1516,10 @@
             <div id="online-opp-score" class="online-score-value">501</div>
           </div>
         </div>
+
+        <!-- The giant central figure in immersive mode: whoever is throwing,
+             and what they have left. Hidden entirely outside it. -->
+        <div id="online-big-score" class="hidden"></div>
 
         <div id="online-turn-label" style="text-align:center; margin:14px 0; font-weight:600;"></div>
         <div id="online-turn-darts" class="online-turn-darts"></div>
