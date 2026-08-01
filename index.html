@@ -455,8 +455,37 @@
      inside the top `--stage-h` band, the panel reserves that band with
      padding-top, and the rest flows below - so every id online.js talks to
      is exactly where it was. */
+  /* Immersive breaks out of the page's 900px reading width.
+     That cap is right for every other screen here - forms, keypads and the
+     throw log are text, and text does not want 2000px lines - but the stage is
+     video and a giant number, which is exactly the content that does want the
+     width. On a wide monitor the capped version left the "arcade monitor" as a
+     900px column with empty felt either side.
+
+     Widened by margin+transform rather than by changing .wrap, because .wrap is
+     an ancestor and CSS cannot select it from here; the alternative was having
+     renderAv put a class on <body>, which is presentation leaking into JS for
+     something CSS can do on its own. margin-left:50% moves the panel's left
+     edge to the centre of the 860px content box, then translateX(-50%) pulls it
+     back by half its OWN width - which centres it whatever that width is.
+
+     The transform is safe next to the absolute positioning above: a transformed
+     element is itself a containing block, so the stage furniture still resolves
+     against this panel, exactly as `position: relative` made it. */
   #online-game-panel.immersive {
-    --stage-h: 460px;
+    width: min(1280px, 94vw);
+    margin-left: 50%;
+    transform: translateX(-50%);
+
+    /* Height tracks width instead of being a fixed 460px, or widening alone
+       would only stretch the stage into a letterbox slot and crop more off the
+       top and bottom of every camera. The clamp is what keeps it sane: never
+       shorter than the old 460, never so tall the controls underneath fall off
+       the screen. At the 1280px cap this lands near 2:1, which suits the split
+       stage particularly well - each half is then close to square, so a 4:3
+       camera loses almost nothing. */
+    --stage-h: clamp(460px, 34vw, 620px);
+
     /* Load-bearing: the stage video is absolutely positioned and resolves
        against this. Without it the video escapes to the viewport and covers
        the entire page - which is exactly what happened when this rule was
@@ -469,7 +498,7 @@
   /* Cricket needs a taller stage: seven rows plus Miss simply don't fit in
      the x01 height, and a mark pad you have to scroll is worse than no pad.
      Only the variable changes - everything above still applies. */
-  #online-game-panel.immersive.cricket-stage { --stage-h: 580px; }
+  #online-game-panel.immersive.cricket-stage { --stage-h: clamp(580px, 42vw, 760px); }
   /* Stage backdrop, so the band is still solid before any video arrives. */
   .immersive::before {
     content: "";
@@ -578,9 +607,13 @@
   }
   .immersive .dartboard-wrap:hover { opacity: 1; }
 
+  /* Top-right, not top-centre. The centre of that row now belongs to the
+     thrown darts, which are 204px wide and the widest thing up there; the
+     match bar is 138px and only appears in a medley at all, so it is the one
+     that gives way. The turn label tucks underneath it. */
   .immersive #online-match-bar {
-    top: 16px; left: 50%;
-    transform: translateX(-50%);
+    top: 14px; left: auto; right: 14px;
+    transform: none;
     background: rgba(12,11,7,0.5);
     color: var(--cream);
     border: 1px solid rgba(239,230,210,0.2);
@@ -624,7 +657,7 @@
   #online-big-score.hidden { display: none; }
 
   .immersive #online-turn-label {
-    top: 12px; right: 146px;
+    top: 58px; right: 14px;
     margin: 0;
     font-size: 13px;
     text-align: right;
@@ -690,29 +723,30 @@
   }
   .immersive .online-score-box.active-turn .online-score-value { color: var(--gold); }
 
-  /* The three darts of this turn sit directly under the big number, because
-     they are the same piece of information - what you have thrown and what it
-     has left you. The arcade groups them the same way.
+  /* The three darts of this turn run across the top centre, above the big
+     number - a status strip along the top edge, the way an arcade cabinet
+     shows them, read on the way up to the score rather than hunted for.
 
      This also settles a collision rather than dodging it. They used to be
-     bottom-right, sharing that band with the centred score bar, and on a phone
-     those two do not fit: at a 352px panel the bar runs 105-247 and the slots
-     194-338, so the totals were printed through the dart boxes. Moving them up
-     leaves the bottom band holding only the thumbnails and the score bar,
-     which fit with room to spare at every width. */
+     bottom-right, sharing that band with the centred score bar, and at phone
+     width those two do not fit: on a 352px panel the bar ran x105-247 and the
+     slots x194-338, so the running totals were printed straight through the
+     dart boxes. Nobody saw it because immersive mode had never been looked at
+     on a phone. The bottom band now holds only the thumbnails and the score
+     bar, which clear each other at every width. */
   .immersive #online-turn-darts {
-    top: calc(var(--stage-h) * 0.47); left: 50%;
+    top: 14px; left: 50%;
     right: auto;
     transform: translateX(-50%);
     margin: 0;
     gap: 6px;
   }
   /* Cricket has no big number - the mark pad IS the display, and it owns the
-     centre - so there is nothing here for the darts to group with and nowhere
-     central to put them. They go to the top-right corner instead, below the
-     turn label. */
+     centre, reaching high enough that the top-centre row is not free either.
+     The darts go to the right-hand column instead, below the match bar and
+     the turn label rather than beside them. */
   .immersive.cricket-stage #online-turn-darts {
-    top: 44px; right: 14px; left: auto;
+    top: 84px; right: 14px; left: auto;
     transform: none;
   }
   .immersive .dart-slot {
@@ -762,7 +796,16 @@
      way: the board reference goes, the thumbnail shrinks, and the mark pad
      takes the width it needs to stay tappable. */
   @media (max-width: 560px) {
-    #online-game-panel.immersive { --stage-h: 380px; }
+    /* No breakout on a phone: the panel is already the width of the screen, so
+       widening it further only pushes it past the wrap and gives the page a
+       horizontal scrollbar. */
+    #online-game-panel.immersive {
+      --stage-h: 380px;
+      width: auto;
+      margin-left: 0;
+      transform: none;
+    }
+    #online-game-panel.immersive.cricket-stage { --stage-h: 580px; }
     .immersive .dartboard-wrap { display: none; }
     .immersive .video-tile.as-thumb { width: 78px; left: 10px; top: calc(var(--stage-h) - 72px); }
     /* Stacked, not side by side. On a phone the score bar reaches much closer
@@ -771,11 +814,27 @@
     .immersive .video-tile.as-thumb.thumb-1 { left: 10px; top: calc(var(--stage-h) - 138px); }
     .immersive .online-score-value { font-size: 30px; }
     .immersive #online-cricket-board { width: 74%; }
-    .immersive #online-turn-label { right: 10px; top: 10px; }
-    /* Below the match bar, not beside it. On a wide panel the bar is centred
-       and the slots are off at the right edge, so they never meet; at phone
-       width the bar's centre reaches far enough across to clip them. */
-    .immersive.cricket-stage #online-turn-darts { top: 54px; right: 10px; }
+    /* Below the dart strip, not beside it. The strip is centred and 204px of a
+       352px row, leaving 6px to the right - technically clear, but it reads as
+       collided. There is nothing to the label's left down here, so it drops. */
+    .immersive #online-turn-label { right: 10px; top: 70px; }
+    /* Cricket puts the darts in the right-hand column instead, so the label
+       goes back above them rather than under. */
+    .immersive.cricket-stage #online-turn-label { right: 10px; top: 14px; }
+    /* The match bar comes OFF the stage entirely and flows with the controls
+       underneath. The top row is 352px wide and the dart strip alone is 204 of
+       it, so a 138px bar cannot also fit up there - it overlapped the darts by
+       78px. Leg progress is the least urgent thing on this screen and the only
+       one that reads perfectly well below the video, so it is the one to move.
+       Everything else on the stage has to be glanceable mid-throw. */
+    .immersive #online-match-bar {
+      position: static;
+      transform: none;
+      margin: 10px 18px 0;
+    }
+    /* Clear of the turn label above it, which ends at y40 - and would end
+       lower still if the label ever wrapped to two lines. */
+    .immersive.cricket-stage #online-turn-darts { top: 48px; right: 10px; }
     #online-big-score { font-size: clamp(52px, 16vw, 96px); }
   }
 
