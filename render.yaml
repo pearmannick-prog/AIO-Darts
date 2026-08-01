@@ -24,7 +24,10 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
-    region: oregon
+    # Matches the service this replaces. Worth getting right at creation time:
+    # a service cannot be moved between regions afterwards, it has to be
+    # recreated, which is the whole exercise again.
+    region: virginia
     branch: main
 
     # Hits the server's cheap liveness probe, which touches no filesystem and
