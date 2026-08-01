@@ -593,16 +593,32 @@
      `bottom` here would pin things to the bottom of the controls instead,
      leaving the score floating over the manual-entry keypad. */
 
-  /* The giant central figure: whoever's turn it is, and what they need. */
+  /* The giant figure: whoever's turn it is, and what they need.
+     Modelled on an arcade machine's monitor, which is the thing this is
+     actually competing with - you are stood at the oche, several feet back,
+     and this is the one number you look up at between darts.
+
+     In the UPPER THIRD rather than dead centre, which is where it started.
+     Centred put it at eye level for someone sat at a desk and below eye level
+     for someone standing at a board - and it also parked the biggest element
+     on the page directly over the middle of the video, which is exactly where
+     a person throwing tends to be.
+
+     Gold, not cream, for the same reason the arcade uses yellow: it separates
+     the live number from the running totals underneath at a glance. It agrees
+     with this app's existing convention too, where gold already means "whose
+     turn it is" - and this number is always the active player's. */
   #online-big-score {
-    top: calc(var(--stage-h) * 0.44); left: 50%;
+    top: calc(var(--stage-h) * 0.30); left: 50%;
     transform: translate(-50%, -50%);
     font-family: 'Oswald', sans-serif;
     font-weight: 700;
     font-size: clamp(64px, 13vw, 132px);
     line-height: 1;
-    color: var(--cream);
-    text-shadow: 0 6px 26px rgba(0,0,0,0.75);
+    color: var(--gold);
+    /* Heavier than a cream figure needed. Gold has less contrast against a
+       bright room than cream does, and this sits on arbitrary video. */
+    text-shadow: 0 4px 10px rgba(0,0,0,0.9), 0 6px 26px rgba(0,0,0,0.75);
     pointer-events: none;
   }
   #online-big-score.hidden { display: none; }
@@ -674,10 +690,30 @@
   }
   .immersive .online-score-box.active-turn .online-score-value { color: var(--gold); }
 
+  /* The three darts of this turn sit directly under the big number, because
+     they are the same piece of information - what you have thrown and what it
+     has left you. The arcade groups them the same way.
+
+     This also settles a collision rather than dodging it. They used to be
+     bottom-right, sharing that band with the centred score bar, and on a phone
+     those two do not fit: at a 352px panel the bar runs 105-247 and the slots
+     194-338, so the totals were printed through the dart boxes. Moving them up
+     leaves the bottom band holding only the thumbnails and the score bar,
+     which fit with room to spare at every width. */
   .immersive #online-turn-darts {
-    right: 14px; top: calc(var(--stage-h) - 62px);
+    top: calc(var(--stage-h) * 0.47); left: 50%;
+    right: auto;
+    transform: translateX(-50%);
     margin: 0;
     gap: 6px;
+  }
+  /* Cricket has no big number - the mark pad IS the display, and it owns the
+     centre - so there is nothing here for the darts to group with and nowhere
+     central to put them. They go to the top-right corner instead, below the
+     turn label. */
+  .immersive.cricket-stage #online-turn-darts {
+    top: 44px; right: 14px; left: auto;
+    transform: none;
   }
   .immersive .dart-slot {
     background: rgba(12,11,7,0.5);
@@ -736,6 +772,10 @@
     .immersive .online-score-value { font-size: 30px; }
     .immersive #online-cricket-board { width: 74%; }
     .immersive #online-turn-label { right: 10px; top: 10px; }
+    /* Below the match bar, not beside it. On a wide panel the bar is centred
+       and the slots are off at the right edge, so they never meet; at phone
+       width the bar's centre reaches far enough across to clip them. */
+    .immersive.cricket-stage #online-turn-darts { top: 54px; right: 10px; }
     #online-big-score { font-size: clamp(52px, 16vw, 96px); }
   }
 
