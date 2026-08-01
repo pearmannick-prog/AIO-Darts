@@ -107,6 +107,63 @@ function buildConfig() {
 }
 
 // ---------------------------------------------------------------------------
+// Which build is actually running
+// ---------------------------------------------------------------------------
+// Served at /version.json, and the single most useful thing here when someone
+// reports "I changed it and nothing happened" - the answer is nearly always
+// that they're looking at an older build than they think.
+//
+// It used to be a plain file baked in by the Dockerfile, which works when the
+// image is built by this repo's GitHub Actions workflow, because that passes
+// the real commit SHA as a build arg. Nothing else does. A platform that
+// builds the Dockerfile itself - Render, most obviously - gets the ARG's "dev"
+// default, so the footer read "build dev" no matter what was deployed and the
+// one mechanism for answering that question was blind on the deployment it was
+// needed for most.
+//
+// So the file is now only one of the sources, and the first REAL answer wins:
+//
+//   1. The baked file, when it holds a genuine SHA. It's the strongest
+//      evidence there is - it's a property of the image itself.
+//   2. GIT_SHA, for an operator wiring this up by hand.
+//   3. RENDER_GIT_COMMIT, which Render sets automatically at both build and
+//      run time. Other platforms expose their own; add them here.
+//
+// Read once at startup rather than per request: the image cannot change under
+// a running process, so re-reading it would be a filesystem hit per page load
+// to learn something that is decided before the server ever starts.
+const STARTED_AT = new Date().toISOString();
+let bakedVersion = null;
+
+async function loadBakedVersion() {
+  try {
+    bakedVersion = JSON.parse(await readFile(join(PUBLIC_DIR, "version.json"), "utf8"));
+  } catch {
+    // Absent when running from a source checkout, which is not an error.
+    bakedVersion = null;
+  }
+}
+
+function buildVersion() {
+  const baked = bakedVersion?.sha && bakedVersion.sha !== "dev" ? bakedVersion : null;
+  const sha = baked?.sha || process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || "dev";
+
+  // The image knows when it was built; env vars don't carry a build time. On a
+  // platform that redeploys by starting a new container, process start is the
+  // deploy time, which is the date you actually want to compare against.
+  const builtAt = baked?.builtAt && baked.builtAt !== "unknown" ? baked.builtAt : STARTED_AT;
+
+  return {
+    sha,
+    builtAt,
+    // Not used by the footer - it's here for whoever is diagnosing why the SHA
+    // says what it says.
+    source: baked ? "image" : sha !== "dev" ? "env" : "unknown",
+    branch: process.env.RENDER_GIT_BRANCH || undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Static file serving
 // ---------------------------------------------------------------------------
 const MIME_TYPES = {
@@ -177,6 +234,18 @@ const httpServer = createServer(async (req, res) => {
         "Cache-Control": "no-store",
       });
       res.end(JSON.stringify(buildConfig()));
+      return;
+    }
+
+    // Intercepted for the same reason as /config.json, and it must come BEFORE
+    // static serving or the baked file would shadow this and keep reporting
+    // "dev" on any platform that builds the Dockerfile itself.
+    if (bare === "/version.json") {
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(JSON.stringify(buildVersion()));
       return;
     }
 
@@ -293,5 +362,11 @@ httpServer.listen(PORT, async () => {
   console.log(`AIO Darts listening on port ${PORT}`);
   console.log(`  static files : ${PUBLIC_DIR}`);
   console.log(`  signaling    : ${SIGNALING_PATH} (same port)`);
+  await loadBakedVersion();
+  const { sha, source } = buildVersion();
+  // Printed at startup so the logs answer "which build is this?" without
+  // anyone having to load the page - the first thing worth knowing when a
+  // deploy looks like it didn't take.
+  console.log(`  build        : ${sha === "dev" ? "dev (unknown commit)" : sha} (from ${source})`);
   await checkDataDir();
 });

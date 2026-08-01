@@ -1,0 +1,66 @@
+# render.yaml - Render Blueprint for the deployment at aio-darts.onrender.com.
+#
+# What this is for: everything else about this project lives in the repo, and
+# without this file the deployment's settings live only in Render's dashboard -
+# so "how is this deployed?" is a question the repo cannot answer, and a
+# service that gets deleted or recreated has to be reassembled from memory.
+#
+# IMPORTANT: adding this file does not change an already-existing service.
+# Render only reads a blueprint for services created FROM one (New > Blueprint).
+# An existing web service keeps using its dashboard settings and ignores this
+# entirely. It is therefore documentation now, and a one-click rebuild later -
+# which is precisely when you'd want it and precisely when nobody remembers
+# what the settings were.
+#
+# Deploys happen on push to main, which is Render's default for a blueprint
+# service and matches how this is actually used.
+
+services:
+  - type: web
+    name: aio-darts
+    runtime: docker
+    # The root Dockerfile, which copies the whole repo - see the note in it
+    # about why the file list is exclusion-based.
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    branch: main
+
+    # Hits the server's cheap liveness probe, which touches no filesystem and
+    # no dependencies, so it answers even when something else is wrong.
+    healthCheckPath: /healthz
+
+    envVars:
+      # PORT is deliberately absent. Render injects it, and a runtime env var
+      # beats the Dockerfile's `ENV PORT=8080` default, so setting it here
+      # would only create a second place to get it wrong.
+      #
+      # GIT_SHA is also absent, on purpose: Render sets RENDER_GIT_COMMIT
+      # automatically and buildVersion() in server/server.js already reads it.
+      # That is what stops the footer reporting "build dev" on this deployment.
+
+      # STUN lets each browser discover its own public address so the two can
+      # try to connect directly. This is the default the server would use
+      # anyway; it's stated here so the deployment's networking is visible in
+      # the repo rather than implied.
+      - key: STUN_URLS
+        value: stun:stun.l.google.com:19302
+
+      # TURN relays traffic for the ~10-20% of players whose networks refuse
+      # direct P2P. Left commented because it costs bandwidth on whoever hosts
+      # it - and with camera and mic switched on, a relayed match is a video
+      # call's worth of traffic. Read the README section on TURN before
+      # enabling this on anything metered.
+      # - key: TURN_URL
+      #   value: turn:turn.example.com:3478
+      # - key: TURN_USERNAME
+      #   sync: false
+      # - key: TURN_CREDENTIAL
+      #   sync: false
+
+    # No disk. Nothing is persisted yet - challenge rooms are in-memory by
+    # design, and lost on restart on purpose. The accounts/stat-tracking phase
+    # puts a SQLite file in DATA_DIR, and THAT is the point at which this needs
+    # a disk (and a paid plan, since Render's free tier has no persistent
+    # storage). Until then the free tier's ephemeral filesystem is fine.
