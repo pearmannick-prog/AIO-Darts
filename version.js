@@ -1,21 +1,28 @@
 // version.js - shows a rolling version number in the page footer.
 //
-// version.json is generated at Docker build time (see the root Dockerfile)
-// with the exact git commit SHA and build timestamp for whatever image is
-// currently running - so this always reflects what's actually deployed,
-// with no manual version bumping. Running locally via start-aio-darts.bat
-// (no Docker) won't have this file at all, so it falls back to a plain
-// label.
+// /version.json is answered by the server, which works out the running commit
+// from the image it was built into or from the platform's env vars - see
+// buildVersion() in server/server.js for the order. So this always reflects
+// what's actually deployed, with no manual version bumping.
+//
+// "dev" is a real answer, not a failure: it means nothing told this build
+// which commit it is, which is exactly the case when running from a source
+// checkout. It's reported as a dev build rather than as the literal string,
+// because "build dev" reads like a version number and this isn't one.
 
 const footer = document.getElementById("app-version");
 
 fetch("./version.json")
   .then((res) => (res.ok ? res.json() : Promise.reject()))
   .then(({ sha, builtAt }) => {
-    const shortSha = sha && sha !== "dev" ? sha.slice(0, 7) : "dev";
+    if (!sha || sha === "dev") {
+      footer.textContent = "AIO Darts · local dev build";
+      return;
+    }
     const date = builtAt && builtAt !== "unknown" ? builtAt.slice(0, 10) : "";
-    footer.textContent = `AIO Darts · build ${shortSha}${date ? ` · ${date}` : ""}`;
+    footer.textContent = `AIO Darts · build ${sha.slice(0, 7)}${date ? ` · ${date}` : ""}`;
   })
   .catch(() => {
+    // No server at all (opened straight off the filesystem).
     footer.textContent = "AIO Darts · local dev build";
   });
