@@ -80,6 +80,11 @@ const el = {
   oppBox: document.getElementById("online-opp-box"),
   meScore: document.getElementById("online-me-score"),
   oppScore: document.getElementById("online-opp-score"),
+  scoreboard: document.getElementById("online-scoreboard"),
+  bigScore: document.getElementById("online-big-score"),
+  tileMeScore: document.getElementById("online-tile-me-score"),
+  tileOppScore: document.getElementById("online-tile-opp-score"),
+  remoteTile: document.getElementById("online-remote-tile"),
   turnLabel: document.getElementById("online-turn-label"),
   turnDarts: document.getElementById("online-turn-darts"),
   winnerBanner: document.getElementById("online-winner-banner"),
@@ -98,6 +103,12 @@ const el = {
   avMicBtn: document.getElementById("online-av-mic-btn"),
   avCamBtn: document.getElementById("online-av-cam-btn"),
   avSwapBtn: document.getElementById("online-av-swap-btn"),
+  avAddCamBtn: document.getElementById("online-av-add-cam-btn"),
+  localTile2: document.getElementById("online-local-tile-2"),
+  remoteTile2: document.getElementById("online-remote-tile-2"),
+  localVideo2: document.getElementById("online-local-video-2"),
+  remoteVideo2: document.getElementById("online-remote-video-2"),
+  avViewBtn: document.getElementById("online-av-view-btn"),
   avStopBtn: document.getElementById("online-av-stop-btn"),
 
   manualSection: document.getElementById("online-manual-section"),
@@ -741,13 +752,28 @@ async function ensurePeerLinkLoaded() {
 }
 
 function wirePeerLink() {
-  peerLink.onRemoteStream = (stream) => {
+  peerLink.onRemoteStream = (stream, slot) => {
     // Re-fired per arriving track (audio and video come separately), and it's
     // the same MediaStream object every time, so re-assigning is harmless.
     // Fires immediately on connect for the pre-negotiated m-lines, long before
     // anyone switches a camera on - so this only wires the element up, and
     // deliberately does not touch the "is the opponent sending?" state.
-    el.remoteVideo.srcObject = stream;
+    //
+    // Slot 1 is the opponent's second camera; slot 0 carries their main camera
+    // AND all of the audio, which is why that element is the one that is never
+    // hidden.
+    if (slot === 1) el.remoteVideo2.srcObject = stream;
+    else el.remoteVideo.srcObject = stream;
+    renderAv();
+  };
+
+  // A second camera that dies on its own - unplugged, or claimed by another
+  // app - just goes away. There's no recovery ladder for it (see
+  // startSecondCamera), so the honest thing is to drop the tile and let the
+  // button offer to add one again.
+  peerLink.onSecondCameraLost = () => {
+    av.second = false;
+    el.localVideo2.srcObject = null;
     renderAv();
   };
 
@@ -756,9 +782,10 @@ function wirePeerLink() {
     renderAv();
   };
 
-  peerLink.onRemoteMediaChange = ({ audio, video }) => {
+  peerLink.onRemoteMediaChange = ({ audio, video, video2 }) => {
     av.remoteAudio = audio;
     av.remoteVideo = video;
+    av.remoteVideo2 = video2;
     // An opponent switching their camera back on is a fresh chance to get
     // playback going, in case it was blocked when the stream first arrived.
     if (video && el.remoteVideo.paused) playRemote();
@@ -981,11 +1008,68 @@ const av = {
   // The peer's own announcement is the only honest source for this.
   remoteAudio: false,
   remoteVideo: false,
+  remoteVideo2: false, // ...and their second camera, if they added one
   remoteBlocked: false, // the browser refused to autoplay it (see playRemote)
+  second: false, // this player added a second camera (the board view)
   cameras: [], // videoinput devices, only trustworthy after permission
   facingMode: null, // what the active camera says it is: "user"/"environment"/null
   recovering: false, // the camera died and is being reopened
+  immersive: false, // a camera is the surface, with the scoring floating on it
+  // Which feed gets the big view. Always starts on the opponent - that's the
+  // one you're here to watch - and deliberately isn't remembered between
+  // matches, so a swap made to aim your own camera doesn't quietly become the
+  // way every future match opens.
+  stage: "opponent", // whose cameras take the stage: "opponent" | "self"
 };
+
+// The stage belongs to a PLAYER, not to a camera: whoever is on it puts all
+// of their cameras up there, split 50/50 when they have two - webcam left,
+// board right. The other player's cameras go in the corner as thumbnails.
+//
+// Grouping by player rather than letting any four feeds be arranged freely is
+// what keeps the layout legible. The alternative, one stage feed with the
+// other three lined up as thumbnails, was tried first and doesn't fit: three
+// thumbnails run straight through the score bar, and it splits the opponent's
+// two views across two sizes when they are the pair you most want side by side.
+const SIDE_FEEDS = {
+  opponent: ["opponent", "opponent2"],
+  self: ["self", "self2"],
+};
+
+const otherSide = (side) => (side === "opponent" ? "self" : "opponent");
+
+el.avViewBtn.addEventListener("click", () => {
+  av.stage = otherSide(av.stage);
+  renderAv();
+});
+
+// A feed is live when there is a picture in it right now - not merely when the
+// camera exists. Everything downstream keys off this: whether immersive earns
+// its keep, which tiles are on screen, and what the big view can cycle to.
+function isFeedLive(feed) {
+  switch (feed) {
+    // The opponent's tiles are blocked together: remoteBlocked means this
+    // browser refused to start playback, which stops both their pictures.
+    case "opponent": return av.remoteVideo && !av.remoteBlocked;
+    case "opponent2": return av.remoteVideo2 && !av.remoteBlocked;
+    // av.cam covers both of ours - "camera off" turns off every camera this
+    // player is sending, or it isn't off (see setMediaEnabled in webrtc.js).
+    case "self": return av.on && av.cam;
+    case "self2": return av.second && av.cam;
+    default: return false;
+  }
+}
+
+// The tile each feed is painted on.
+function tileFor(feed) {
+  switch (feed) {
+    case "opponent": return el.remoteTile;
+    case "opponent2": return el.remoteTile2;
+    case "self": return el.localTile;
+    case "self2": return el.localTile2;
+    default: return null;
+  }
+}
 
 // Re-reads the camera list and the active camera. Called after anything that
 // could change either, which includes simply being granted permission - the
@@ -1001,18 +1085,28 @@ async function refreshCameras() {
   renderAv();
 }
 
+// Cameras the MAIN camera is allowed to cycle onto. The one the second camera
+// is holding is excluded: switching onto it would either fail as busy or steal
+// it, and either way the player would have asked for a swap and lost a feed.
+function swappableCameras() {
+  const takenId = peerLink?.secondCamera?.deviceId;
+  if (!takenId) return av.cameras;
+  return av.cameras.filter((d) => d.deviceId !== takenId);
+}
+
 // Cycles to the next camera in the list. A cycle rather than a front/back
 // toggle because "next" is the only thing that generalises: phones have two,
 // desktops often have one, and a laptop with a plugged-in USB webcam has two
 // that both report no facingMode at all, which a front/back toggle can't
 // express.
 el.avSwapBtn.addEventListener("click", async () => {
-  if (!peerLink || av.cameras.length < 2) return;
+  const choices = swappableCameras();
+  if (!peerLink || choices.length < 2) return;
   el.avSwapBtn.disabled = true;
   try {
     const currentId = peerLink.activeCamera?.deviceId;
-    const at = av.cameras.findIndex((d) => d.deviceId === currentId);
-    const next = av.cameras[(at + 1) % av.cameras.length];
+    const at = choices.findIndex((d) => d.deviceId === currentId);
+    const next = choices[(at + 1) % choices.length];
     await peerLink.switchCamera({ deviceId: next.deviceId });
     // The camera you last chose mid-match is the one to open next time, same
     // as one chosen in the pre-match check - they write the same preference.
@@ -1030,6 +1124,53 @@ el.avSwapBtn.addEventListener("click", async () => {
     el.avSwapBtn.disabled = false;
     // Whether it worked or was rolled back, the active camera may have moved.
     await refreshCameras();
+  }
+});
+
+// Adds (or drops) the second camera - one on you, one on the board.
+//
+// The device is picked rather than asked for: the second camera is by
+// definition the one the main camera isn't using, and on the two-camera
+// machines this feature is for, that's the entire choice. A picker would be a
+// dialog whose every run had exactly one answer. With three or more cameras it
+// takes the first spare one, and Switch camera still moves the main feed
+// around underneath it.
+//
+// Nothing is remembered between matches, matching the big-view toggle: a
+// second camera is a piece of staging for tonight's setup, not a preference.
+el.avAddCamBtn.addEventListener("click", async () => {
+  if (!peerLink) return;
+
+  if (av.second) {
+    peerLink.stopSecondCamera();
+    el.localVideo2.srcObject = null;
+    av.second = false;
+    renderAv();
+    return;
+  }
+
+  const spare = av.cameras.find((d) => d.deviceId !== peerLink.activeCamera?.deviceId);
+  if (!spare) return;
+
+  el.avAddCamBtn.disabled = true;
+  try {
+    await peerLink.startSecondCamera({ deviceId: spare.deviceId });
+    el.localVideo2.srcObject = peerLink.secondStream;
+    av.second = true;
+  } catch (err) {
+    console.error(err);
+    // The expected failure, not an exotic one: most phones cannot hold two
+    // cameras open at once, and this is where they say so. Worth naming the
+    // hardware explicitly - "couldn't open camera" would read as a bug in the
+    // app rather than a limit of the device.
+    alert(
+      err.name === "NotReadableError"
+        ? "This device can't run two cameras at once - it's a hardware limit, not a setting. Use Switch camera to move the one camera instead."
+        : `Couldn't add a second camera: ${err.message}`
+    );
+  } finally {
+    el.avAddCamBtn.disabled = false;
+    renderAv();
   }
 });
 
@@ -1108,9 +1249,13 @@ el.avCamBtn.addEventListener("click", () => {
 });
 
 el.avStopBtn.addEventListener("click", () => {
+  // stopMedia() drops the second camera too, so this has to forget it as well
+  // or the button would offer to "remove" a camera that's already gone.
   peerLink?.stopMedia();
   el.localVideo.srcObject = null;
+  el.localVideo2.srcObject = null;
   av.on = false;
+  av.second = false;
   av.facingMode = null;
   renderAv();
 });
@@ -1122,13 +1267,18 @@ function resetAv() {
   av.on = false;
   av.mic = true;
   av.cam = true;
+  av.second = false;
   av.remoteAudio = false;
   av.remoteVideo = false;
+  av.remoteVideo2 = false;
   av.remoteBlocked = false;
   av.cameras = [];
   av.facingMode = null;
+  av.stage = "opponent";
   el.localVideo.srcObject = null;
   el.remoteVideo.srcObject = null;
+  el.localVideo2.srcObject = null;
+  el.remoteVideo2.srcObject = null;
   renderAv();
 }
 
@@ -1153,15 +1303,95 @@ function renderAv() {
   // The strip earns its space only once there's something in it - an empty
   // pair of black rectangles above the scoreboard would just be clutter for
   // the players who never use this.
-  const remoteActive = av.remoteAudio || av.remoteVideo;
-  el.videoStrip.classList.toggle("hidden", !(av.on || remoteActive));
+  const remoteActive = av.remoteAudio || av.remoteVideo || av.remoteVideo2;
+  const anyone = av.on || remoteActive;
+  el.videoStrip.classList.toggle("hidden", !anyone);
+
+  // Immersive only earns its keep once there's actually a picture to put
+  // behind the scoring. With no video it would be a black slab with the
+  // numbers floating on it, which is strictly worse than the plain layout -
+  // so the stacked layout stays the default and this is what video turns on.
+  // The staged player's cameras can go dark under you - they switch off, or
+  // unplug a second camera - and when that happens the stage moves to the other
+  // player rather than dropping the whole immersive layout. Falling all the way
+  // back to the stacked layout would throw away a perfectly good picture.
+  let staged = SIDE_FEEDS[av.stage].filter(isFeedLive);
+  if (!staged.length) {
+    const swapped = SIDE_FEEDS[otherSide(av.stage)].filter(isFeedLive);
+    if (swapped.length) {
+      av.stage = otherSide(av.stage);
+      staged = swapped;
+    }
+  }
+
+  // Immersive only earns its keep once there's actually a picture to put behind
+  // the scoring. With no video it would be a black slab with the numbers
+  // floating on it, which is strictly worse than the plain layout.
+  av.immersive = staged.length > 0;
+  el.gamePanel.classList.toggle("immersive", av.immersive);
+  // Two staged cameras share the stage 50/50; one takes all of it.
+  el.gamePanel.classList.toggle("stage-split", staged.length === 2);
+
+  // The other player's cameras, in the corner. Their MAIN tile is there even
+  // when it's dark, because it has something to say - "camera off" and "hasn't
+  // started one" are different, and worth telling apart. A board camera has no
+  // such empty state: not having one is the normal case, so it appears only
+  // when there's a picture in it.
+  const thumbSide = otherSide(av.stage);
+  const thumbs = av.immersive
+    ? SIDE_FEEDS[thumbSide].filter((feed, i) => i === 0 || isFeedLive(feed))
+    : [];
+
+  // Symmetric by design: the CSS knows only "the big ones" and "the small
+  // ones", so swapping sides is a class change rather than a second layout to
+  // maintain. Position within each group is carried as an index class, because
+  // these are absolutely positioned and so can't line themselves up (see the
+  // .as-stage / .as-thumb rules in index.html).
+  for (const feed of [...SIDE_FEEDS.opponent, ...SIDE_FEEDS.self]) {
+    const tile = tileFor(feed);
+    const stageAt = staged.indexOf(feed);
+    const thumbAt = thumbs.indexOf(feed);
+    tile.classList.toggle("as-stage", stageAt >= 0);
+    tile.classList.toggle("as-thumb", thumbAt >= 0);
+    tile.classList.remove("stage-0", "stage-1", "thumb-0", "thumb-1");
+    if (stageAt >= 0) tile.classList.add(`stage-${stageAt}`);
+    if (thumbAt >= 0) tile.classList.add(`thumb-${thumbAt}`);
+
+    // In immersive, a tile with no place on the stage or in the corner has to
+    // go: the strip is a plain block there, so anything left over would render
+    // as a stray rectangle on top of the stage rather than politely nowhere.
+    const isBoard = feed.endsWith("2");
+    tile.classList.toggle(
+      "hidden",
+      av.immersive ? stageAt < 0 && thumbAt < 0 : isBoard && !isFeedLive(feed)
+    );
+  }
+
+  el.avViewBtn.textContent = av.stage === "self" ? "🖥 Big view: You" : "🖥 Big view: Opponent";
+  // Only worth offering when both players have something to put on the stage.
+  el.avViewBtn.classList.toggle(
+    "hidden",
+    !(SIDE_FEEDS.opponent.some(isFeedLive) && SIDE_FEEDS.self.some(isFeedLive))
+  );
+
+  // Adding a second camera needs a spare camera to add. On a one-camera
+  // machine the button could only ever disappoint, so it isn't there.
+  const canAddSecond = av.on && (av.second || av.cameras.length > 1);
+  el.avAddCamBtn.classList.toggle("hidden", !canAddSecond);
+  el.avAddCamBtn.textContent = av.second ? "✖ Remove 2nd camera" : "➕ Add 2nd camera";
+  // The bottom "501 vs 501" bar is the scoreboard restyled, so it stays in
+  // immersive; in the plain layout with tiles up top it would just repeat
+  // what the tiles already say.
+  el.scoreboard.classList.toggle("hidden", anyone && !av.immersive);
 
   el.avStartBtn.classList.toggle("hidden", av.on);
   el.avMicBtn.classList.toggle("hidden", !av.on);
   el.avCamBtn.classList.toggle("hidden", !av.on);
   // A switch button on a machine with one camera is a button that can only
   // disappoint, so it only exists when there's somewhere to switch to.
-  el.avSwapBtn.classList.toggle("hidden", !(av.on && av.cameras.length > 1));
+  // A camera being used by the second feed isn't somewhere to switch to, so it
+  // doesn't count towards whether switching is possible.
+  el.avSwapBtn.classList.toggle("hidden", !(av.on && swappableCameras().length > 1));
   el.avStopBtn.classList.toggle("hidden", !av.on);
 
   el.localTile.classList.toggle("unmirrored", !shouldMirror(av.facingMode));
@@ -1186,6 +1416,11 @@ function renderAv() {
   // prompt would be a lie.
   const blocked = av.remoteVideo && av.remoteBlocked;
   const remoteVisible = av.remoteVideo && !av.remoteBlocked;
+  // Switching into or out of immersive changes which score elements are on
+  // screen, so the game render has to follow. Safe from recursion:
+  // renderOnline never calls back into here.
+  if (online.active) renderOnline();
+
   el.remotePlaceholder.classList.toggle("hidden", remoteVisible);
   el.remotePlaceholder.classList.toggle("tappable", blocked);
   if (blocked) {
@@ -1422,6 +1657,9 @@ function renderOnline() {
   // Cricket shows marks; x01 shows a remaining score. Only one at a time.
   el.cricketBoard?.classList.toggle("hidden", !cricket);
   el.manualSection?.classList.toggle("cricket-mode", cricket);
+  // Cricket's mark pad lives on the stage, and needs a taller one than the
+  // single big number x01 shows.
+  el.gamePanel.classList.toggle("cricket-stage", cricket);
 
   if (cricket) {
     // "me" first so the local player always reads on the left, whichever
@@ -1438,8 +1676,31 @@ function renderOnline() {
     el.oppScore.textContent = online.opp.remaining;
   }
 
-  el.meBox.classList.toggle("active-turn", online.activeSide === "me" && !online.gameOver);
-  el.oppBox.classList.toggle("active-turn", online.activeSide === "opp" && !online.gameOver);
+  const myTurn = online.activeSide === "me" && !online.gameOver;
+  const theirTurn = online.activeSide === "opp" && !online.gameOver;
+  el.meBox.classList.toggle("active-turn", myTurn);
+  el.oppBox.classList.toggle("active-turn", theirTurn);
+
+  // The tiles carry the same scores and the same active-turn ring, so they
+  // stand in for the scoreboard when the camera is on.
+  el.tileMeScore.textContent = el.meScore.textContent;
+  el.tileOppScore.textContent = el.oppScore.textContent;
+  el.localTile.classList.toggle("active-turn", myTurn);
+  el.remoteTile.classList.toggle("active-turn", theirTurn);
+  // Both of a player's tiles carry the ring. Whose turn it is belongs to the
+  // player, not to one of their cameras, and ringing only the face tile would
+  // read as "this camera is active" instead.
+  el.localTile2.classList.toggle("active-turn", myTurn);
+  el.remoteTile2.classList.toggle("active-turn", theirTurn);
+
+  // The giant central figure: what the player who is throwing has left. It
+  // only means anything in x01 - in Cricket the mark pad IS the display, and
+  // a points total in 120px type would say almost nothing about the game.
+  const showBig = av.immersive && !cricket && !online.gameOver;
+  el.bigScore.classList.toggle("hidden", !showBig);
+  if (showBig) {
+    el.bigScore.textContent = myTurn ? online.me.remaining : online.opp.remaining;
+  }
 
   renderOnlineMatchBar();
 

@@ -77,7 +77,14 @@ jobs:
         run: |
           FAIL=0
           test -f www/index.html || { echo "MISSING: www/index.html"; FAIL=1; }
-          for f in game.js online.js dartboard.js granboard.js scoring.js quickentry.js version.js webrtc.js; do
+          # Every front-end module, in the same grouping sw.js uses - these two
+          # hand-maintained lists are the exceptions to this repo's
+          # exclusion-based approach, and they drift for the same reason, so
+          # they are worth keeping legible and worth checking together.
+          for f in game.js online.js version.js \
+                   granboard.js webrtc.js \
+                   scoring.js cricket.js countup.js medley.js \
+                   dartboard.js cricketboard.js quickentry.js medleybuilder.js; do
             test -f "www/$f" || { echo "MISSING: www/$f"; FAIL=1; }
           done
           if [ "$FAIL" -ne 0 ]; then

@@ -17,18 +17,35 @@ const CACHE = "aio-darts-v1";
 
 // Cached up front so a first-run install works offline immediately, rather
 // than only after the player has happened to load each file once.
+//
+// This must list EVERY front-end module, not just the ones an offline player
+// seems likely to reach. Four went missing here as features landed - Count Up,
+// the Cricket mark pad, the medley builder and the WebRTC layer - and the gap
+// is invisible in normal use, because network-first serves them happily from
+// the server. It only shows up offline, as a mode that silently isn't there.
+// Grouped the way the architecture notes describe the code, so a new file has
+// an obvious place to go rather than being appended and forgotten.
 const PRECACHE = [
   "./",
   "./index.html",
+  // Entry points
   "./game.js",
   "./online.js",
+  "./version.js",
+  // Hardware and transport
   "./granboard.js",
+  "./webrtc.js",
+  // Rules (pure)
   "./scoring.js",
   "./cricket.js",
+  "./countup.js",
   "./medley.js",
+  // Shared UI components
   "./dartboard.js",
+  "./cricketboard.js",
   "./quickentry.js",
-  "./version.js",
+  "./medleybuilder.js",
+  // Assets
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
