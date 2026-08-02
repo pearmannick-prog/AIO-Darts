@@ -31,30 +31,49 @@ import { readFile, mkdir, access } from "node:fs/promises";
 import { constants as FS } from "node:fs";
 import { extname, join, resolve, sep } from "node:path";
 import { WebSocketServer } from "ws";
+import { openDatabase } from "./db.js";
+import { purgeExpiredSessions } from "./auth.js";
+import { handleApiRequest } from "./api.js";
 
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || "./public");
 const SIGNALING_PATH = process.env.SIGNALING_PATH || "/signaling";
 
-// Where anything persistent will live. Nothing is written here yet - challenge
-// rooms are deliberately in-memory - but the accounts/stat-tracking phase puts
-// a SQLite file here, and SQLite is just a file, so this stays a
-// single-container app. It's checked at startup rather than first-write so a
-// misconfigured bind mount shows up in the logs immediately instead of the
-// first time someone tries to register.
+// Where persistent data lives: the SQLite database holding accounts, match
+// history and statistics. SQLite is just a file, so this stays a
+// single-container app with no second service to run.
+//
+// IMPORTANT: on a host with an ephemeral filesystem - Render's free tier being
+// the obvious one - this directory is wiped on every deploy, which silently
+// deletes every account. Persistence is a deliberate hosting decision: attach a
+// disk and point DATA_DIR at it. See render.yaml.
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 
-async function checkDataDir() {
+// Whether the accounts half of the app is available. Gameplay does not depend
+// on it - local and online darts are pure browser code and a signaling relay -
+// so a database that won't open must NOT take the whole server down with it.
+//
+// The alternative, exiting at startup, is tempting because it's loud. But it
+// would mean a bad bind mount stops people playing darts, and on a platform
+// that restarts failed containers it turns into a crash loop that serves
+// nothing at all. Instead: log it loudly, keep serving the game, and have
+// /api/* say plainly that accounts are unavailable. /healthz reports it too, so
+// it is still visible to monitoring rather than only to whoever reads the logs.
+let accountsEnabled = false;
+
+async function initDatabase() {
   try {
     await mkdir(DATA_DIR, { recursive: true });
     await access(DATA_DIR, FS.W_OK);
+    await openDatabase(DATA_DIR);
+    accountsEnabled = true;
     console.log(`  data dir     : ${DATA_DIR} (writable)`);
+    console.log("  accounts     : enabled");
   } catch (err) {
-    // Not fatal yet, since nothing depends on it - but say so loudly, because
-    // it WILL be fatal once accounts land.
-    console.warn(`  data dir     : ${DATA_DIR} NOT WRITABLE - ${err.code || err.message}`);
-    console.warn("                 Nothing needs it yet, but persistent data will fail.");
-    console.warn("                 Check the bind mount and its permissions.");
+    accountsEnabled = false;
+    console.warn(`  data dir     : ${DATA_DIR} UNUSABLE - ${err.code || err.message}`);
+    console.warn("  accounts     : DISABLED - sign-in, history and stats will not work.");
+    console.warn("                 Darts still works; check the bind mount and its permissions.");
   }
 }
 
@@ -221,8 +240,33 @@ const httpServer = createServer(async (req, res) => {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
       });
-      res.end(JSON.stringify({ ok: true, rooms: rooms.size, clients: wss.clients.size }));
+      // `accounts` is reported but does NOT make ok false: the probe answers
+      // "can this serve darts?", and it can. A monitoring system that cares
+      // about accounts can watch this field specifically.
+      res.end(JSON.stringify({
+        ok: true,
+        rooms: rooms.size,
+        clients: wss.clients.size,
+        accounts: accountsEnabled,
+      }));
       return;
+    }
+
+    // The API, before static serving - /api/* is never a file. handleApiRequest
+    // returns false for anything that isn't its business, so an unknown path
+    // still falls through to the front-end exactly as it did before.
+    if (bare.startsWith("/api/")) {
+      if (!accountsEnabled) {
+        res.writeHead(503, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        res.end(JSON.stringify({
+          error: "Accounts are unavailable on this server - the database could not be opened.",
+        }));
+        return;
+      }
+      if (await handleApiRequest(req, res)) return;
     }
 
     // Runtime config is generated per-request from env vars rather than
@@ -368,5 +412,18 @@ httpServer.listen(PORT, async () => {
   // anyone having to load the page - the first thing worth knowing when a
   // deploy looks like it didn't take.
   console.log(`  build        : ${sha === "dev" ? "dev (unknown commit)" : sha} (from ${source})`);
-  await checkDataDir();
+  await initDatabase();
+
+  // Expired sessions are already ignored when resolving a request, so this is
+  // housekeeping to stop the table growing forever rather than a security
+  // measure. Hourly is far more often than it needs to be and costs nothing.
+  if (accountsEnabled) {
+    setInterval(() => {
+      try {
+        purgeExpiredSessions();
+      } catch (err) {
+        console.warn("Session purge failed:", err.message);
+      }
+    }, 3600_000).unref();
+  }
 });

@@ -2,6 +2,8 @@
   "name": "aiodarts-android",
   "version": "1.0.0",
   "private": true,
+  "//type": "Every .js file at the repo root is an ES module - the front-end has always been plain ES modules loaded with <script type=module>. Declaring it here is what stops Node warning and re-parsing when the SERVER imports one of them (statsengine.js is shared by both), which it now does.",
+  "type": "module",
   "description": "Capacitor wrapper that packages the AIO Darts front-end as a standalone Android app.",
   "devDependencies": {
     "@capacitor/cli": "^8.0.0"
