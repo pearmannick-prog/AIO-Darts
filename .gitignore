@@ -5,3 +5,7 @@ android/
 
 # Portable Node downloaded by the local Windows launcher
 node/
+
+# The accounts/statistics SQLite database. Local data, never committed - and
+# the -wal/-shm files WAL mode creates alongside it.
+data/
