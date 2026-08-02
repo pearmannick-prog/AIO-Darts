@@ -316,6 +316,74 @@ locally and forwards them to the peer, which applies them to its model of "the
 opponent" using the same rules. WebRTC DataChannels guarantee ordered
 delivery, so both sides stay in lockstep.
 
+## Accounts, statistics and leaderboards
+
+Entirely optional. **You never need an account to play** - local and online
+darts work exactly as they always have without one, and the Android build,
+which has no server behind it, is unaffected. Sign-in only appears when the app
+can see an accounts API.
+
+What an account adds:
+
+- **Match history** - every finished match, with the format, opponent, darts
+  thrown and result.
+- **Statistics by game** - X01 gets three-dart and first-9 averages, checkout %,
+  180s/140+/100+, highest checkout and doubles; Cricket gets marks per round,
+  white horses, hat tricks, points scored and points prevented; Count Up gets
+  round averages. Career totals, trends over time and a "most improved" figure
+  sit on top.
+- **Achievements**, a **dashboard** with personal bests and current form, and
+  **leaderboards** - global, friends-only, or per club, all-time or this month.
+
+### Every dart is stored
+
+The app records each individual dart - the segment, what it scored, the score
+before and after, whether it busted - not a summary at the end. Statistics are
+computed from that. It means a new metric can be added later and applied to
+matches you have already played, instead of starting from zero on the day it
+ships, and it is why a corrected formula reprices your whole history rather than
+only affecting new games.
+
+### Playing as a guest
+
+Finished matches are stored **on your device first** and uploaded afterwards, so:
+
+- Matches played offline are not lost - they upload when you are next online.
+- Statistics work with no account at all, computed in the browser from the
+  matches on that device.
+- If you later create an account, the matches you played as a guest are uploaded
+  and become yours. Nothing is lost by not signing up first.
+
+### Leaderboards are for fun, not for ranking
+
+Scores are computed by each player's own app and uploaded. This is a
+peer-to-peer app with no referee, so there is no way to prove a match happened -
+these boards are for comparing yourself with friends, not for anything that
+matters. Appearing on them is opt-in, under Profile.
+
+Averages have qualifications (300 darts for a three-dart average, 50 rounds for
+MPR, and so on) shown next to each board, because otherwise the top of every
+board is whoever has thrown nine lucky darts.
+
+### Where the data lives
+
+A single SQLite file in `DATA_DIR` (`./data` locally, `/app/data` in the
+container). SQLite is just a file, so the app stays one container with nothing
+extra to run, and backing it up is copying it.
+
+> **This directory must be persistent.** On a host with an ephemeral filesystem -
+> Render's free tier being the obvious one - it is wiped on every deploy, which
+> silently deletes every account. The darts keep working; the accounts do not.
+> See the note in `render.yaml`, and the volume in `docker-compose.yml`.
+>
+> If the database cannot be opened the server does not fall over: it logs the
+> problem, reports `"accounts": false` on `/healthz`, and carries on serving
+> darts.
+
+Passwords are hashed with scrypt. Sessions are random opaque tokens in the
+database, delivered as an HttpOnly cookie - so signing out actually revokes
+them, and a server restart does not log everyone out.
+
 ## Installing as a desktop app
 
 The app is a PWA, so Chrome or Edge will offer to install it - look for the
@@ -529,12 +597,20 @@ use requires a separate agreement with the licensor.
 
 *Last reviewed: 30 July 2026.*
 
-- Persistent stats across sessions (accounts + SQLite, staying single-container)
-- Matchmaking and a lobby beyond invite codes
+- Matchmaking and a lobby beyond invite codes (invite codes stay as the
+  no-account path and the fallback)
 - Native Windows (C#/.NET) version
 - Webcam-based hit detection for standard steel-tip boards
 
 Done since the last review:
+
+- ✅ **Accounts, statistics, achievements and leaderboards** (2 August 2026) -
+  optional accounts backed by a single SQLite file, with every dart recorded and
+  all statistics derived from that. Statistics are modular by game, so a future
+  game mode brings its own metrics, achievements and boards without a schema
+  change. Guests keep working throughout: matches are stored on-device first,
+  statistics are computed in the browser with no account, and anything played as
+  a guest is claimed when you sign up.
 
 - ✅ **Pre-match camera & mic check** (30 July 2026) - preview, level meter, and
   camera/mic pickers on the setup screen, so devices can be tested and chosen

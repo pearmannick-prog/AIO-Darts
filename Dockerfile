@@ -10,7 +10,10 @@
 # this over the network (not localhost) needs HTTPS - e.g. a reverse proxy
 # with a TLS cert - or Chrome/Edge will refuse to expose navigator.bluetooth.
 
-FROM node:20-alpine
+# Node 24 for two reasons: `node:sqlite` (the accounts database, with no npm
+# dependency to compile) needs 22.5+, and 24 is what this is developed and
+# tested against locally, so the deployed runtime is the tested one.
+FROM node:24-alpine
 
 WORKDIR /app
 
@@ -18,12 +21,22 @@ WORKDIR /app
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY server/server.js ./
-
-# Copies the front-end into public/. Copying the whole build context (minus
-# what .dockerignore excludes) rather than listing each .js file by hand means
-# a new file added to the repo is included automatically instead of silently
-# 404ing until someone remembers to update this line.
+# Copies the whole build context (minus what .dockerignore excludes) rather
+# than listing each .js file by hand, so a new file added to the repo is
+# included automatically instead of silently 404ing until someone remembers to
+# update this line.
+#
+# The server is NOT copied separately to /app any more. It used to be, and that
+# flattening is exactly what broke once the server started importing a module
+# from the repo root: statsengine.js is shared by the browser and the server so
+# the two can never disagree about what an average is, and `../statsengine.js`
+# has to mean the same thing here as it does in a source checkout. Because this
+# COPY already brings server/ along with everything else, running the server
+# from inside public/ makes the image a mirror of the repo and the import
+# resolves identically in both.
+#
+# `ws` still resolves: Node walks up from /app/public/server/ and finds
+# /app/node_modules.
 COPY . ./public/
 
 # Bakes the exact commit this image was built from into version.json, so the
@@ -38,6 +51,13 @@ RUN echo "{\"sha\":\"${GIT_SHA}\",\"builtAt\":\"${BUILD_DATE}\"}" > /app/public/
 ENV PUBLIC_DIR=/app/public
 ENV PORT=8080
 
+# Where the SQLite database lives. IMPORTANT: this is inside the container, so
+# on a host with an ephemeral filesystem every account is deleted on each
+# deploy. Mount a volume here (docker compose does) or point DATA_DIR at a
+# persistent disk. The app still serves darts if this is unwritable - it logs
+# loudly, reports accounts:false on /healthz, and carries on.
+ENV DATA_DIR=/app/data
+
 EXPOSE 8080
 
-CMD ["node", "server.js"]
+CMD ["node", "public/server/server.js"]

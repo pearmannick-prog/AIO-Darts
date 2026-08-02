@@ -5,8 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A zero-build-step darts app: plain ES modules served as static files, plus one small
-Node server. There is no bundler, transpiler, test suite, or linter. Editing a `.js`
-file at the repo root and refreshing the browser is the entire dev loop.
+Node server. There is no bundler, transpiler, or linter. Editing a `.js` file at the
+repo root and refreshing the browser is the entire dev loop.
+
+There is one test file, `server/statsengine.test.js` (`node --test`), covering the
+pure statistics arithmetic and nothing else. That is deliberate: a scoring bug shows
+up immediately on a board you are looking at, but a checkout percentage that is five
+points too high looks exactly like one that is right, for months.
 
 ## Commands
 
@@ -35,7 +40,14 @@ docker compose up -d            # pull + run published image  (http://localhost:
 docker compose up -d --build    # build from this source instead
 ```
 
-Health probe: `GET /healthz` → `{"ok":true,rooms,clients}`.
+Health probe: `GET /healthz` → `{"ok":true,rooms,clients,accounts}`. `accounts` is
+false when the database could not be opened; `ok` stays true, because the app can
+still serve darts.
+
+Statistics tests: `node --test server/statsengine.test.js`.
+
+`DATA_DIR` (default `./data`) holds the SQLite database. It must be persistent -
+see the note in `render.yaml`.
 
 Testing online play needs no second machine: open `http://localhost:8000` in two
 tabs, Create Challenge in one, paste the code into the other.
@@ -128,7 +140,68 @@ previous camera if the new request fails. Self-view mirroring is off only for
 still mirrors.
 
 `sw.js` is **network-first on purpose**. Cache-first would serve stale JS after a
-deploy. Adding a new front-end file means adding it to `PRECACHE`.
+deploy. Adding a new front-end file means adding it to `PRECACHE`. It also
+**never caches `/api/*`** — a stored `/api/auth/me` would show the previous
+session's user after a sign-out, and letting those requests fail offline is what
+makes the app fall back to guest play correctly.
+
+## Accounts, statistics and leaderboards
+
+Optional and additive: **guests play exactly as they always have**. The account
+tab and header chip do not render at all until the app confirms there is an
+accounts API behind it, so the Android APK (no server) and any deployment with
+the database switched off are unaffected.
+
+`server/server.js` now also mounts `/api/*` (`server/api.js`) before static
+serving. If the database cannot be opened the server does **not** exit — it logs
+loudly, reports `accounts:false` on `/healthz`, and answers `/api/*` with 503.
+Crashing would stop people playing darts over a feature darts does not need.
+
+**Storage is SQLite via the built-in `node:sqlite`** — zero new npm dependencies,
+which is why the image is `node:24-alpine`. `server/db.js` runs `.sql` migrations
+from `server/migrations/` in filename order; an applied migration is never
+edited, new schema is always a new file. Note that `node:sqlite` refuses to bind
+a JS boolean or `undefined`, hence the `bool()` / `orNull()` helpers.
+
+**Every dart is recorded, and everything else is derived from it.**
+`matchrecorder.js` is fed by both `game.js` and `online.js` — shared for the same
+reason `dartboard.js` is — and produces one JSON document per finished match,
+shaped like the tables it lands in. Its `capture()`/`restore()` ride inside the
+controllers' existing undo snapshots, so undo can never desync the record. Only
+*finished* matches are saved; an abandoned one is dropped.
+
+**`statsengine.js` is pure and imported by BOTH the browser and the server.**
+That is what lets a guest see real statistics computed on-device from the local
+queue, and guarantees `/api/stats` cannot drift from what the browser shows. It
+is also why the Dockerfile runs `public/server/server.js`: the image mirrors the
+repo so `../statsengine.js` resolves identically in both.
+
+**Statistics, achievements and leaderboards are modular by game.** The core owns
+matches, wins, streaks and time; each game contributes a module in `stats/`
+declaring its own `metrics`, `boards` and `achievements`. Adding Around the Clock
+means writing its rules module and a stats module beside it and registering it —
+**no schema change, no migration**, and the stats page, dashboard, achievements
+screen and leaderboard picker all grow an entry on their own because they iterate
+the registry. Game-specific per-visit detail rides in `turns.game_json`, never in
+a column.
+
+Bump `ENGINE_VERSION` when a definition changes what a number *means*. The server
+stamps it into `stats_cache` and treats a mismatch as a miss, so a formula fix
+reprices everyone's history rather than leaving stale numbers behind;
+`server/leaderboard.js` rebuilds a few stale rows per request so boards refill
+themselves instead of emptying until each player happens to look.
+
+Definitions that are judgement calls are documented next to the number they
+produce, and several depend on the leg's rules rather than being constants — the
+checkout ceiling is 170 under double out but **180 where a treble can finish**
+(`highestCheckout` in `scoring.js`), and doubles are only counted in legs whose
+out rule requires one.
+
+Leaderboards rank **self-reported** scores — a peer-to-peer app with no referee
+cannot prove a match happened, the UI says so, and appearing is opt-in.
+
+`DATA_DIR` must be persistent. On an ephemeral filesystem (Render's free tier)
+every account is deleted on each deploy — see the long note in `render.yaml`.
 
 ## Conventions worth preserving
 
@@ -138,7 +211,8 @@ deploy. Adding a new front-end file means adding it to `PRECACHE`.
   the Android workflow excludes rather than includes, so a new root `.js` file is
   picked up automatically. Prefer exclusion-based lists when adding one is
   unavoidable (`sw.js`'s `PRECACHE` and the workflow's verify step are the
-  exceptions that must be updated by hand).
+  exceptions that must be updated by hand - a new front-end file, including a new
+  `stats/*.js` module, goes in both).
 - Solo (one-player) play is supported in both games and must keep working.
 - Edge cases the rules deliberately encode: leaving exactly 1 busts under double/
   master out but is legal under SISO; under double-in, pre-opening darts count as

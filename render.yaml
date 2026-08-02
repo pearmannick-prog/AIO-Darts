@@ -62,8 +62,76 @@ services:
       # - key: TURN_CREDENTIAL
       #   sync: false
 
-    # No disk. Nothing is persisted yet - challenge rooms are in-memory by
-    # design, and lost on restart on purpose. The accounts/stat-tracking phase
-    # puts a SQLite file in DATA_DIR, and THAT is the point at which this needs
-    # a disk (and a paid plan, since Render's free tier has no persistent
-    # storage). Until then the free tier's ephemeral filesystem is fine.
+    # ---------------------------------------------------------------------
+    # DISK REQUIRED - read this before deploying accounts.
+    # ---------------------------------------------------------------------
+    # Accounts, match history, statistics and leaderboards live in a SQLite
+    # file in DATA_DIR. Render's free tier has an EPHEMERAL filesystem: it is
+    # wiped on every deploy and on every restart. Deployed as written below,
+    # this app will therefore delete every account each time it redeploys, and
+    # do it silently, because a fresh empty database is indistinguishable from
+    # a working one until someone tries to sign in.
+    #
+    # Gameplay does not depend on it - local and online darts are pure browser
+    # code plus a signaling relay, and the server logs loudly and reports
+    # accounts:false on /healthz when the database is unusable - so the free
+    # tier is still a perfectly good way to host the darts. It is not a way to
+    # host the accounts.
+    #
+    # To keep data, move to a paid instance type and attach a disk:
+    #
+    #   disk:
+    #     name: aio-darts-data
+    #     mountPath: /app/data     # matches DATA_DIR in the Dockerfile
+    #     sizeGB: 1                # a match is a few KB; 1GB is years of play
+    #
+    # Left commented rather than enabled because uncommenting it changes what
+    # the deployment costs, and that is the operator's decision to make
+    # deliberately rather than to discover on a bill.
+
+  # ---------------------------------------------------------------------------
+  # The testing deployment
+  # ---------------------------------------------------------------------------
+  # A second service running the accounts/statistics branch, so that work can be
+  # tried on real hardware - a phone needs HTTPS for Web Bluetooth and for the
+  # PWA to install, which a LAN address cannot give it - WITHOUT any of it
+  # reaching aio-darts.onrender.com.
+  #
+  # IMPORTANT: like the service above, this is documentation unless the services
+  # were created FROM this blueprint. The production service was created by hand
+  # in the dashboard, so it does not read this file, and pointing a blueprint at
+  # this repo now would try to adopt or recreate it. Create this second service
+  # by hand too: New > Web Service, same repo, branch below, Docker runtime.
+  #
+  # WHAT FREE TIER MEANS HERE, precisely - it is not just "wiped on deploy":
+  # a free service also spins down after about 15 minutes of inactivity and
+  # restarts on the next request, and the filesystem resets each time. So the
+  # accounts database can disappear several times a day, and the first request
+  # after a spin-down waits ~50s for a cold start. That is fine for "does this
+  # feature work" and useless for "does my history survive". Register, play, and
+  # check the statistics in one sitting; do not read anything into data that has
+  # gone the next morning.
+  #
+  # To promote this to a real staging environment later: change plan to a paid
+  # instance type and attach a disk at /app/data, exactly as described above.
+  - type: web
+    name: aio-darts-dev
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    region: virginia
+
+    # The only line that really distinguishes this service from production.
+    # Render deploys one branch per service, which is what keeps the two apart:
+    # pushing this branch cannot deploy the production service, and merging to
+    # main cannot deploy this one.
+    branch: accounts-stats
+
+    healthCheckPath: /healthz
+
+    envVars:
+      - key: STUN_URLS
+        value: stun:stun.l.google.com:19302
+      # No TURN here on purpose: a relayed match with video is a video call's
+      # worth of bandwidth, and a test deployment is not where to spend it.

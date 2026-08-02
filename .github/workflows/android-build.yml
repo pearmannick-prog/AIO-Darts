@@ -81,10 +81,12 @@ jobs:
           # hand-maintained lists are the exceptions to this repo's
           # exclusion-based approach, and they drift for the same reason, so
           # they are worth keeping legible and worth checking together.
-          for f in game.js online.js version.js \
+          for f in game.js online.js accountui.js version.js \
+                   accountstore.js matchrecorder.js charts.js statsengine.js \
                    granboard.js webrtc.js \
                    scoring.js cricket.js countup.js medley.js \
-                   dartboard.js cricketboard.js quickentry.js medleybuilder.js; do
+                   dartboard.js cricketboard.js quickentry.js medleybuilder.js \
+                   stats/x01stats.js stats/cricketstats.js stats/countupstats.js; do
             test -f "www/$f" || { echo "MISSING: www/$f"; FAIL=1; }
           done
           if [ "$FAIL" -ne 0 ]; then
