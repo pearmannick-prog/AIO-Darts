@@ -15,6 +15,8 @@ import {
   createCricketPlayer, resolveCricketThrow, applyCricketResult,
   checkCricketWin, describeCricketResult,
 } from "./cricket.js";
+import { createRecorder } from "./matchrecorder.js";
+import { recordMatch, getState as accountState } from "./accountstore.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
@@ -55,14 +57,26 @@ const online = {
   me: null,
   opp: null,
   log: [],
+  // Records every dart for history and statistics. Each side keeps its own
+  // record of the match from its own point of view - there is no shared one,
+  // because there is no server in the middle of a peer-to-peer match to hold
+  // it. See matchrecorder.js.
+  recorder: null,
+  // The opponent's display name, learned from their `hello`. Until it arrives
+  // (and for a signed-out opponent, forever) they are simply "Opponent" - the
+  // scoreboard has always said that, and history says the same rather than
+  // inventing a name.
+  oppName: "Opponent",
 };
 
 // ---------- DOM ----------
 const el = {
   tabLocal: document.getElementById("tab-local"),
   tabOnline: document.getElementById("tab-online"),
+  tabAccount: document.getElementById("tab-account"),
   localMode: document.getElementById("local-mode"),
   onlineMode: document.getElementById("online-mode"),
+  accountMode: document.getElementById("account-mode"),
 
   signalingUrl: document.getElementById("signaling-url"),
   createBtn: document.getElementById("create-challenge-btn"),
@@ -212,14 +226,28 @@ function currentSignalingUrl() {
 }
 
 // ---------- Tab switching ----------
-el.tabLocal.addEventListener("click", () => switchTab("local"));
-el.tabOnline.addEventListener("click", () => switchTab("online"));
+// Driven by a table rather than a pair of toggles, because there are now three
+// top-level modes and accountui.js adds its own behaviour to one of them.
+// Anything that wants to switch mode from elsewhere clicks the tab button
+// (accountui.js does exactly that) instead of reaching in here - which keeps
+// tab state owned by one place, the way it was when there were only two.
+const MODES = {
+  local: { tab: el.tabLocal, panel: el.localMode },
+  online: { tab: el.tabOnline, panel: el.onlineMode },
+  account: { tab: el.tabAccount, panel: el.accountMode },
+};
+
+for (const [name, { tab }] of Object.entries(MODES)) {
+  // The account tab is absent from older cached HTML, and a missing element
+  // shouldn't take the whole module down before a match can start.
+  tab?.addEventListener("click", () => switchTab(name));
+}
 
 function switchTab(which) {
-  el.tabLocal.classList.toggle("active", which === "local");
-  el.tabOnline.classList.toggle("active", which === "online");
-  el.localMode.classList.toggle("hidden", which !== "local");
-  el.onlineMode.classList.toggle("hidden", which !== "online");
+  for (const [name, { tab, panel }] of Object.entries(MODES)) {
+    tab?.classList.toggle("active", name === which);
+    panel?.classList.toggle("hidden", name !== which);
+  }
 }
 
 // ---------- Manual entry buttons (generated once) ----------
@@ -734,6 +762,12 @@ function teardownMatch(message) {
   online.gameOver = false;
   online.legOver = false;
   online.match = null;
+  // An abandoned match is not saved. finishOnlineLeg has already saved and
+  // cleared this if the match ran to its end, so anything still here is a
+  // match someone walked out of - and half a match would drag every average
+  // down with darts that were never a real attempt at a finish.
+  online.recorder = null;
+  online.oppName = "Opponent";
 
   resetAv();
 
@@ -801,7 +835,11 @@ function wirePeerLink() {
       // channel was open when the config was sent - the host only sends
       // once it has heard from the guest.
       if (peerLink.role === "guest") {
-        peerLink.sendGameMessage({ type: "hello" });
+        // The name rides along with the greeting that was already being sent,
+        // so learning who you are playing costs no extra round trip. It is
+        // optional in both directions: a signed-out player simply doesn't have
+        // one, and the match plays identically without it.
+        peerLink.sendGameMessage({ type: "hello", name: myDisplayName() });
       }
     }
     if (status === "disconnected" || status === "room-full") {
@@ -815,8 +853,11 @@ function wirePeerLink() {
     if (msg.type === "hello") {
       // Only the host answers this, and only once.
       if (peerLink.role !== "host" || online.active) return;
+      setOpponentName(msg.name);
       const legs = selectedOnlineLegs();
-      peerLink.sendGameMessage({ type: "match_config", legs });
+      // The host's own name goes back with the config, so both sides end up
+      // knowing each other without a message of their own.
+      peerLink.sendGameMessage({ type: "match_config", legs, name: myDisplayName() });
       startOnlineGame("host", legs);
       renderOnline();
       return;
@@ -824,6 +865,7 @@ function wirePeerLink() {
 
     if (msg.type === "match_config") {
       if (online.active) return;
+      setOpponentName(msg.name);
       startOnlineGame("guest", msg.legs);
       renderOnline();
       return;
@@ -884,6 +926,28 @@ function showNotice(message) {
 // ---------- Game start ----------
 // Builds one player's state for a leg. x01 and Cricket keep completely
 // different shapes, which is why this is a function rather than a literal.
+// ---------- Who is playing ----------
+// The scoreboard deliberately keeps saying "You" and "Opponent" - that is
+// unambiguous mid-match in a way that two similar names are not. These are for
+// the saved record, where "beat Opponent" would be useless a month later.
+function myDisplayName() {
+  return accountState().user?.displayName || null;
+}
+
+// The recorder stores absolute seats, the game logic thinks in "me"/"opp".
+function seatOf(side) {
+  return side === "me" ? online.myIndex : online.oppIndex;
+}
+
+function setOpponentName(name) {
+  const clean = String(name || "").trim().slice(0, 40);
+  if (!clean) return;
+  online.oppName = clean;
+  // The recorder may already exist by the time this arrives on the host side,
+  // so the name is applied to it as well as remembered.
+  online.recorder?.setPlayerName(online.oppIndex, clean);
+}
+
 function buildOnlinePlayer(name, legConfig) {
   if (legConfig.game === "cricket") return createCricketPlayer(name);
   if (legConfig.game === "countup") return createCountUpPlayer(name);
@@ -905,6 +969,13 @@ function startOnlineGame(role, legs) {
   online.oppIndex = 1 - online.myIndex;
   online.match = createMatch(legs, 2);
   online.log = [];
+
+  // Seats are absolute and identical on both sides - host 0, guest 1 - so the
+  // two recordings of the same match agree about who did what.
+  const players = [];
+  players[online.myIndex] = { displayName: myDisplayName() || "Me", isSelf: true };
+  players[online.oppIndex] = { displayName: online.oppName, isSelf: false };
+  online.recorder = createRecorder({ mode: "online", format: legs, players });
 
   startOnlineLeg();
 
@@ -934,6 +1005,15 @@ function startOnlineLeg() {
   online.gameOver = false;
   online.legOver = false;
   online.iWon = null;
+
+  online.recorder?.startLeg({
+    legIndex: online.match.currentLeg,
+    game: leg.game,
+    x01Start: leg.game === "x01" ? leg.score : null,
+    rules: leg.game === "x01" ? (leg.rules || "double") : null,
+    bull: leg.bull || null,
+    rounds: leg.rounds ?? null,
+  });
 }
 
 // A leg has been won. Both sides run this independently off the same inputs,
@@ -948,6 +1028,17 @@ function finishOnlineLeg(side) {
     : (side === "me" ? online.myIndex : online.oppIndex);
   recordLegWin(online.match, winnerIndex);
   online.legOver = !online.match.over;
+
+  online.recorder?.endLeg(winnerIndex);
+
+  if (online.match.over && online.recorder) {
+    const document = online.recorder.endMatch({
+      winnerSeat: online.match.winnerIndex ?? null,
+      drawn: Boolean(online.match.drawn),
+    });
+    recordMatch(document);
+    online.recorder = null;
+  }
 }
 
 // ---------- My physical board ----------
@@ -1482,6 +1573,7 @@ function applyQuickTotalThrow(side, totalValue) {
   }
 
   const s = online[side];
+  const remainingBefore = s.remaining;
   const segment = {
     value: totalValue,
     type: SegmentType.Double, // exact-0 entries assume a valid finish
@@ -1505,6 +1597,14 @@ function applyQuickTotalThrow(side, totalValue) {
     label: segment.longName,
     remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
     bust: isBust,
+  });
+
+  online.recorder?.quickTotal(seatOf(side), {
+    total: totalValue,
+    remainingBefore,
+    remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
+    bust: isBust,
+    isCheckout: isWin,
   });
 
   if (isBust) {
@@ -1542,6 +1642,7 @@ function applyThrow(side, rawSegment) {
 
   const s = online[side];
   const rules = rulesFor(online.legConfig?.rules);
+  const remainingBefore = s.remaining;
   const { after, isBust, isWin, opened, ignored } = resolveThrow(s.remaining, segment, {
     inRule: rules.in,
     outRule: rules.out,
@@ -1561,6 +1662,14 @@ function applyThrow(side, rawSegment) {
     label: ignored ? `${segment.longName} - not in yet` : segment.longName,
     remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
     bust: isBust,
+  });
+
+  online.recorder?.dart(seatOf(side), segment, {
+    remainingBefore,
+    remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
+    bust: isBust,
+    ignored,
+    scored: ignored || isBust ? 0 : segment.value,
   });
 
   if (isBust) {
@@ -1594,6 +1703,11 @@ function applyCountUpThrowOnline(side, segment) {
     label: describeCountUpResult(segment, result),
     remainingAfter: player.total,
     bust: false,
+  });
+
+  online.recorder?.dart(seatOf(side), segment, {
+    scored: result.points,
+    extra: { points: result.points, total: player.total },
   });
 
   if (player.dartsThisTurn.length >= 3) {
@@ -1632,6 +1746,17 @@ function applyCricketThrowOnline(side, segment) {
     bust: false,
   });
 
+  online.recorder?.dart(seatOf(side), segment, {
+    scored: result.points,
+    extra: {
+      target: result.target,
+      marks: result.marks,
+      marksApplied: result.marksApplied,
+      points: result.points,
+      justClosed: result.justClosed,
+    },
+  });
+
   if (checkCricketWin(players, 0)) {
     finishOnlineLeg(side);
   } else if (player.dartsThisTurn.length >= 3) {
@@ -1643,6 +1768,7 @@ function applyCricketThrowOnline(side, segment) {
 
 function endTurn(side) {
   const s = online[side];
+  online.recorder?.endTurn();
   s.dartsThisTurn = [];
   // Cricket has no bust, so there's no start-of-turn value to revert to.
   if (online.gameType !== "cricket" && online.gameType !== "countup") s.startOfTurn = s.remaining;

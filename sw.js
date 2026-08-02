@@ -31,7 +31,19 @@ const PRECACHE = [
   // Entry points
   "./game.js",
   "./online.js",
+  "./accountui.js",
   "./version.js",
+  // Accounts, match recording and statistics
+  "./accountstore.js",
+  "./matchrecorder.js",
+  "./charts.js",
+  // The stats engine and its per-game modules. Each new game module added to
+  // the registry in statsengine.js has to be listed here too - this is one of
+  // the two hand-maintained file lists in the project.
+  "./statsengine.js",
+  "./stats/x01stats.js",
+  "./stats/cricketstats.js",
+  "./stats/countupstats.js",
   // Hardware and transport
   "./granboard.js",
   "./webrtc.js",
@@ -82,6 +94,17 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // The account API is never cached and never served from cache. A stored
+  // /api/auth/me is actively dangerous: after signing out - or on a shared
+  // machine - the cached copy would answer with the previous session's user,
+  // and the app would render someone else's name and statistics.
+  //
+  // Passing these through to the network unhandled is also what makes offline
+  // behave correctly: the request fails, accountstore.js reads that as "no
+  // accounts API right now", and the app falls back to guest play, which works
+  // completely offline by design.
+  if (url.pathname.startsWith("/api/")) return;
 
   // Runtime config and the build stamp must never come from cache - a stale
   // signalingUrl would point players at the wrong server, and a stale

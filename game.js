@@ -21,6 +21,10 @@ import {
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
   DEFAULT_ROUNDS,
 } from "./countup.js";
+import { createRecorder } from "./matchrecorder.js";
+import {
+  recordMatch, getState as accountState, subscribe as subscribeToAccount,
+} from "./accountstore.js";
 
 const STARTING_SCORE = 501;
 
@@ -36,6 +40,11 @@ const state = {
   gameOver: false,
   winnerIndex: null,
   throwLog: [], // {playerName, label, value, remainingAfter, bust}
+  // Records every dart of the match for history and statistics. Null until a
+  // match starts, and deliberately never consulted by any scoring code - it
+  // only ever receives what the rules have already decided. See
+  // matchrecorder.js.
+  recorder: null,
 };
 
 let undoStack = [];
@@ -135,6 +144,18 @@ function refreshPlayerRows() {
 addPlayerRow("Player 1");
 addPlayerRow("Player 2");
 
+// Signing in pre-fills the first seat with the account's display name. That is
+// a small convenience and one important correctness detail: it is how the
+// recorder knows which of several pass-and-play seats is the account holder,
+// and therefore whose statistics these darts belong to. Only ever overwrites
+// the untouched default, never something that has been typed.
+subscribeToAccount(({ user }) => {
+  if (!user) return;
+  const first = el.playerInputs.querySelector(".player-input");
+  if (!first) return;
+  if (first.value === "" || first.value === "Player 1") first.value = user.displayName;
+});
+
 el.addPlayerBtn.addEventListener("click", () => addPlayerRow());
 
 el.playerInputs.addEventListener("click", (event) => {
@@ -148,8 +169,27 @@ el.startGameBtn.addEventListener("click", () => {
   const names = [...el.playerInputs.querySelectorAll(".player-input")]
     .map((input, i) => input.value.trim() || `Player ${i + 1}`);
 
-  state.match = createMatch(readMedleyLegs(), names.length);
+  const legs = readMedleyLegs();
+  state.match = createMatch(legs, names.length);
   state.playerNames = names;
+
+  // Which seat belongs to the person whose account this is. Pass-and-play has
+  // no way to know for certain - one device, several players, any of whom
+  // might be the account holder - so it goes by name, and falls back to the
+  // first seat. Getting it wrong would attribute someone else's darts to your
+  // statistics, so the name box is pre-filled with the account's display name
+  // (see below) to make the common case correct rather than lucky.
+  const myName = accountState().user?.displayName?.trim().toLowerCase();
+  const selfSeat = myName
+    ? Math.max(0, names.findIndex((n) => n.trim().toLowerCase() === myName))
+    : 0;
+
+  state.recorder = createRecorder({
+    mode: "local",
+    format: legs,
+    players: names.map((name, seat) => ({ displayName: name, isSelf: seat === selfSeat })),
+  });
+
   startLeg(names);
   undoStack = [];
 
@@ -231,19 +271,28 @@ el.manualMiss.addEventListener("click", () => applyHit(createSegment(SegmentID.M
 
 // ---------- Core scoring ----------
 function snapshot() {
-  return JSON.parse(JSON.stringify({
-    players: state.players,
-    currentPlayerIndex: state.currentPlayerIndex,
-    dartsThisTurn: state.dartsThisTurn,
-    startOfTurnRemaining: state.startOfTurnRemaining,
-    gameOver: state.gameOver,
-    winnerIndex: state.winnerIndex,
-    throwLog: state.throwLog,
-  }));
+  return {
+    ...JSON.parse(JSON.stringify({
+      players: state.players,
+      currentPlayerIndex: state.currentPlayerIndex,
+      dartsThisTurn: state.dartsThisTurn,
+      startOfTurnRemaining: state.startOfTurnRemaining,
+      gameOver: state.gameOver,
+      winnerIndex: state.winnerIndex,
+      throwLog: state.throwLog,
+    })),
+    // Rides along in the same snapshot rather than keeping a second stack, so
+    // the record of the match can't drift out of step with the match: one
+    // undo, one rewind, always the same one. The recorder only appends, so its
+    // half of this is a set of counters rather than a copy - see capture().
+    recorder: state.recorder?.capture() ?? null,
+  };
 }
 
 function restore(snap) {
-  Object.assign(state, snap);
+  const { recorder, ...gameState } = snap;
+  Object.assign(state, gameState);
+  state.recorder?.restore(recorder);
 }
 
 // ---------- Medley builder ----------
@@ -288,6 +337,15 @@ function startLeg(names) {
   state.legOver = false;
   state.winnerIndex = null;
   state.throwLog = [];
+
+  state.recorder?.startLeg({
+    legIndex: state.match.currentLeg,
+    game: state.gameType,
+    x01Start: state.gameType === "x01" ? start : null,
+    rules: state.gameType === "x01" ? (state.legConfig.rules || "double") : null,
+    bull: state.legConfig.bull || null,
+    rounds: state.legConfig.rounds ?? null,
+  });
 }
 
 // Called whenever a leg is won. Decides whether that also ends the match.
@@ -299,6 +357,22 @@ function finishLeg(winnerIndex) {
   recordLegWin(state.match, winnerIndex);
   // A one-leg match is over the moment the leg is - nothing to advance to.
   state.legOver = !state.match.over;
+
+  state.recorder?.endLeg(winnerIndex ?? null);
+
+  // Only a finished match is saved. Abandoning one halfway (New Game) leaves
+  // nothing behind on purpose: a half-played leg would drag every average down
+  // with darts that were never a real attempt at a checkout.
+  if (state.match.over && state.recorder) {
+    const document = state.recorder.endMatch({
+      winnerSeat: state.match.winnerIndex ?? null,
+      drawn: Boolean(state.match.drawn),
+    });
+    // Stored locally first and uploaded afterwards, so this works signed out
+    // and offline - see the queue in accountstore.js.
+    recordMatch(document);
+    state.recorder = null;
+  }
 }
 
 function applyHit(rawSegment) {
@@ -316,6 +390,9 @@ function applyHit(rawSegment) {
 
   const player = state.players[state.currentPlayerIndex];
   const rules = rulesFor(state.legConfig?.rules);
+  // Captured before the throw is applied, because the recorder wants the score
+  // this dart was thrown at, not the one it left behind.
+  const remainingBefore = player.remaining;
   const { after, isBust, isWin, opened, ignored } = resolveThrow(player.remaining, segment, {
     inRule: rules.in,
     outRule: rules.out,
@@ -332,6 +409,14 @@ function applyHit(rawSegment) {
     value: ignored ? 0 : segment.value,
     remainingAfter: isBust ? state.startOfTurnRemaining : Math.max(after, 0),
     bust: isBust,
+  });
+
+  state.recorder?.dart(state.currentPlayerIndex, segment, {
+    remainingBefore,
+    remainingAfter: isBust ? state.startOfTurnRemaining : Math.max(after, 0),
+    bust: isBust,
+    ignored,
+    scored: ignored || isBust ? 0 : segment.value,
   });
 
   moveMarker(el.dartboardMarker, segment);
@@ -366,6 +451,7 @@ function applyQuickTotal(totalValue) {
   undoStack.push(snapshot());
 
   const player = state.players[state.currentPlayerIndex];
+  const remainingBefore = player.remaining;
   const segment = {
     value: totalValue,
     type: SegmentType.Double, // see quickentry.js: exact-0 entries assume a valid double-out
@@ -394,6 +480,14 @@ function applyQuickTotal(totalValue) {
   });
 
   hideMarker(el.dartboardMarker); // no single position to show for a turn total
+
+  state.recorder?.quickTotal(state.currentPlayerIndex, {
+    total: totalValue,
+    remainingBefore,
+    remainingAfter: isBust ? state.startOfTurnRemaining : Math.max(after, 0),
+    bust: isBust,
+    isCheckout: isWin,
+  });
 
   if (isBust) {
     player.remaining = state.startOfTurnRemaining;
@@ -522,6 +616,11 @@ function applyCountUpHit(segment) {
     bust: false,
   });
 
+  state.recorder?.dart(state.currentPlayerIndex, segment, {
+    scored: result.points,
+    extra: { points: result.points, total: player.total },
+  });
+
   moveMarker(el.dartboardMarker, segment);
 
   if (state.dartsThisTurn.length >= 3) {
@@ -557,6 +656,20 @@ function applyCricketHit(segment) {
     bust: false,
   });
 
+  // Cricket's per-dart detail: which target, how many marks it was worth, how
+  // many of those actually counted, and what it scored. Everything MPR, white
+  // horses and hat tricks are computed from later comes from these.
+  state.recorder?.dart(state.currentPlayerIndex, segment, {
+    scored: result.points,
+    extra: {
+      target: result.target,
+      marks: result.marks,
+      marksApplied: result.marksApplied,
+      points: result.points,
+      justClosed: result.justClosed,
+    },
+  });
+
   moveMarker(el.dartboardMarker, segment);
 
   if (checkCricketWin(state.players, state.currentPlayerIndex)) {
@@ -569,6 +682,7 @@ function applyCricketHit(segment) {
 }
 
 function endTurn() {
+  state.recorder?.endTurn();
   state.dartsThisTurn = [];
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   // Cricket players have no `remaining` - there's nothing to revert to,
