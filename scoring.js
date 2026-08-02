@@ -62,6 +62,41 @@ export function segmentCanFinish(segment, outRule) {
   return segment.type === SegmentType.Double;
 }
 
+// The highest score a leg can be checked out from in a single visit, which is
+// NOT a constant - it depends on the out rule, and getting that wrong silently
+// mis-scores every checkout statistic:
+//
+//   double out - the last dart must be a double, and the biggest double is the
+//                bull at 50, so the ceiling is T20 T20 BULL = 170.
+//   master out - a triple may finish, so T20 T20 T20 = 180 is a checkout.
+//   straight   - anything may finish, so 180 again.
+//
+// Lives here rather than in the statistics code because it is a fact about the
+// rules, and two copies of it would be two things to fix.
+export function highestCheckout(rulesKey) {
+  return rulesFor(rulesKey).out === "double" ? 170 : 180;
+}
+
+// Can this remaining score be finished with ONE legal dart? Used to decide
+// which darts were attempts at a finish.
+//
+// The segments that exist: singles 1-20 and the 25 outer bull; doubles 2-40
+// even and the 50 bull; triples 3-60 in multiples of three. Which of them may
+// legally finish is what the out rule decides.
+export function isOneDartFinish(remaining, rulesKey) {
+  if (!Number.isInteger(remaining) || remaining <= 0) return false;
+
+  const isDouble = (remaining <= 40 && remaining % 2 === 0) || remaining === 50;
+  const out = rulesFor(rulesKey).out;
+  if (out === "double") return isDouble;
+
+  const isTriple = remaining <= 60 && remaining % 3 === 0;
+  if (out === "master") return isDouble || isTriple;
+
+  const isSingle = remaining <= 20 || remaining === 25;
+  return isDouble || isTriple || isSingle;
+}
+
 // Given a player's remaining score before a throw and the segment hit,
 // returns what happens - the caller decides how to apply it (bust reverts
 // to the start-of-turn value, which only the caller knows).
