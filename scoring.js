@@ -5,37 +5,66 @@
 // identical results from identical inputs (this is what keeps two remote
 // browsers in sync without needing a rollback/replay system - see README).
 //
-// x01 is a family rather than one game. Three things vary:
+// x01 is a family rather than one game. Three things vary, and the machines
+// let you pick each independently - so it is a 3x3 matrix, not a short list of
+// named presets:
 //
-//   Starting score - 301, 501, 701. Nothing else changes with it.
+//   Starting score - 301, 501, 701 and up. Nothing else changes with it.
 //
-//   The IN rule - whether you have to hit something specific before any of
-//   your darts count at all. "Straight in" (the usual) means you're scoring
-//   from the first dart. "Double in" means nothing counts until you land a
-//   double; darts thrown before that are still darts, they just score zero.
+//   The IN rule - what you must hit before any of your darts count at all.
+//     straight ("Open In")  - scoring from the first dart.
+//     double   ("Double In") - nothing counts until you land a double.
+//     master   ("Masters In") - a double, a triple OR the bullseye opens you.
+//   Darts thrown before opening are still darts; they just score zero.
 //
 //   The OUT rule - what you're allowed to finish on:
-//     straight - anything, including a single. Leaving 1 is fine.
-//     double   - the standard. Leaving 1 busts, because 1 can't be made
-//                with a double.
-//     master   - a double OR a triple. Leaving 1 busts for the same reason.
+//     straight ("Open Out")   - anything, including a single. Leaving 1 is fine.
+//     double   ("Double Out") - the standard. Leaving 1 busts, because 1 can't
+//                be made with a double.
+//     master   ("Masters Out") - a double, a triple OR the bullseye. Leaving 1
+//                busts for the same reason.
 //
-// The named combinations people ask for:
-//   SISO - single in, single out  -> in: straight, out: straight
-//   DIDO - double in, double out  -> in: double,   out: double
-//   Master out                    -> in: straight, out: master
+// NOTE on the bullseye: Arachnid's rules name it explicitly in both Masters
+// options. That matters here because the OUTER bull is a single in this
+// codebase's segment model, so testing the type alone would wrongly reject a
+// legitimate 25 finish. Both master tests check the section instead.
+//
+// The traditional names map onto the matrix:
+//   SISO        - open in, open out
+//   DIDO        - double in, double out
+//   Master out  - open in, master out
 
 import { SegmentType } from "./granboard.js";
 
-export const X01_SCORES = [301, 501, 701];
+// The starting scores Arachnid machines offer. 901 is there because Count Down
+// uses it, and the higher two exist on the Galaxy 3.
+export const X01_SCORES = [301, 501, 701, 901, 1101, 1501];
 
-// The rule presets offered in the UI. Each maps to a concrete in/out pair, so
-// everything downstream only ever deals with those two values.
+// The full in/out matrix, as Arachnid machines offer it. Three ways in times
+// three ways out is nine combinations, and a machine lets you pick any of them
+// - "501 Open In / Master Out" is a real selection, not a curiosity.
+//
+// The four original keys are kept exactly as they were so that every match
+// already recorded still reads correctly: `double` is open-in/double-out, and
+// so on. The rest are new.
+//
+// In and out are the only two values anything downstream deals with, so adding
+// combinations costs nothing beyond this table.
 export const X01_RULES = {
-  double: { label: "Double out", in: "straight", out: "double" },
-  siso: { label: "SISO (single in, single out)", in: "straight", out: "straight" },
-  dido: { label: "DIDO (double in, double out)", in: "double", out: "double" },
-  master: { label: "Master out (double or triple)", in: "straight", out: "master" },
+  // The originals, unchanged.
+  double: { label: "Open in / Double out", in: "straight", out: "double" },
+  siso: { label: "Open in / Open out (SISO)", in: "straight", out: "straight" },
+  dido: { label: "Double in / Double out (DIDO)", in: "double", out: "double" },
+  master: { label: "Open in / Master out", in: "straight", out: "master" },
+
+  // The rest of the matrix.
+  "open-open": { label: "Open in / Open out", in: "straight", out: "straight" },
+  "open-master": { label: "Open in / Master out", in: "straight", out: "master" },
+  "double-open": { label: "Double in / Open out", in: "double", out: "straight" },
+  "double-master": { label: "Double in / Master out", in: "double", out: "master" },
+  "master-open": { label: "Master in / Open out", in: "master", out: "straight" },
+  "master-double": { label: "Master in / Double out", in: "master", out: "double" },
+  "master-master": { label: "Master in / Master out", in: "master", out: "master" },
 };
 
 export function rulesFor(key) {
@@ -49,15 +78,29 @@ export function rulesLabel(key) {
 // Does this dart satisfy the "in" requirement - i.e. is it allowed to open a
 // player's scoring?
 export function segmentOpens(segment, inRule) {
-  if (inRule !== "double") return true;
-  return segment.type === SegmentType.Double;
+  if (inRule === "double") return segment.type === SegmentType.Double;
+  // Masters in: "Doubles, Triples or the bullseye" - the bull counts even
+  // though the outer bull is a single, which is why this tests the section
+  // rather than only the type.
+  if (inRule === "master") {
+    return segment.type === SegmentType.Double
+      || segment.type === SegmentType.Triple
+      || segment.section === "BULL";
+  }
+  return true;
 }
 
 // Is this dart allowed to be the finishing one?
 export function segmentCanFinish(segment, outRule) {
   if (outRule === "straight") return true;
+  // Masters out: "either a Double, Triple or Bullseye". The bull is named
+  // explicitly in the rules, and the OUTER bull is a single in this codebase's
+  // model, so it has to be tested by section or a legitimate 25 finish would
+  // be rejected.
   if (outRule === "master") {
-    return segment.type === SegmentType.Double || segment.type === SegmentType.Triple;
+    return segment.type === SegmentType.Double
+      || segment.type === SegmentType.Triple
+      || segment.section === "BULL";
   }
   return segment.type === SegmentType.Double;
 }
@@ -91,7 +134,8 @@ export function isOneDartFinish(remaining, rulesKey) {
   if (out === "double") return isDouble;
 
   const isTriple = remaining <= 60 && remaining % 3 === 0;
-  if (out === "master") return isDouble || isTriple;
+  // 25 is finishable under masters because the bull counts.
+  if (out === "master") return isDouble || isTriple || remaining === 25;
 
   const isSingle = remaining <= 20 || remaining === 25;
   return isDouble || isTriple || isSingle;
