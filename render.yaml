@@ -133,5 +133,17 @@ services:
     envVars:
       - key: STUN_URLS
         value: stun:stun.l.google.com:19302
+
+      # The shared password wall. Set this in the dashboard rather than here -
+      # a password committed to a public repo is not a password - which is what
+      # sync: false means: Render prompts for the value and never reads it from
+      # this file.
+      #
+      # With it set, every page, every API call and both WebSockets need the
+      # password; /healthz stays open so Render's health check still passes.
+      # Production leaves it UNSET, which disables the gate entirely.
+      - key: SITE_PASSWORD
+        sync: false
+
       # No TURN here on purpose: a relayed match with video is a video call's
       # worth of bandwidth, and a test deployment is not where to spend it.

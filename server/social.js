@@ -154,6 +154,75 @@ export function friendIds(userId) {
 }
 
 // ---------------------------------------------------------------------------
+// Blocking
+// ---------------------------------------------------------------------------
+// Asymmetric and silent, by design - see the note in 003_blocks.sql. Blocking
+// also removes any friendship, because "we are friends but I never want to hear
+// from you" is not a state worth modelling.
+export function blockUser(userId, targetId) {
+  if (userId === targetId) throw fail(400, "You cannot block yourself.");
+
+  const db = getDatabase();
+  if (!db.prepare("SELECT id FROM users WHERE id = ?").get(targetId)) {
+    throw fail(404, "No such player.");
+  }
+
+  db.prepare(
+    `INSERT INTO blocks (user_id, blocked_user_id, created_at) VALUES (?, ?, ?)
+     ON CONFLICT(user_id, blocked_user_id) DO NOTHING`
+  ).run(userId, targetId, new Date().toISOString());
+
+  removeFriend(userId, targetId);
+  return { ok: true };
+}
+
+export function unblockUser(userId, targetId) {
+  getDatabase()
+    .prepare("DELETE FROM blocks WHERE user_id = ? AND blocked_user_id = ?")
+    .run(userId, targetId);
+  return { ok: true };
+}
+
+export function blockedBy(userId) {
+  return getDatabase()
+    .prepare(
+      `SELECT u.id, u.display_name, u.avatar_blob IS NOT NULL AS has_avatar
+       FROM blocks b JOIN users u ON u.id = b.blocked_user_id
+       WHERE b.user_id = ? ORDER BY u.display_name`
+    )
+    .all(userId)
+    .map(publicProfile);
+}
+
+// True if EITHER has blocked the other. One call, because every caller wants
+// the same thing: may these two interact at all. Checking only one direction is
+// the classic way a blocked person can still reach you by being the one who
+// starts the conversation.
+export function isBlocked(a, b) {
+  return Boolean(
+    getDatabase()
+      .prepare(
+        `SELECT 1 AS blocked FROM blocks
+         WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+         LIMIT 1`
+      )
+      .get(a, b, b, a)
+  );
+}
+
+// Everyone this player cannot interact with, in one query - the lobby needs the
+// whole set per message rather than a lookup per recipient.
+export function blockedIds(userId) {
+  return getDatabase()
+    .prepare(
+      `SELECT blocked_user_id AS id FROM blocks WHERE user_id = ?
+       UNION SELECT user_id AS id FROM blocks WHERE blocked_user_id = ?`
+    )
+    .all(userId, userId)
+    .map((row) => row.id);
+}
+
+// ---------------------------------------------------------------------------
 // Clubs
 // ---------------------------------------------------------------------------
 // A slug is the invite. There is no directory to browse, so a club is private

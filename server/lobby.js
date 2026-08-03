@@ -26,7 +26,7 @@
 import { WebSocketServer } from "ws";
 import { userForRequest } from "./auth.js";
 import { createPresence, STATUS, isChallengeable } from "./presence.js";
-import { friendIds } from "./social.js";
+import { friendIds, blockedIds, isBlocked } from "./social.js";
 
 // An unanswered challenge expires. Without this the lobby fills with stale
 // "pending" rows from people who closed the tab, and a player can be blocked
@@ -96,7 +96,11 @@ export function createLobby() {
   // this way the server sends one list rather than one per viewer.
   function lobbyFor(userId) {
     const friends = new Set(friendIds(userId));
-    return presence.all().map((entry) => ({
+    // Blocked in either direction means neither sees the other in the list. A
+    // blocked player who is still visible and still challengeable is a block
+    // that has not done anything.
+    const hidden = new Set(blockedIds(userId));
+    return presence.all().filter((entry) => !hidden.has(entry.userId)).map((entry) => ({
       userId: entry.userId,
       displayName: entry.displayName,
       hasAvatar: entry.hasAvatar,
@@ -223,6 +227,14 @@ export function createLobby() {
       if (!b || !isChallengeable(b.status)) {
         queue.add(first);
         continue;
+      }
+      // Pairing two people who have blocked each other would hand the feature
+      // the exact match it exists to prevent. Put both back and let the next
+      // arrival break the tie.
+      if (isBlocked(first, second)) {
+        queue.add(first);
+        queue.add(second);
+        break;
       }
 
       startMatch(first, second, null);
@@ -376,6 +388,12 @@ export function createLobby() {
         if (!target) return send(socket, { type: "error", message: "They have gone offline." });
         if (targetId === userId) return;
 
+        if (isBlocked(userId, targetId)) {
+          // Deliberately the same wording as an offline player. Confirming a
+          // block reliably produces a second account, which is the outcome the
+          // feature exists to prevent.
+          return send(socket, { type: "error", message: "They have gone offline." });
+        }
         if (!isChallengeable(target.status)) {
           return send(socket, { type: "error", message: `${target.displayName} is already playing.` });
         }
@@ -503,7 +521,7 @@ export function createLobby() {
         // is in by default.
         if (message.toUserId) {
           const target = Number(message.toUserId);
-          if (!presence.isOnline(target)) {
+          if (!presence.isOnline(target) || isBlocked(userId, target)) {
             return send(socket, { type: "error", message: "They have gone offline." });
           }
           const payload = {
@@ -524,7 +542,15 @@ export function createLobby() {
         };
         room.history.push(payload);
         if (room.history.length > ROOM_HISTORY) room.history.shift();
-        for (const memberId of room.members) sendToUser(memberId, payload);
+
+        // Everyone in the room except those blocked in either direction. The
+        // history still holds it, so a block does not rewrite what was said -
+        // it only decides who has it delivered.
+        const hidden = new Set(blockedIds(userId));
+        for (const memberId of room.members) {
+          if (hidden.has(memberId)) continue;
+          sendToUser(memberId, payload);
+        }
         return;
       }
 

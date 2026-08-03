@@ -35,6 +35,7 @@ import { openDatabase } from "./db.js";
 import { purgeExpiredSessions } from "./auth.js";
 import { handleApiRequest } from "./api.js";
 import { createLobby } from "./lobby.js";
+import { guardRequest, isAllowed, gateEnabled } from "./gate.js";
 
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || "./public");
@@ -243,6 +244,10 @@ async function serveFile(res, filePath) {
 
 const httpServer = createServer(async (req, res) => {
   try {
+    // The optional shared-password wall for test deployments. Does nothing
+    // unless SITE_PASSWORD is set, and never gates /healthz - see gate.js.
+    if (guardRequest(req, res)) return;
+
     const urlPath = req.url === "/" ? "/index.html" : req.url;
     const bare = urlPath.split("?")[0];
 
@@ -429,6 +434,13 @@ wss.on("close", () => clearInterval(heartbeat));
 httpServer.on("upgrade", (req, socket, head) => {
   const path = (req.url || "").split("?")[0];
 
+  // Gating pages but not sockets would leave signaling and the lobby open to
+  // anyone who skipped the front door.
+  if (!isAllowed(req)) {
+    socket.destroy();
+    return;
+  }
+
   if (path === SIGNALING_PATH) {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
     return;
@@ -452,6 +464,10 @@ httpServer.listen(PORT, async () => {
   // anyone having to load the page - the first thing worth knowing when a
   // deploy looks like it didn't take.
   console.log(`  build        : ${sha === "dev" ? "dev (unknown commit)" : sha} (from ${source})`);
+  if (gateEnabled) {
+    console.log("  site gate    : ON (SITE_PASSWORD is set - this deployment is private)");
+  }
+
   await initDatabase();
 
   // Mounted after the database, because it authenticates every connection
