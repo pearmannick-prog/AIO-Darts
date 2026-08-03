@@ -112,11 +112,13 @@ export function combineRatings(ratingX01, ratingCricket) {
 // Everything the UI needs about one player's standing, from the two averages.
 // Returns nulls rather than a rank when there is not enough play to justify
 // one - see RANKED_MINIMUM_LEGS.
-export function ratingFrom({ threeDart = null, mpr = null, x01Legs = 0, cricketLegs = 0 } = {}) {
-  const x01Ranked = x01Legs >= RANKED_MINIMUM_LEGS && Number.isFinite(threeDart) && threeDart > 0;
+// `ppr` and `mpr` must be the 80% figures - the scoring phase - because that is
+// what this table is built on. See the FINISH_ZONE note in stats/x01stats.js.
+export function ratingFrom({ ppr = null, mpr = null, x01Legs = 0, cricketLegs = 0 } = {}) {
+  const x01Ranked = x01Legs >= RANKED_MINIMUM_LEGS && Number.isFinite(ppr) && ppr > 0;
   const cricketRanked = cricketLegs >= RANKED_MINIMUM_LEGS && Number.isFinite(mpr) && mpr > 0;
 
-  const x01Row = x01Ranked ? ratingForPpr(threeDart) : null;
+  const x01Row = x01Ranked ? ratingForPpr(ppr) : null;
   const cricketRow = cricketRanked ? ratingForMpr(mpr) : null;
   const overall = combineRatings(x01Row?.rating ?? null, cricketRow?.rating ?? null);
 
@@ -124,7 +126,7 @@ export function ratingFrom({ threeDart = null, mpr = null, x01Legs = 0, cricketL
     // Null means unranked, which is different from rating 1.
     rating: overall,
     rank: overall === null ? null : rankForRating(overall),
-    x01: x01Row ? { rating: x01Row.rating, rank: x01Row.rank, ppr: threeDart } : null,
+    x01: x01Row ? { rating: x01Row.rating, rank: x01Row.rank, ppr } : null,
     cricket: cricketRow ? { rating: cricketRow.rating, rank: cricketRow.rank, mpr } : null,
     // What is still needed to be ranked, so the UI can say so rather than
     // showing a blank badge with no explanation.

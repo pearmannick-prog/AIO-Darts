@@ -15,6 +15,15 @@ import { metric, ratio, percent, dartsOf } from "../statsengine.js";
 // Cricket's numbers. BULL is a target like any other here.
 const TARGET_VALUE = { 20: 20, 19: 19, 18: 18, 17: 17, 16: 16, 15: 15, BULL: 25 };
 
+// Cricket's equivalent of x01's finish zone. The bull is conventionally the
+// last number closed, so closing it is the moment the leg stops being about
+// scoring and becomes about finishing - which is the line the two rating
+// tables are drawn on:
+//
+//   80%  - rounds thrown BEFORE the bull was closed: the pure scoring phase.
+//   100% - every round, including the tidying up afterwards.
+const BULL_CLOSED_AT = 3;
+
 export const cricketStats = {
   key: "cricket",
   label: "Cricket",
@@ -41,6 +50,10 @@ export const cricketStats = {
     let whiteHorses = 0;
     let hatTricks = 0;
 
+    // Scoring-phase totals, which feed the rating.
+    let scoringMarks = 0;
+    let scoringRounds = 0;
+
     let bulls = 0;
     let singles = 0;
     let doubles = 0;
@@ -56,7 +69,13 @@ export const cricketStats = {
       if (!perMatch.has(matchKey)) perMatch.set(matchKey, { marks: 0, rounds: 0 });
       const matchTally = perMatch.get(matchKey);
 
-      for (const turn of context.turns) {
+      // Walked in throw order, because "had the bull been closed yet" is a
+      // question about the state at the START of each visit and cannot be
+      // answered from a total.
+      const ordered = [...context.turns].sort((a, b) => a.turnIndex - b.turnIndex);
+      let bullMarks = 0;
+
+      for (const turn of ordered) {
         // A round IS a visit in Cricket - MPR is marks per visit to the board,
         // which is why this counts turns and not darts.
         rounds += 1;
@@ -65,6 +84,15 @@ export const cricketStats = {
 
         const turnMarks = turn.game?.marks ?? marksFromThrows(turn);
         const turnPoints = turn.game?.points ?? (turn.scored || 0);
+
+        // Counted before this visit's bull marks are applied, so the visit that
+        // closes the bull is itself part of the scoring phase - the same way an
+        // x01 visit is classified by the score it began on.
+        if (bullMarks < BULL_CLOSED_AT) {
+          scoringMarks += turnMarks;
+          scoringRounds += 1;
+        }
+        bullMarks += bullMarksIn(turn);
 
         marks += turnMarks;
         points += turnPoints;
@@ -133,7 +161,10 @@ export const cricketStats = {
         metric("legs", "Legs played", legsPlayed, "integer"),
         metric("legsWon", "Legs won", legsWon, "integer"),
         metric("legWinPct", "Leg win %", percent(legsWon, legsPlayed), "percent"),
-        metric("mpr", "Marks per round", ratio(marks, rounds), "decimal"),
+        metric("mpr80", "Scoring MPR (80%)", ratio(scoringMarks, scoringRounds), "decimal",
+          "Rounds thrown before the bull was closed - the scoring phase the rating table reads."),
+        metric("mpr", "Marks per round (100%)", ratio(marks, rounds), "decimal",
+          "Every round, including closing out."),
         metric("bestMpr", "Best match MPR", bestMatchMpr, "decimal"),
         metric("marks", "Total marks", marks, "integer"),
         metric("rounds", "Rounds played", rounds, "integer"),
@@ -157,7 +188,8 @@ export const cricketStats = {
       ],
       raw: {
         legsPlayed, legsWon, rounds, darts, marks, points, pointsPrevented,
-        mpr: ratio(marks, rounds), bestMpr: bestMatchMpr, highestRound,
+        mpr: ratio(marks, rounds), mpr80: ratio(scoringMarks, scoringRounds),
+        scoringRounds, bestMpr: bestMatchMpr, highestRound,
         threeMark, fourMark, fiveMark, sixMark, whiteHorses, hatTricks,
         bulls, singles, doubles, triples,
         matches: perMatch.size,
@@ -196,6 +228,18 @@ export const cricketStats = {
       test: (r) => r.pointsPrevented >= 500 },
   ],
 };
+
+// Applied bull marks in one visit. Overflow does not count: a triple bull on an
+// already-closed bull scores points but closes nothing, and it is the CLOSING
+// that ends the scoring phase.
+function bullMarksIn(turn) {
+  let total = 0;
+  for (const dart of turn.throws ?? []) {
+    if (dart.section !== "BULL") continue;
+    total += dart.extra?.marksApplied ?? dart.multiplier ?? 1;
+  }
+  return total;
+}
 
 // Fallback for turns recorded before the per-visit payload existed, or by a
 // build that didn't write one: the marks are still recoverable from the darts.

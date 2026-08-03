@@ -13,6 +13,22 @@
 import { metric, ratio, percent, dartsOf } from "../statsengine.js";
 import { highestCheckout, isOneDartFinish, rulesFor } from "../scoring.js";
 
+// Where the scoring phase ends and the finish zone begins.
+//
+// This is what separates the two averages the rating tables are built on:
+//
+//   80%  - the pure SCORING phase, visits thrown while there is still a hundred
+//          or more on the board. Nobody is aiming at a double here; the whole
+//          job is to put three darts in the treble twenty. It measures how big
+//          you score, uncontaminated by finishing.
+//   100% - the WHOLE game, including setup shots and darts thrown at a double
+//          that missed. It measures what you actually did.
+//
+// A visit is classified by the score it BEGAN on, so the visit that takes you
+// from 140 to 32 counts as scoring - which is what it was, right up until it
+// worked.
+const FINISH_ZONE = 100;
+
 export const x01Stats = {
   key: "x01",
   label: "X01",
@@ -25,6 +41,10 @@ export const x01Stats = {
 
     let first9Scored = 0;
     let first9Darts = 0;
+
+    // The scoring-phase totals, which feed the rating.
+    let scoringScored = 0;
+    let scoringDarts = 0;
 
     let checkouts = 0;
     let checkoutChances = 0;
@@ -87,6 +107,15 @@ export const x01Stats = {
           first9Darts += turn.darts || 0;
         }
 
+        // Visits thrown before reaching the finish zone. A bust at 140 belongs
+        // here - it was a scoring visit that went wrong, and excluding it would
+        // quietly flatter the number.
+        if (turn.remainingBefore === null || turn.remainingBefore === undefined
+            || turn.remainingBefore >= FINISH_ZONE) {
+          scoringScored += turnScore;
+          scoringDarts += turn.darts || 0;
+        }
+
         if (turnScore > highestScore) highestScore = turnScore;
         if (turnScore === 180) oneEighties += 1;
         if (turnScore >= 140) oneForties += 1;
@@ -131,13 +160,17 @@ export const x01Stats = {
     }
 
     const threeDart = ratio(scored * 3, darts);
+    const ppr80 = ratio(scoringScored * 3, scoringDarts);
 
     return {
       metrics: [
         metric("legs", "Legs played", legsPlayed, "integer"),
         metric("legsWon", "Legs won", legsWon, "integer"),
         metric("legWinPct", "Leg win %", percent(legsWon, legsPlayed), "percent"),
-        metric("threeDart", "3-dart average", threeDart, "decimal"),
+        metric("ppr80", "Scoring average (80%)", ppr80, "decimal",
+          "Visits thrown with 100 or more left - the pure scoring phase, which is what the rating table reads."),
+        metric("threeDart", "3-dart average (100%)", threeDart, "decimal",
+          "The whole game, including setup shots and missed doubles."),
         metric("first9", "First 9 average", ratio(first9Scored * 3, first9Darts), "decimal"),
         metric("checkoutPct", "Checkout %", percent(checkouts, checkoutChances), "percent",
           "Visits that began on a checkable score and finished the leg. The ceiling " +
@@ -155,7 +188,8 @@ export const x01Stats = {
         metric("darts", "Darts thrown", darts, "integer"),
       ],
       raw: {
-        legsPlayed, legsWon, darts, scored, threeDart, perfectLegs, fewestDarts,
+        legsPlayed, legsWon, darts, scored, threeDart, ppr80, scoringDarts,
+        perfectLegs, fewestDarts,
         first9: ratio(first9Scored * 3, first9Darts),
         checkouts, checkoutChances, highestCheckout: bestCheckout, highestScore,
         oneEighties, oneForties, tons,

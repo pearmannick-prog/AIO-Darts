@@ -39,9 +39,11 @@ const modules = [x01Stats, cricketStats, countupStats];
 // 2: the checkout ceiling and the doubles denominator now follow each leg's
 //    out rule rather than assuming double out, so 180 counts as a checkout
 //    under master and single out.
-// 3: adds the 1-20 rating and its letter rank, derived from the x01 three-dart
-//    average and Cricket MPR the engine already produces.
-export const ENGINE_VERSION = 3;
+// 3: adds the 1-20 rating and its letter rank.
+// 4: splits both averages into 80% (the scoring phase) and 100% (the whole
+//    game), and points the rating at the 80% figures, which is what the rank
+//    table is actually built on.
+export const ENGINE_VERSION = 4;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);
@@ -514,9 +516,14 @@ export function computeStats(matches = []) {
   // than inside either of them - neither can see the other, by design.
   const x01 = games.find((g) => g.key === "x01")?.raw;
   const cricket = games.find((g) => g.key === "cricket")?.raw;
+  // The 80% figures, NOT the whole-game ones. The rank table is built on the
+  // pure scoring phase - visits with 100 or more left in x01, rounds before the
+  // bull is closed in Cricket - so feeding it the full-game average, which is
+  // dragged down by setup shots and missed doubles, would under-rate everybody
+  // by a band or two.
   const rating = ratingFrom({
-    threeDart: x01?.threeDart ?? null,
-    mpr: cricket?.mpr ?? null,
+    ppr: x01?.ppr80 ?? null,
+    mpr: cricket?.mpr80 ?? null,
     x01Legs: x01?.legsPlayed ?? 0,
     cricketLegs: cricket?.legsPlayed ?? 0,
   });
