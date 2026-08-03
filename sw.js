@@ -47,6 +47,7 @@ const PRECACHE = [
   "./stats/x01stats.js",
   "./stats/cricketstats.js",
   "./stats/countupstats.js",
+  "./stats/bermudastats.js",
   // Hardware and transport
   "./granboard.js",
   "./webrtc.js",

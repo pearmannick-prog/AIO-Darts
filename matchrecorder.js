@@ -110,6 +110,7 @@ export function createRecorder({ mode, format, players }) {
     // flagged as bust, so nothing is lost by zeroing the total here.
     if (turn.bust) turn.scored = 0;
     if (leg?.game === "cricket") turn.game = cricketTurnPayload(turn);
+    if (leg?.game === "bermuda") turn.game = bermudaTurnPayload(turn);
     leg?.turns.push(turn);
     turn = null;
   }
@@ -141,6 +142,27 @@ export function createRecorder({ mode, format, players }) {
       // Rounded to two places at write time because it is a display value; the
       // exact figure is always recomputable from the marks and rounds.
       runningMpr: Number((tally.marks / Math.max(1, tally.rounds)).toFixed(2)),
+    };
+  }
+
+  // The per-visit Bermuda payload. Without one, a Bermuda turn writes no
+  // game_json and the per-dart detail is dropped the moment the match is read
+  // back out of the database - the throws table has no column for it, by
+  // design, because game-specific detail is supposed to ride here.
+  //
+  // `missed` is derived rather than reported: a visit missed if not one of its
+  // darts found the target, which is exactly what halves the score. The
+  // recorder can see that without being told, and deriving it keeps the
+  // controllers from having to remember to say so.
+  function bermudaTurnPayload(t) {
+    const darts = t.throws.map((th) => th.extra ?? null);
+    return {
+      // Every dart of a visit is thrown at the same target, so it is recorded
+      // once rather than three times.
+      target: darts.find((d) => d?.target)?.target ?? null,
+      darts,
+      points: t.throws.reduce((sum, th) => sum + (th.extra?.points || 0), 0),
+      missed: !darts.some((d) => d?.hit),
     };
   }
 

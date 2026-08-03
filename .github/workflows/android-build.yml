@@ -86,7 +86,7 @@ jobs:
                    granboard.js webrtc.js \
                    scoring.js cricket.js countup.js bermuda.js medley.js rating.js \
                    dartboard.js cricketboard.js quickentry.js medleybuilder.js \
-                   stats/x01stats.js stats/cricketstats.js stats/countupstats.js; do
+                   stats/x01stats.js stats/cricketstats.js stats/countupstats.js stats/bermudastats.js; do
             test -f "www/$f" || { echo "MISSING: www/$f"; FAIL=1; }
           done
           if [ "$FAIL" -ne 0 ]; then

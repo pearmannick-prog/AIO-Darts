@@ -26,9 +26,10 @@ import { ratingFrom } from "./rating.js";
 import { x01Stats } from "./stats/x01stats.js";
 import { cricketStats } from "./stats/cricketstats.js";
 import { countupStats } from "./stats/countupstats.js";
+import { bermudaStats } from "./stats/bermudastats.js";
 
 // The registry. Order is display order on the stats page.
-const modules = [x01Stats, cricketStats, countupStats];
+const modules = [x01Stats, cricketStats, countupStats, bermudaStats];
 
 // Bumped whenever a definition here or in a game module changes what a number
 // MEANS - a new metric, a corrected formula, a different threshold. The server
@@ -43,7 +44,8 @@ const modules = [x01Stats, cricketStats, countupStats];
 // 4: splits both averages into 80% (the scoring phase) and 100% (the whole
 //    game), and points the rating at the 80% figures, which is what the rank
 //    table is actually built on.
-export const ENGINE_VERSION = 4;
+// 5: adds the Bermuda Triangle module.
+export const ENGINE_VERSION = 5;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);
