@@ -99,6 +99,40 @@ what the above does.
    nobody to close them out against, so nothing goes dead). A solo medley
    plays every leg rather than ending after the first.
 
+   **Computer players.** Every seat has a dropdown next to the name box, set to
+   "Human" by default. Change it and that seat is played by the computer, at
+   one of seven strengths named for the rank it plays to:
+
+   | Level | Rank | Three-dart average |
+   | --- | --- | --- |
+   | Beginner | C | ~35 |
+   | Casual | CC | ~51 |
+   | Club player | B | ~63 |
+   | Strong club | BB | ~75 |
+   | County | A | ~89 |
+   | Elite | AA | ~103 |
+   | Professional | S | ~116 |
+
+   Those averages are measured, not claimed - the levels are pegged to the same
+   rating table the app scores you against ([Rating and ranks](#rating-and-ranks)),
+   so "beat a B player" means the same thing whoever is throwing.
+
+   The computer isn't a table of outcomes or a "70% chance to hit the treble".
+   It aims at a point on the board and its dart lands there plus a random
+   error, which is then read back off the board as whatever segment it hit.
+   That one number - how wide the scatter is, in millimetres - is the entire
+   difference between the beginner and the professional, and it produces the
+   *right* misses for free: aim at treble 20, miss sideways, hit the 1 or the
+   5, exactly as a person does. It plays every game mode, aiming at the round's
+   actual target in Bermuda rather than blindly at the 20.
+
+   Any seat can be a computer, so you can watch two of them play, and mixed
+   games work in a medley. A match with a computer in it is recorded as
+   **practice**: the darts count towards your statistics, because they're real
+   darts you threw at a real board, but the result stays off the win-based
+   leaderboards - farming a beginner for a hundred wins shouldn't put anyone
+   top of a board.
+
    With more than one leg, a bar shows which leg is in play and the running
    leg tally, and a **Next leg** button appears once a leg is won. Scores
    reset each leg while names and the tally carry over, and the throw
@@ -306,8 +340,14 @@ Bluetooth requires it.
   relays the traffic instead - see [Adding a TURN relay](#adding-a-turn-relay).
 - **No anti-cheat** - each side reports its own hits; a modified client could
   lie. Fine for playing with people you trust, not tamper-proof.
-- **No matchmaking/accounts** - invite-code only for now. A public
-  lobby/ranked queue needs persistent accounts and a real backend.
+- **Nothing proves a match happened.** Accounts, statistics and leaderboards
+  all rest on what the two clients report, and the app has no referee - see
+  [Leaderboards are for fun, not for ranking](#leaderboards-are-for-fun-not-for-ranking).
+  Appearing on a board is opt-in for exactly that reason.
+- **Invite codes are still the only way to play someone outside your lobby** -
+  and the fallback when the lobby is down. That's deliberate, not a gap: the
+  lobby only mints an ordinary challenge code and hands it to both sides, so
+  there's no second code path to keep working.
 - Challenge codes are **in-memory and ephemeral** - restarting the server
   drops any in-progress ones. That's by design; a code only needs to live for
   the few seconds it takes two players to connect.
@@ -317,16 +357,29 @@ Bluetooth requires it.
 
 ## Architecture
 
-One Node process (`server/server.js`) does two jobs on a single port:
+One Node process (`server/server.js`) does four jobs on a single port:
 
 - serves the static front-end (`index.html` and the `*.js` files)
 - serves the signaling WebSocket at `/signaling`
+- serves the lobby WebSocket at `/lobby`
+- answers the accounts and statistics API under `/api/*`
 
-That merge is deliberate. Because the socket lives on the same origin as the
+That merge is deliberate. Because the sockets live on the same origin as the
 page, deploying needs **no second subdomain, no extra DNS record, no separate
 TLS certificate, no path-rewriting rules, and no signaling URL for anyone to
 type**. A reverse proxy just forwards the site as it would any static site,
 with WebSocket upgrades enabled.
+
+The two WebSockets share one `upgrade` listener that routes by path, which is
+load-bearing rather than tidy: a `WebSocketServer` built with `{server, path}`
+installs its own listener and *destroys* any upgrade whose path it doesn't
+recognise, so two of them on one HTTP server means whichever attached first
+silently hangs up on the other's connections.
+
+Only the lobby holds state. Signaling relays offer/answer/ICE between the two
+sockets in a room and then drops out, and an accepted lobby challenge mints an
+ordinary invite code and gets out of the way - so the server never sees a dart,
+and a lobby outage can't interrupt a match already in progress.
 
 Scoring stays in sync between peers without any rollback/replay machinery:
 both browsers run the identical deterministic `resolveThrow` logic from
