@@ -1,0 +1,50 @@
+# dependabot.yml - dependency update PRs.
+#
+# NOTE: this file only takes effect once it is on the DEFAULT branch. Dependabot
+# reads its config from main and nowhere else, so until this is merged the
+# scheduled update PRs below do not run. The security half - vulnerability
+# alerts and automatic fix PRs for known CVEs - is a repository setting rather
+# than a file, and is already switched on, so the part that actually matters is
+# working now.
+#
+# There are three separate dependency sets here and they are genuinely
+# different things, which is why each gets its own entry rather than one
+# catch-all:
+
+version: 2
+updates:
+  # The server. One production dependency, `ws`, which carries the signaling
+  # relay and the lobby - so an advisory against it matters more here than the
+  # size of the dependency suggests.
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(server)"
+
+  # The Capacitor toolchain at the repo root, which only builds the Android
+  # APK. Nothing here is served to a browser or run on the server, so these are
+  # grouped into a single PR rather than arriving one at a time - the review
+  # question is "does the APK still build", and that is one question.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "deps(android)"
+    groups:
+      capacitor:
+        patterns: ["*"]
+
+  # The GitHub Actions themselves. Easy to forget because they are not in any
+  # package.json, and a compromised or abandoned action runs with access to the
+  # build - which for this repo means the image that gets published.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
