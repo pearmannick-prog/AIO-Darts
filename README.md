@@ -73,12 +73,16 @@ what the above does.
    switch on. An x01 leg carries its own **starting score** (301, 501 or 701)
    and its own **rules**:
 
-   | Rules | In | Out |
-   | --- | --- | --- |
-   | Double out (standard) | any dart scores | must finish on a double |
-   | SISO (single in, single out) | any dart scores | anything finishes, including a single |
-   | DIDO (double in, double out) | nothing scores until you hit a double | must finish on a double |
-   | Master out | any dart scores | a double **or** a triple finishes |
+   The in and out rules are picked independently, so every combination is
+   available - "Open in / Master out" is a real selection, not a curiosity.
+
+   | | Open | Double | Master |
+   | --- | --- | --- | --- |
+   | **In** | any dart scores | nothing scores until a double | a double, triple **or** bull opens you |
+   | **Out** | anything finishes, including a single | must finish on a double | a double, triple **or** bull finishes |
+
+   The familiar names are just points on that grid: **SISO** is open/open,
+   **DIDO** is double/double, **Master out** is open/master.
 
    Two details that catch people out. Under **double in**, darts thrown before
    you open still count as darts - they just score nothing, and the throw log
@@ -139,6 +143,21 @@ what the above does.
    everything **and** being level or ahead on points - closing out while
    behind doesn't end the game. Quick Total entry is hidden in Cricket, since
    a turn total says nothing about which numbers were hit.
+
+   **Bermuda Triangle** is thirteen rounds with a different target each time,
+   in a fixed order: 12, 13, 14, Any Double, 15, 16, 17, Any Triple, 18, 19,
+   20, Any Bull, Double Bull. Any segment of the current number scores its own
+   value, so a triple 12 is worth 36; on the Double and Triple rounds, any
+   double or any triple anywhere on the board counts.
+
+   The catch is what makes the game: **miss the target with all three darts
+   and your score is cut in half.** That punishes a good player far more than
+   a bad one - somebody on 400 loses 200 for one bad round - so a steady
+   player who never misses will beat a big scorer who misses twice. The app
+   says so out loud in the throw log when it happens, because a score that
+   silently halves reads as a bug. The current target is always in the turn
+   label. Quick Total is disabled here, since a bare total can't express which
+   target you were on or whether you missed it.
 2. *If you have a Granboard*, click **Connect Board** - a browser popup will
    ask you to pick it from a list of nearby Bluetooth devices. Select it and
    click "Pair"/"Connect". This step is entirely optional: the clickable
@@ -315,6 +334,52 @@ both browsers run the identical deterministic `resolveThrow` logic from
 locally and forwards them to the peer, which applies them to its model of "the
 opponent" using the same rules. WebRTC DataChannels guarantee ordered
 delivery, so both sides stay in lockstep.
+
+## The online lobby
+
+Signed in, the Online Challenge tab gains a **lobby**: everyone else who is
+online, their status, and a Challenge button. Send one and they get a card with
+Accept and Decline; unanswered challenges expire. **Quick Match** puts you in a
+queue and pairs you with whoever has waited longest - deliberately not
+skill-based, because a queue that holds out for a good match is one nobody comes
+out of.
+
+**Rooms** are places to wait and chat - "501 Practice", "Cricket Only" - not
+matches. Anyone in one can be challenged. There is room chat and private
+whispers, and you can **block** someone, which is silent and stops them
+challenging you, whispering to you, seeing you in the lobby, or being paired
+with you by Quick Match.
+
+Tapping a player opens their card: their real record, so "am I in for a game
+here?" has an answer before you commit.
+
+**Invite codes still work exactly as before, and are not going away.** They are
+the only way to play without an account, the way to play someone who isn't in
+your lobby, and the fallback if the lobby is unavailable. Accepting a challenge
+simply creates one of those codes behind the scenes and hands it to both
+players - so the match itself runs over the identical peer-to-peer connection it
+always has, and the lobby drops out of the picture entirely. If the lobby went
+down mid-match, your match would carry on.
+
+## Rating and ranks
+
+Play enough and you get a **rating from 1 to 20** and a rank from C up to GM,
+using the familiar table: your x01 three-dart average ("01 PPR") and your
+Cricket marks per round ("CR MPR") each map to a rating, and the two are
+averaged.
+
+You will see **two** of them, and they are the same table read twice:
+
+- **80% stats** cover the pure scoring phase - x01 visits begun with 100 or more
+  left, Cricket rounds before the bull was closed. This is what the rank table
+  is built around, and what the badge shows.
+- **100% stats** cover the whole game, including setup shots and darts thrown at
+  a double that missed.
+
+The thresholds are identical; only the darts feeding the average differ. That is
+why the same player can be an M on their 80% stats and a B on their 100% - not
+two systems, one system measuring two different things. Below ten legs you are
+simply **unranked**, because an average over one leg is noise.
 
 ## Accounts, statistics and leaderboards
 
@@ -597,12 +662,23 @@ use requires a separate agreement with the licensor.
 
 *Last reviewed: 30 July 2026.*
 
-- Matchmaking and a lobby beyond invite codes (invite codes stay as the
-  no-account path and the fallback)
+- The remaining Cricket variants (Cut-Throat, Wildcard, Low Ball, Hammer, the
+  /200 spread limit) and the rest of the Arachnid "Other Games"
+- Teams, and with them the Freeze Rule - which is a partners rule, so teams are
+  the prerequisite rather than a flag
 - Native Windows (C#/.NET) version
 - Webcam-based hit detection for standard steel-tip boards
 
 Done since the last review:
+
+- ✅ **The online lobby** (3 August 2026) - live presence, challenges, Quick
+  Match, rooms, chat and blocking. Gameplay stays peer-to-peer: an accepted
+  challenge mints an ordinary invite code and hands it to both sides, so the
+  match runs over the connection that always existed. Invite codes stay.
+- ✅ **Rating and ranks** (3 August 2026) - the 1-20 scale and C-to-GM ranks,
+  reported against both the 80% (scoring phase) and 100% (whole game) averages.
+- ✅ **Bermuda Triangle** (3 August 2026) - thirteen rounds, and the halving
+  that makes the game, playable locally and online with its own statistics.
 
 - ✅ **Accounts, statistics, achievements and leaderboards** (2 August 2026) -
   optional accounts backed by a single SQLite file, with every dart recorded and

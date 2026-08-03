@@ -49,17 +49,33 @@ Statistics tests: `node --test server/statsengine.test.js`.
 `DATA_DIR` (default `./data`) holds the SQLite database. It must be persistent -
 see the note in `render.yaml`.
 
+`SITE_PASSWORD` (unset by default) puts one shared password in front of the whole
+deployment. Used on the test build; leave unset in production.
+
+Testing the lobby needs two DIFFERENT accounts, and two browser tabs will not do
+it - they share a cookie jar, so signing in as the second player signs the first
+one out. Drive it with two `ws` clients carrying different session cookies, or use
+two browser profiles.
+
 Testing online play needs no second machine: open `http://localhost:8000` in two
 tabs, Create Challenge in one, paste the code into the other.
 
 ## Architecture
 
-**One process, one port.** `server/server.js` serves both the static front-end and
-the signaling WebSocket (`/signaling`). This is deliberate — same origin means no
-second DNS record/TLS cert, no mixed-content problem, and nothing for a player to
-configure. Don't split these back apart. The server never sees gameplay traffic; it
-relays WebRTC offer/answer/ICE between the ≤2 sockets in an in-memory room, then
-drops out. Rooms are intentionally ephemeral (lost on restart).
+**One process, one port.** `server/server.js` serves the static front-end, the
+signaling WebSocket (`/signaling`), the lobby WebSocket (`/lobby`) and the `/api/*`
+surface. This is deliberate — same origin means no second DNS record/TLS cert, no
+mixed-content problem, and nothing for a player to configure. Don't split these back
+apart. Signaling still never sees gameplay traffic; it relays WebRTC
+offer/answer/ICE between the ≤2 sockets in an in-memory room, then drops out. Those
+rooms are intentionally ephemeral (lost on restart).
+
+**Both WebSockets are `noServer`, with one `upgrade` listener routing by path.**
+This is not a style choice and must not be "simplified" back. A `WebSocketServer`
+created with `{server, path}` installs its own upgrade listener and *destroys* any
+upgrade whose path it doesn't recognise — so two of them on one HTTP server means
+whichever attached first silently hangs up on the other's connections. It presents
+as a bare `WebSocket error` in the browser and *nothing at all* in the server log.
 
 **`/config.json` is generated per-request from env vars** (`STUN_URLS`, `TURN_URL`,
 `SIGNALING_URL`, …) — it is not a file in the repo, and adding TURN requires no code
@@ -75,12 +91,32 @@ The pure, side-effect-free rules layer — keep it that way, and never fork a se
 copy of these rules for online mode:
 
 - `scoring.js` — `resolveThrow(remainingBefore, segment, {inRule, outRule, opened})`
-  is the whole of x01. In/out variants (`double`/`siso`/`dido`/`master`) live in
-  `X01_RULES`.
+  is the whole of x01. `X01_RULES` is the full 3×3 in/out matrix (open/double/master
+  each way), because the machines let you pick any combination. The four original
+  keys keep their exact meaning so recorded matches still read correctly.
+  **Both `master` rules include the bullseye**, and both test `section === "BULL"`
+  rather than the segment type — the OUTER bull is a *single* in this codebase's
+  model, so a type check silently rejects a legitimate 25 finish.
+  `highestCheckout()` and `isOneDartFinish()` live here too: the checkout ceiling
+  is 170 under double out but **180** where a treble can finish, and getting that
+  wrong quietly mis-scores every checkout statistic.
 - `cricket.js` — marks, closing, dead targets, win condition.
+- `bermuda.js` — Bermuda Triangle. Thirteen rounds in a FIXED, interleaved order
+  (12, 13, 14, Any Double, 15, 16, 17, Any Triple, 18, 19, 20, Any Bull, Double
+  Bull) — not the numbers grouped together, which changes how the game plays.
+  Missing a round with all three darts halves the score, decided when the round
+  ends because "all three missed" is not a fact any single dart knows. Pinned to
+  split bull: full-bull promotes the outer bull to the inner, which would collapse
+  the last two rounds into one.
+- `rating.js` — the 1–20 rating and its C→GM ranks. **One table, looked up twice.**
+  The 80% and 100% views are not two scales; the thresholds are identical and only
+  the average differs, which is why the same player can be an M on 80% and a B on
+  100%. The table is data in one array; `combineRatings` is the only judgement in
+  the file and is isolated for that reason.
 - `medley.js` — match = ordered list of legs. **A single game is a one-leg match**;
-  there is no separate single-game code path. A leg is `{game:"x01",score,rules}` or
-  `{game:"cricket"}`; `normalizeLeg` accepts legacy bare strings.
+  there is no separate single-game code path. A leg is `{game:"x01",score,rules}`,
+  `{game:"cricket"}`, `{game:"countup",rounds}` or `{game:"bermuda"}`;
+  `normalizeLeg` accepts legacy bare strings.
 
 Shared UI components, extracted specifically so local and online modes cannot drift:
 `dartboard.js` (clickable SVG board + marker), `cricketboard.js` (DartConnect-style
@@ -96,6 +132,23 @@ The two top-level controllers are `game.js` (local pass-and-play) and `online.js
 `index.html`. All three input paths — real board, clickable board, manual entry —
 converge on the same segment objects before touching scoring code.
 
+**The lobby is stateful; gameplay is not.** `server/lobby.js` holds presence,
+challenges, rooms and chat, which is a real change to the "the server is a dumb
+relay" principle above. What has NOT changed: an accepted challenge simply mints an
+ordinary challenge code and sends it to both sides, after which the match runs over
+the identical peer-to-peer path an invite code has always used. The server still
+never sees a dart, and a lobby outage cannot interrupt a match in progress.
+**Invite codes stay** — they are the only no-account path, the way to play someone
+outside your lobby, and the fallback when the lobby is down.
+
+Presence lives in `server/presence.js`, in memory, single-process, deliberately —
+and behind a small interface so that adding a second process later is that file
+plus a pub/sub bus rather than the protocol or the UI. Presence is per *person*,
+not per socket: a phone and a laptop are one entry with two connections, and you go
+offline when the last one closes. `detach()` returns the entry as it was, because
+the disconnect handler needs to know which room to remove you from and the entry is
+already gone by then.
+
 **Ring→segment-ID slot convention** (`0=inner single, 1=triple, 2=outer single,
 3=double`) is duplicated in `granboard.js`'s `SegmentID`, `dartboard.js`'s band
 definitions, and `manualSegmentFromRing` in both `game.js` and `online.js`. Changing
@@ -108,7 +161,14 @@ player index 0, guest 1, on both sides. x01, cricket, and medleys all work onlin
 `end_match` tears both sides down (sent *before* closing, or there's no channel
 left to send it on). `media_state` also rides the channel but is intercepted in
 `webrtc.js` and never reaches `online.js`'s `onMessage` — game code doesn't know
-about it.
+about it. `hello` and `match_config` also carry the sender's display name, so a
+saved match can name the opponent.
+
+**Adding a game mode does not add a peer message.** Bermuda Triangle rides the
+existing `dart` message: a dart is a dart, and the pure rules on each side decide
+what it meant. Both browsers computed the same halving independently from the same
+three darts — that is the determinism guarantee doing real work, and it is why the
+rules must stay pure.
 
 **Camera/mic uses pre-negotiated, initially empty transceivers.** `webrtc.js`
 calls `addTransceiver("audio"/"video", {direction:"sendrecv"})` before the one
@@ -145,7 +205,7 @@ deploy. Adding a new front-end file means adding it to `PRECACHE`. It also
 session's user after a sign-out, and letting those requests fail offline is what
 makes the app fall back to guest play correctly.
 
-## Accounts, statistics and leaderboards
+## Accounts, statistics, leaderboards and the lobby
 
 Optional and additive: **guests play exactly as they always have**. The account
 tab and header chip do not render at all until the app confirms there is an
@@ -200,6 +260,29 @@ out rule requires one.
 Leaderboards rank **self-reported** scores — a peer-to-peer app with no referee
 cannot prove a match happened, the UI says so, and appearing is opt-in.
 
+**Averages are split into 80% and 100%, and they mean different things.** The 80%
+figure is the pure SCORING phase — x01 visits begun with 100 or more left, Cricket
+rounds thrown before the bull was closed. The 100% figure is every visit, including
+setup shots and darts thrown at a double that missed. A visit is classified by the
+state it BEGAN in, so the visit taking you from 140 to 32, or the one that closes
+the bull, still counts as scoring. **The rating reads the 80% figures** — feeding it
+the whole-game average under-rates everyone by a band or two.
+
+**`SITE_PASSWORD` puts one shared password in front of a whole deployment** (see
+`server/gate.js`), for test builds. It does nothing when unset, which is how
+production runs. Two details that are load-bearing: `/healthz` is never gated,
+because Render polls it to decide whether the service is alive and gating it would
+take the deployment down rather than protect it; and the WebSocket upgrades ARE
+gated, since protecting pages but not sockets would leave signaling and the lobby
+open to anyone who skipped the front door.
+
+**Never build HTML from a player's display name.** `lobbyui.js` once interpolated
+the challenger's name into `innerHTML`, which is stored cross-user XSS — set your
+name to an `<img>` with an `onerror` and challenge someone, and it runs in their
+session. Build DOM and use `textContent`. Escaping belongs at the point of render,
+never at storage, or every legitimate apostrophe gets mangled and the sink is still
+unsafe.
+
 `DATA_DIR` must be persistent. On an ephemeral filesystem (Render's free tier)
 every account is deleted on each deploy — see the long note in `render.yaml`.
 
@@ -213,17 +296,54 @@ every account is deleted on each deploy — see the long note in `render.yaml`.
   unavoidable (`sw.js`'s `PRECACHE` and the workflow's verify step are the
   exceptions that must be updated by hand - a new front-end file, including a new
   `stats/*.js` module, goes in both).
-- Solo (one-player) play is supported in both games and must keep working.
+- **Adding a game mode** is: a pure rules module; a branch in `game.js` and
+  `online.js` (no new peer message - it rides `dart`); a case in `medley.js`'s
+  `normalizeLeg` and `gameLabel`; an option in `medleybuilder.js` and both format
+  pickers in `index.html`; a `stats/*.js` module registered in `statsengine.js`;
+  and both hand-maintained file lists. Bump `ENGINE_VERSION` if it changes what an
+  existing number MEANS. The stats page, dashboard, achievements screen and
+  leaderboard picker all iterate the registry, so they need no edit at all.
+- Solo (one-player) play is supported in every game mode and must keep working.
 - Edge cases the rules deliberately encode: leaving exactly 1 busts under double/
   master out but is legal under SISO; under double-in, pre-opening darts count as
   darts but score nothing; cricket closing-out while behind on points does not win;
   a quick-total entry finalizes the whole turn and reaching exactly 0 always counts
-  as a valid checkout.
+  as a valid checkout; a Bermuda round missed with all three darts halves the total,
+  rounded down.
+- Quick Total is refused in Cricket and Bermuda. A bare turn total says nothing
+  about which numbers were hit, and in Bermuda it cannot express a halving.
 
 ## CI
 
-`docker-build.yml` builds on every push/PR, publishes to GHCR only on `main` and
-version tags (`latest`, plus `1.0.0`/`1.0` for a `v1.0.0` tag). `android-build.yml`
-wraps the front-end with Capacitor into a debug APK artifact (local play only — no
-Bluetooth or online). It assembles `www/` by copying the repo minus infrastructure,
-then hard-fails if an expected front-end file is missing.
+`docker-build.yml` builds on pushes to `main`, on version tags, and on pull
+requests; it publishes to GHCR only from `main` and version tags (`latest`, plus
+`1.0.0`/`1.0` for a `v1.0.0` tag). Note that a push to a feature branch runs
+NOTHING — only opening a PR does. `android-build.yml` wraps the front-end with
+Capacitor into a debug APK artifact (local play only — no Bluetooth or online). It
+assembles `www/` by copying the repo minus infrastructure, then hard-fails if an
+expected front-end file is missing.
+
+`main` is protected: pull request required (0 approvals, since this is a solo
+project), the `build` check must pass, no force pushes, no deletion. Admins are not
+bound, so there is an escape hatch — which means it stops accidents rather than
+intent. Dependabot alerts and automatic security-fix PRs are enabled at the repo
+level; `.github/dependabot.yml` adds scheduled updates and only takes effect once
+it is on `main`, because Dependabot reads its config from the default branch.
+
+## Deployments
+
+Three, and it matters which is which:
+
+- **`aio-darts.onrender.com`** — production, deploys from `main`. Has no disk, so
+  it must not carry accounts until one is attached.
+- **`aio-darts-dev.onrender.com`** — the test build, deploys from `accounts-stats`,
+  gated by `SITE_PASSWORD`. Render deploys one branch per service, which is what
+  keeps the two apart. Free tier: the filesystem resets on every deploy AND on
+  every spin-down after ~15 minutes idle, so accounts there vanish regularly and
+  that is expected, not a bug.
+- **GitHub Pages** — was serving `main` as a static-only copy. Disabled; noted here
+  because it is easy to re-enable by accident and it publishes the front-end with
+  no server behind it.
+
+Any deployment whose branch is not `main` shows a red banner (see `version.js`), so
+a test build cannot be mistaken for the live one.
