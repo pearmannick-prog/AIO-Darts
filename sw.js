@@ -56,6 +56,7 @@ const PRECACHE = [
   "./cricket.js",
   "./countup.js",
   "./bermuda.js",
+  "./botplayer.js",
   "./medley.js",
   // Shared UI components
   "./dartboard.js",

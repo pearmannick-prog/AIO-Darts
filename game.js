@@ -26,6 +26,9 @@ import {
   isBermudaRoundOver, endBermudaRound, isBermudaComplete, checkBermudaWin,
   describeBermudaResult, BERMUDA_ROUNDS,
 } from "./bermuda.js";
+import {
+  SKILL_LEVELS, skillFor, throwDart, chooseX01Target, chooseCricketTarget,
+} from "./botplayer.js";
 import { createRecorder } from "./matchrecorder.js";
 import {
   recordMatch, getState as accountState, subscribe as subscribeToAccount,
@@ -45,6 +48,8 @@ const state = {
   gameOver: false,
   winnerIndex: null,
   throwLog: [], // {playerName, label, value, remainingAfter, bust}
+  // One entry per seat: null for a person, a skill level for a computer.
+  bots: [],
   // Records every dart of the match for history and statistics. Null until a
   // match starts, and deliberately never consulted by any scoring code - it
   // only ever receives what the rules have already decided. See
@@ -127,8 +132,18 @@ function addPlayerRow(name = "") {
   row.className = "player-row";
   // The input keeps the .player-input class it always had, so everything that
   // reads player names by that selector still works unchanged.
+  // Each seat can be a person or a computer. "Human" first and selected by
+  // default, so adding a player behaves exactly as it always has and the bots
+  // are opt-in.
+  const skillOptions = SKILL_LEVELS
+    .map((s) => `<option value="${s.key}">${s.label} (${s.rank})</option>`)
+    .join("");
   row.innerHTML = `
     <input type="text" class="player-input" placeholder="Player ${count}">
+    <select class="player-kind" title="Who is playing this seat">
+      <option value="human" selected>Human</option>
+      ${skillOptions}
+    </select>
     <button type="button" class="player-remove" title="Remove this player">&times;</button>`;
   row.querySelector(".player-input").value = name;
   el.playerInputs.appendChild(row);
@@ -184,15 +199,28 @@ el.startGameBtn.addEventListener("click", () => {
   // first seat. Getting it wrong would attribute someone else's darts to your
   // statistics, so the name box is pre-filled with the account's display name
   // (see below) to make the common case correct rather than lucky.
+  // Which seats are computer players, and how good they are.
+  const kinds = [...el.playerInputs.querySelectorAll(".player-kind")].map((s) => s.value);
+
   const myName = accountState().user?.displayName?.trim().toLowerCase();
   const selfSeat = myName
     ? Math.max(0, names.findIndex((n) => n.trim().toLowerCase() === myName))
     : 0;
 
+  // A bot is never "you", however the seat is named.
+  state.bots = kinds.map((kind) => (kind === "human" ? null : skillFor(kind)));
+
   state.recorder = createRecorder({
-    mode: "local",
+    // A match against a computer is practice, and saying so in the record is
+    // what lets the statistics count the darts (they are real darts, thrown at
+    // a real board) while leaving win-based leaderboards alone. Farming a
+    // beginner bot for a hundred wins should not put anyone top of a board.
+    mode: state.bots.some(Boolean) ? "practice" : "local",
     format: legs,
-    players: names.map((name, seat) => ({ displayName: name, isSelf: seat === selfSeat })),
+    players: names.map((name, seat) => ({
+      displayName: name,
+      isSelf: seat === selfSeat && !state.bots[seat],
+    })),
   });
 
   startLeg(names);
@@ -205,6 +233,7 @@ el.startGameBtn.addEventListener("click", () => {
 });
 
 el.newGameBtn.addEventListener("click", () => {
+  cancelBot();
   el.gamePanel.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
 });
@@ -744,6 +773,56 @@ function applyCricketHit(segment) {
   render();
 }
 
+// ---------- Computer players ----------
+// A bot throws through applyHit(), exactly as a Bluetooth board or a click
+// does. Nothing downstream is aware it is a bot: undo works, the recorder
+// records, the throw log logs. That is the entire integration.
+//
+// Timers rather than a loop, because a bot that emptied its whole turn into the
+// state in one synchronous burst would show the human three darts appearing at
+// once with no sense of a turn being taken.
+let botTimer = null;
+
+function currentBot() {
+  return state.bots[state.currentPlayerIndex] ?? null;
+}
+
+function cancelBot() {
+  clearTimeout(botTimer);
+  botTimer = null;
+}
+
+// Called after every render. Deciding here rather than at the end of endTurn()
+// means it covers every route into a bot's turn - including undo, which can put
+// one back on throw.
+function maybeThrowForBot() {
+  cancelBot();
+  const bot = currentBot();
+  if (!bot || state.gameOver || state.players.length === 0) return;
+
+  botTimer = setTimeout(() => {
+    // The world may have moved while the timer was pending - an undo, a new
+    // game, a human taking the seat back.
+    if (currentBot() !== bot || state.gameOver) return;
+
+    const player = state.players[state.currentPlayerIndex];
+    const dartsLeft = 3 - state.dartsThisTurn.length;
+
+    let target;
+    if (state.gameType === "cricket") {
+      target = chooseCricketTarget(player.marks);
+    } else if (state.gameType === "x01") {
+      target = chooseX01Target(player.remaining, dartsLeft, rulesFor(state.legConfig?.rules).out);
+    } else {
+      // Count Up and Bermuda both just want points; the treble twenty is the
+      // right answer often enough and this is a practice opponent.
+      target = chooseX01Target(501, 3, "straight");
+    }
+
+    applyHit(throwDart(target, bot.sigma));
+  }, 700);
+}
+
 function endTurn() {
   state.recorder?.endTurn();
   state.dartsThisTurn = [];
@@ -767,6 +846,7 @@ function endTurnEarly() {
 }
 
 function undo() {
+  cancelBot();
   if (undoStack.length === 0) return;
   restore(undoStack.pop());
   render();
@@ -830,6 +910,7 @@ function render() {
   }
 
   renderMatchBar();
+  maybeThrowForBot();
 
   // Cricket gets a marks grid; 501 doesn't. Quick Total is hidden in cricket
   // because a turn total says nothing about which numbers were hit.

@@ -924,6 +924,19 @@
   /* Setup panel */
   #player-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
   .player-row { display: flex; align-items: center; gap: 8px; }
+  .player-kind {
+    flex: 0 0 auto;
+    max-width: 160px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    padding: 9px 8px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    color: var(--ink);
+  }
+  @media (max-width: 560px) { .player-kind { max-width: 120px; font-size: 12px; } }
+
   .player-input {
     flex: 1;
     min-width: 0;
