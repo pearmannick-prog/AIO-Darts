@@ -45,7 +45,9 @@ const modules = [x01Stats, cricketStats, countupStats, bermudaStats];
 //    game), and points the rating at the 80% figures, which is what the rank
 //    table is actually built on.
 // 5: adds the Bermuda Triangle module.
-export const ENGINE_VERSION = 5;
+// 6: reports the rank against BOTH the 80% and 100% figures. Same table, two
+//    lookups - the thresholds are identical, only the averages differ.
+export const ENGINE_VERSION = 6;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);
@@ -526,6 +528,8 @@ export function computeStats(matches = []) {
   const rating = ratingFrom({
     ppr: x01?.ppr80 ?? null,
     mpr: cricket?.mpr80 ?? null,
+    ppr100: x01?.threeDart ?? null,
+    mpr100: cricket?.mpr ?? null,
     x01Legs: x01?.legsPlayed ?? 0,
     cricketLegs: cricket?.legsPlayed ?? 0,
   });

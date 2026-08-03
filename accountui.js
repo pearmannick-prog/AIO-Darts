@@ -841,6 +841,36 @@ function renderStats(stats) {
     ? "from 1 match"
     : `from ${stats.matchesCounted} matches`;
 
+  // Rating first, and BOTH readings of it. They come from the same table - the
+  // thresholds are identical - and differ only in which darts feed the average,
+  // so showing one without the other invites the question "why does the machine
+  // at the club say something else?".
+  if (stats.rating?.scoring?.rating || stats.rating?.full?.rating) {
+    const heading = document.createElement("div");
+    heading.className = "account-section-title";
+    heading.textContent = "Rating";
+
+    const row = document.createElement("div");
+    row.className = "rating-pair";
+    for (const [label, standing, hint] of [
+      ["80% · scoring phase", stats.rating.scoring, "Visits before the finish zone"],
+      ["100% · whole game", stats.rating.full, "Every visit, including the finish"],
+    ]) {
+      const block = document.createElement("div");
+      block.className = "rating-block";
+      const caption = document.createElement("div");
+      caption.className = "stat-label";
+      caption.textContent = label;
+      block.append(caption, rankBadge(standing));
+      const note = document.createElement("div");
+      note.className = "stat-hint";
+      note.textContent = hint;
+      block.appendChild(note);
+      row.appendChild(block);
+    }
+    el.statsSections.append(heading, row);
+  }
+
   el.statsSections.append(...statsSection("Career", stats.career.metrics));
 
   // One section per game that has actually been played. The engine leaves out

@@ -109,12 +109,10 @@ export function combineRatings(ratingX01, ratingCricket) {
   return Math.max(1, Math.floor(mean));
 }
 
-// Everything the UI needs about one player's standing, from the two averages.
-// Returns nulls rather than a rank when there is not enough play to justify
-// one - see RANKED_MINIMUM_LEGS.
-// `ppr` and `mpr` must be the 80% figures - the scoring phase - because that is
-// what this table is built on. See the FINISH_ZONE note in stats/x01stats.js.
-export function ratingFrom({ ppr = null, mpr = null, x01Legs = 0, cricketLegs = 0 } = {}) {
+// One player's standing against the table, from one pair of averages.
+// Returns nulls rather than a rank when there is not enough play to justify one
+// - see RANKED_MINIMUM_LEGS.
+function standingFrom(ppr, mpr, x01Legs, cricketLegs) {
   const x01Ranked = x01Legs >= RANKED_MINIMUM_LEGS && Number.isFinite(ppr) && ppr > 0;
   const cricketRanked = cricketLegs >= RANKED_MINIMUM_LEGS && Number.isFinite(mpr) && mpr > 0;
 
@@ -128,6 +126,40 @@ export function ratingFrom({ ppr = null, mpr = null, x01Legs = 0, cricketLegs = 
     rank: overall === null ? null : rankForRating(overall),
     x01: x01Row ? { rating: x01Row.rating, rank: x01Row.rank, ppr } : null,
     cricket: cricketRow ? { rating: cricketRow.rating, rank: cricketRow.rank, mpr } : null,
+  };
+}
+
+// Everything the UI needs about one player's standing.
+//
+// THERE IS ONE TABLE, LOOKED UP TWICE. The 80% and 100% views are not two
+// different rank scales - the thresholds are identical. What differs is which
+// darts feed the average:
+//
+//   80%  - the scoring phase only, so the average is higher and so is the rank.
+//   100% - the whole game including the finish, so both are lower.
+//
+// That is why the same player is, say, an M on their 80% stats and a B on their
+// 100% stats: not two systems, one system reading two different measurements of
+// the same play.
+//
+// The 80% standing is the primary one - it is what the rank table is built
+// around and what the badge shows - and the 100% one is reported alongside it
+// rather than instead.
+export function ratingFrom({
+  ppr = null, mpr = null,          // the 80% figures - the scoring phase
+  ppr100 = null, mpr100 = null,    // the whole-game figures
+  x01Legs = 0, cricketLegs = 0,
+} = {}) {
+  const scoring = standingFrom(ppr, mpr, x01Legs, cricketLegs);
+  const full = standingFrom(ppr100, mpr100, x01Legs, cricketLegs);
+
+  return {
+    // The primary standing, flattened to the top level so every existing
+    // caller - badges, boards, profile cards - keeps working unchanged.
+    ...scoring,
+    // Both, named, for anything that wants to show the pair.
+    scoring,
+    full,
     // What is still needed to be ranked, so the UI can say so rather than
     // showing a blank badge with no explanation.
     needs: {
