@@ -15,6 +15,11 @@ import {
   createCricketPlayer, resolveCricketThrow, applyCricketResult,
   checkCricketWin, describeCricketResult,
 } from "./cricket.js";
+import {
+  createBermudaPlayer, bermudaTarget, resolveBermudaThrow, applyBermudaThrow,
+  isBermudaRoundOver, endBermudaRound, isBermudaComplete, checkBermudaWin,
+  describeBermudaResult, BERMUDA_ROUNDS,
+} from "./bermuda.js";
 import { createRecorder } from "./matchrecorder.js";
 import { recordMatch, getState as accountState } from "./accountstore.js";
 import { onMatchReady, reportMatchOver } from "./lobbyclient.js";
@@ -993,6 +998,7 @@ function setOpponentName(name) {
 function buildOnlinePlayer(name, legConfig) {
   if (legConfig.game === "cricket") return createCricketPlayer(name);
   if (legConfig.game === "countup") return createCountUpPlayer(name);
+  if (legConfig.game === "bermuda") return createBermudaPlayer(name);
   const rules = rulesFor(legConfig.rules);
   return {
     name,
@@ -1054,7 +1060,10 @@ function startOnlineLeg() {
     x01Start: leg.game === "x01" ? leg.score : null,
     rules: leg.game === "x01" ? (leg.rules || "double") : null,
     bull: leg.bull || null,
-    rounds: leg.rounds ?? null,
+    // Bermuda's round count is fixed by its target list rather than chosen, but
+    // it is still recorded so a stored match describes itself without the
+    // reader having to know the rules module.
+    rounds: leg.game === "bermuda" ? BERMUDA_ROUNDS : (leg.rounds ?? null),
   });
 }
 
@@ -1609,6 +1618,9 @@ function applyQuickTotalThrow(side, totalValue) {
   // A turn total says nothing about WHICH numbers were hit, so it has no
   // meaning in cricket. The UI hides it there; this guards the message path.
   if (online.gameType === "cricket") return;
+  // Same for Bermuda: every round has its own target and missing one halves
+  // the score, so a bare total cannot express what happened.
+  if (online.gameType === "bermuda") return;
   if (online.activeSide !== side) {
     console.warn(`Ignored an out-of-turn '${side}' turn total.`);
     return;
@@ -1681,6 +1693,7 @@ function applyThrow(side, rawSegment) {
 
   if (online.gameType === "cricket") return applyCricketThrowOnline(side, segment);
   if (online.gameType === "countup") return applyCountUpThrowOnline(side, segment);
+  if (online.gameType === "bermuda") return applyBermudaThrowOnline(side, segment);
 
   const s = online[side];
   const rules = rulesFor(online.legConfig?.rules);
@@ -1767,6 +1780,59 @@ function applyCountUpThrowOnline(side, segment) {
   renderOnline();
 }
 
+// Bermuda Triangle. Each player is independent - there is no interaction
+// between the two, unlike Cricket - so this is the simplest of the online
+// paths: apply the dart, and when the third one lands, close the round.
+//
+// The halving happens inside endBermudaRound on BOTH sides from the same
+// inputs, which is the whole reason the rules live in a pure module. Neither
+// browser tells the other what someone's score became.
+function applyBermudaThrowOnline(side, segment) {
+  const player = online[side];
+  const target = bermudaTarget(player.round);
+  const result = resolveBermudaThrow(segment, target);
+  applyBermudaThrow(player, result);
+
+  if (side === "me") moveMarkerTo(el.dartboardMarker, segment);
+
+  player.dartsThisTurn.push(segment);
+  online.log.unshift({
+    side,
+    label: describeBermudaResult(segment, result, target),
+    remainingAfter: player.total,
+    bust: false,
+  });
+
+  online.recorder?.dart(seatOf(side), segment, {
+    scored: result.points,
+    extra: { target: target?.label ?? null, hit: result.hit, points: result.points },
+  });
+
+  if (isBermudaRoundOver(player)) {
+    const round = endBermudaRound(player);
+    if (round.missed && round.lost > 0) {
+      online.log.unshift({
+        side,
+        label: `Missed ${round.target?.label ?? "the target"} - score halved`,
+        remainingAfter: player.total,
+        bust: true,
+      });
+    }
+
+    const players = [online.me, online.opp];
+    if (isBermudaComplete(players)) {
+      // checkBermudaWin returns null on a tie, which finishOnlineLeg passes
+      // through to medley.js as a leg credited to nobody.
+      const winner = checkBermudaWin(players);
+      finishOnlineLeg(winner === null ? null : (winner === 0 ? "me" : "opp"));
+    } else {
+      endTurn(side);
+    }
+  }
+
+  renderOnline();
+}
+
 // Cricket needs both players' marks to decide whether a number still scores,
 // so it's handed the pair with the thrower first. That ordering is safe
 // because the rule only ever asks "have the OTHERS closed this?".
@@ -1813,7 +1879,11 @@ function endTurn(side) {
   online.recorder?.endTurn();
   s.dartsThisTurn = [];
   // Cricket has no bust, so there's no start-of-turn value to revert to.
-  if (online.gameType !== "cricket" && online.gameType !== "countup") s.startOfTurn = s.remaining;
+  // Only x01 has a start-of-turn score to revert a bust to.
+  if (online.gameType !== "cricket" && online.gameType !== "countup"
+      && online.gameType !== "bermuda") {
+    s.startOfTurn = s.remaining;
+  }
   online.activeSide = side === "me" ? "opp" : "me";
 }
 
@@ -1821,6 +1891,7 @@ function endTurn(side) {
 function renderOnline() {
   const cricket = online.gameType === "cricket";
   const countup = online.gameType === "countup";
+  const bermuda = online.gameType === "bermuda";
 
   // Cricket shows marks; x01 shows a remaining score. Only one at a time.
   el.cricketBoard?.classList.toggle("hidden", !cricket);
@@ -1836,7 +1907,7 @@ function renderOnline() {
       online.activeSide === "me" ? 0 : 1);
     el.meScore.textContent = online.me.points;
     el.oppScore.textContent = online.opp.points;
-  } else if (countup) {
+  } else if (countup || bermuda) {
     el.meScore.textContent = online.me.total;
     el.oppScore.textContent = online.opp.total;
   } else {
@@ -1867,7 +1938,9 @@ function renderOnline() {
   const showBig = av.immersive && !cricket && !online.gameOver;
   el.bigScore.classList.toggle("hidden", !showBig);
   if (showBig) {
-    el.bigScore.textContent = myTurn ? online.me.remaining : online.opp.remaining;
+    const thrower = myTurn ? online.me : online.opp;
+    // Bermuda and Count Up count up; x01 counts down.
+    el.bigScore.textContent = (countup || bermuda) ? thrower.total : thrower.remaining;
   }
 
   renderOnlineMatchBar();
@@ -1877,6 +1950,16 @@ function renderOnline() {
     el.turnLabel.textContent = online.iWon === null
       ? "Leg drawn."
       : online.iWon ? "You win the leg! 🎯" : "Opponent takes the leg.";
+  } else if (bermuda) {
+    // The current target is the whole state of a Bermuda turn - without it on
+    // screen there is nothing to aim at. Shown for whoever is throwing, since
+    // the two players are on their own rounds and can be on different targets.
+    const p = online.activeSide === "me" ? online.me : online.opp;
+    const who = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+    const target = bermudaTarget(p.round);
+    el.turnLabel.textContent =
+      `${who} · round ${Math.min(p.round + 1, BERMUDA_ROUNDS)} of ${BERMUDA_ROUNDS}` +
+      ` · throw at ${target?.label ?? "-"}`;
   } else if (countup) {
     // Rounds left and the running average are the numbers that matter in a
     // practice game.

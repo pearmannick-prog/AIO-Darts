@@ -350,7 +350,9 @@ function startLeg(names) {
     x01Start: state.gameType === "x01" ? start : null,
     rules: state.gameType === "x01" ? (state.legConfig.rules || "double") : null,
     bull: state.legConfig.bull || null,
-    rounds: state.legConfig.rounds ?? null,
+    // Fixed by Bermuda's target list rather than chosen, but recorded anyway so
+    // a stored match describes itself without knowing the rules module.
+    rounds: state.gameType === "bermuda" ? BERMUDA_ROUNDS : (state.legConfig.rounds ?? null),
   });
 }
 
