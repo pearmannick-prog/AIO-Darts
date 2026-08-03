@@ -281,8 +281,21 @@ export function chartTable(container, { data, valueLabel, format = (v) => String
 
   const table = document.createElement("table");
   table.className = "chart-table";
-  table.innerHTML =
-    `<thead><tr><th>Period</th><th>${valueLabel}</th></tr></thead>` +
-    `<tbody>${data.map((d) => `<tr><td>${d.label}</td><td>${format(d.value)}</td></tr>`).join("")}</tbody>`;
+
+  // Built as DOM rather than an HTML string. These labels are dates today, but
+  // a chart is exactly the kind of thing that later gets pointed at a column of
+  // names, and by then the string-building would look established.
+  const head = table.insertRow();
+  for (const heading of ["Period", valueLabel]) {
+    const cell = document.createElement("th");
+    cell.textContent = heading;
+    head.appendChild(cell);
+  }
+  const body = table.createTBody();
+  for (const point of data) {
+    const row = body.insertRow();
+    row.insertCell().textContent = point.label;
+    row.insertCell().textContent = format(point.value);
+  }
   container.appendChild(table);
 }

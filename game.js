@@ -723,7 +723,17 @@ function render() {
   state.players.forEach((p, i) => {
     const tab = document.createElement("div");
     tab.className = "player-tab" + (i === state.currentPlayerIndex ? " active" : "");
-    tab.innerHTML = `<span class="player-tab-name">${p.name}</span><span class="player-tab-score">${scoreOf(p)}</span>`;
+    // textContent, not innerHTML: player names are typed by whoever is at the
+    // keyboard. Locally that is only ever self-inflicted, but the same habit
+    // everywhere is what stops the one place it matters being missed - see the
+    // challenge card in lobbyui.js, where the name belongs to someone else.
+    const tabName = document.createElement("span");
+    tabName.className = "player-tab-name";
+    tabName.textContent = p.name;
+    const tabScore = document.createElement("span");
+    tabScore.className = "player-tab-score";
+    tabScore.textContent = scoreOf(p);
+    tab.append(tabName, tabScore);
     el.playerTabs.appendChild(tab);
   });
 
@@ -767,7 +777,11 @@ function render() {
   state.throwLog.slice(0, 20).forEach((entry) => {
     const row = document.createElement("div");
     row.className = "log-row" + (entry.bust ? " bust" : "");
-    row.innerHTML = `<span>${entry.playerName}</span><span>${entry.label}</span><span>${entry.bust ? "BUST" : entry.remainingAfter}</span>`;
+    for (const value of [entry.playerName, entry.label, entry.bust ? "BUST" : entry.remainingAfter]) {
+      const cell = document.createElement("span");
+      cell.textContent = value;
+      row.appendChild(cell);
+    }
     el.throwLog.appendChild(row);
   });
 

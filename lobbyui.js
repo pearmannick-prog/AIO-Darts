@@ -118,11 +118,18 @@ function challengeCard(challenge, incoming) {
   const card = document.createElement("div");
   card.className = "challenge-card";
 
+  // Built as DOM rather than an HTML string, because the name in it belongs to
+  // ANOTHER PLAYER and display names are whatever they typed. Interpolating one
+  // into innerHTML is stored cross-user XSS: set your name to an <img> with an
+  // onerror handler, challenge someone, and the script runs in their session
+  // with their cookie. textContent cannot execute anything.
   const text = document.createElement("div");
   text.className = "challenge-text";
-  text.innerHTML = incoming
-    ? `<strong>${challenge.fromName}</strong> challenged you`
-    : `Waiting for <strong>${challenge.toName}</strong>`;
+  const who = document.createElement("strong");
+  who.textContent = incoming ? challenge.fromName : challenge.toName;
+
+  if (incoming) text.append(who, document.createTextNode(" challenged you"));
+  else text.append(document.createTextNode("Waiting for "), who);
 
   const actions = document.createElement("div");
   actions.className = "person-actions";

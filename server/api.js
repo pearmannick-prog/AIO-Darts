@@ -537,6 +537,14 @@ async function serveAvatar(req, res, userId) {
     // Private, because it is one user's picture, and short, because changing
     // your picture should show up without a hard refresh.
     "Cache-Control": "private, max-age=300",
+    // This is the one endpoint that serves bytes a user uploaded, from this
+    // app's own origin. The upload is restricted to four image types, but
+    // without nosniff a browser is still entitled to disagree with the declared
+    // Content-Type and execute what it decides is markup instead.
+    "X-Content-Type-Options": "nosniff",
+    // Belt and braces: even if something did get served as markup, this stops
+    // it doing anything.
+    "Content-Security-Policy": "default-src 'none'; sandbox",
   });
   res.end(Buffer.from(row.avatar_blob));
 }
