@@ -701,6 +701,45 @@ function setMatchChrome(active) {
   document.body.classList.toggle("in-match", Boolean(active));
 }
 
+// A match that never connects used to sit on "Waiting for opponent..." forever,
+// with no way to tell whether the other side had failed, gone, or never
+// arrived. That is the worst possible failure mode: indistinguishable from
+// working, and it wastes the other player's time too.
+//
+// So the wait is bounded - but only where BOTH players are known to be present
+// already, which is the lobby handoff and joining a code someone sent you. It
+// deliberately does NOT run on Create Challenge: there the whole point is to
+// wait while you send the code to a friend, and timing that out after half a
+// minute would break the feature rather than diagnose it.
+//
+// The message names the signaling server, because that is the thing most likely
+// to be wrong - everything else in the handshake happens after it.
+const CONNECT_TIMEOUT_MS = 25_000;
+let connectTimer = null;
+
+function startConnectWatchdog() {
+  clearTimeout(connectTimer);
+  connectTimer = setTimeout(() => {
+    // Still not connected. `online.active` is set the moment the two sides
+    // exchange hello/match_config, so its absence is exactly "we never paired".
+    if (online.active) return;
+
+    // Hand the tab back so the player can try again rather than being stranded
+    // on a code that will never be used. The diagnosis goes in teardown's
+    // notice, not the status line - teardownMatch hides the waiting panel the
+    // status line lives on, so anything written there is never read.
+    teardownMatch(
+      "Couldn't reach the other player. They may have closed the app, or the " +
+      `signaling server isn't reachable from one of you (${currentSignalingUrl()}).`
+    );
+  }, CONNECT_TIMEOUT_MS);
+}
+
+function stopConnectWatchdog() {
+  clearTimeout(connectTimer);
+  connectTimer = null;
+}
+
 // ---------- Starting from the lobby ----------
 // A challenge was accepted, and the server has minted a code and told both
 // sides which end of it they are. From here this is EXACTLY the invite-code
@@ -729,11 +768,13 @@ onMatchReady(async ({ code, role, opponent }) => {
   el.waitingPanel.classList.remove("hidden");
   el.codeDisplay.textContent = code;
   setMatchChrome(true);
+  startConnectWatchdog();
 
   try {
     if (role === "host") await peerLink.createChallenge(code);
     else await peerLink.joinChallenge(code);
   } catch (err) {
+    stopConnectWatchdog();
     alert(`Couldn't start that match: ${err.message}`);
     el.waitingPanel.classList.add("hidden");
     el.setupPanel.classList.remove("hidden");
@@ -761,10 +802,14 @@ el.joinBtn.addEventListener("click", async () => {
   el.waitingPanel.classList.remove("hidden");
   el.codeDisplay.textContent = code.toUpperCase();
   setMatchChrome(true);
+  // A code you were given is a code whose host is already sitting in the room,
+  // so this side has no legitimate reason to wait indefinitely.
+  startConnectWatchdog();
 
   try {
     await peerLink.joinChallenge(code);
   } catch (err) {
+    stopConnectWatchdog();
     alert(`Couldn't join that challenge: ${err.message}`);
     el.waitingPanel.classList.add("hidden");
     el.setupPanel.classList.remove("hidden");
@@ -775,8 +820,13 @@ el.cancelBtn.addEventListener("click", () => {
   peerLink?.close();
   peerLink = null;
   resetAv();
+  // Cancelling leaves the waiting panel without going through teardownMatch, so
+  // the watchdog has to be disarmed here too - otherwise it fires later and
+  // drops a "couldn't connect" notice on someone who already walked away.
+  stopConnectWatchdog();
   el.waitingPanel.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
+  setMatchChrome(false);
 });
 
 // ---------- Ending a match ----------
@@ -831,6 +881,7 @@ function teardownMatch(message) {
   online.recorder = null;
   online.oppName = "Opponent";
   online.lobbyCode = null;
+  stopConnectWatchdog();
 
   // The lobby cannot see the darts, so it only knows a match is over because
   // it is told. Purely a hint - a disconnect resolves the same state anyway.
@@ -967,7 +1018,10 @@ function wirePeerLink() {
 function statusText(status) {
   switch (status) {
     case "connecting-to-server": return "Connecting to signaling server…";
-    case "waiting-for-opponent": return "Waiting for opponent to join…";
+    // Naming the server here is what makes a mismatch diagnosable: two players
+    // waiting on DIFFERENT signaling servers both see "waiting", and nothing
+    // else on screen distinguishes that from simply being early.
+    case "waiting-for-opponent": return `Waiting for opponent… (via ${currentSignalingUrl()})`;
     case "joining": return "Joining challenge…";
     case "connected": return "Connected - good luck!";
     case "disconnected": return "Disconnected.";
@@ -1046,6 +1100,7 @@ function startOnlineGame(role, legs) {
   players[online.oppIndex] = { displayName: online.oppName, isSelf: false };
   online.recorder = createRecorder({ mode: "online", format: legs, players });
 
+  stopConnectWatchdog();
   startOnlineLeg();
 
   el.waitingPanel.classList.add("hidden");
