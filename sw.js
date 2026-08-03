@@ -50,6 +50,7 @@ const PRECACHE = [
   "./stats/bermudastats.js",
   // Hardware and transport
   "./granboard.js",
+  "./autodarts.js",
   "./webrtc.js",
   // Rules (pure)
   "./scoring.js",
