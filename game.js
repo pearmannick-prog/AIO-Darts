@@ -21,6 +21,11 @@ import {
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
   DEFAULT_ROUNDS,
 } from "./countup.js";
+import {
+  createBermudaPlayer, bermudaTarget, resolveBermudaThrow, applyBermudaThrow,
+  isBermudaRoundOver, endBermudaRound, isBermudaComplete, checkBermudaWin,
+  describeBermudaResult, BERMUDA_ROUNDS,
+} from "./bermuda.js";
 import { createRecorder } from "./matchrecorder.js";
 import {
   recordMatch, getState as accountState, subscribe as subscribeToAccount,
@@ -326,6 +331,7 @@ function startLeg(names) {
   state.players = names.map((name) => {
     if (state.gameType === "cricket") return createCricketPlayer(name);
     if (state.gameType === "countup") return createCountUpPlayer(name);
+    if (state.gameType === "bermuda") return createBermudaPlayer(name);
     // `opened` tracks the double-in requirement: with a straight in, everyone
     // starts open and it never matters again.
     return { name, remaining: start, opened: rules.in !== "double" };
@@ -385,6 +391,7 @@ function applyHit(rawSegment) {
 
   if (state.gameType === "cricket") return applyCricketHit(segment);
   if (state.gameType === "countup") return applyCountUpHit(segment);
+  if (state.gameType === "bermuda") return applyBermudaHit(segment);
 
   undoStack.push(snapshot());
 
@@ -446,6 +453,9 @@ function applyQuickTotal(totalValue) {
   // numbers were hit, not what they added up to. The UI hides this mode in
   // cricket; this guard is here in case it's reached another way.
   if (state.gameType === "cricket") return;
+  // Bermuda's rounds each have their own target and a miss halves the score, so
+  // a bare turn total cannot express what happened.
+  if (state.gameType === "bermuda") return;
   if (state.gameType === "countup") return applyCountUpTotal(totalValue);
 
   undoStack.push(snapshot());
@@ -637,6 +647,57 @@ function applyCountUpHit(segment) {
   render();
 }
 
+// Bermuda Triangle: a fixed target per round, and missing it with all three
+// darts halves the score. The halving is decided when the ROUND ends, never a
+// dart at a time - "all three missed" is not a fact any single dart knows.
+function applyBermudaHit(segment) {
+  undoStack.push(snapshot());
+
+  const player = state.players[state.currentPlayerIndex];
+  const target = bermudaTarget(player.round);
+  const result = resolveBermudaThrow(segment, target);
+  applyBermudaThrow(player, result);
+
+  state.dartsThisTurn.push(segment);
+  state.throwLog.unshift({
+    playerName: player.name,
+    label: describeBermudaResult(segment, result, target),
+    value: result.points,
+    remainingAfter: player.total,
+    bust: false,
+  });
+
+  state.recorder?.dart(state.currentPlayerIndex, segment, {
+    scored: result.points,
+    extra: { target: target?.label ?? null, hit: result.hit, points: result.points },
+  });
+
+  moveMarker(el.dartboardMarker, segment);
+
+  if (isBermudaRoundOver(player)) {
+    const round = endBermudaRound(player);
+    // A halving is the single most surprising thing that happens in this game,
+    // so it is said out loud rather than left as a score that silently dropped.
+    if (round.missed && round.lost > 0) {
+      state.throwLog.unshift({
+        playerName: player.name,
+        label: `Missed ${round.target?.label ?? "the target"} - score halved`,
+        value: -round.lost,
+        remainingAfter: player.total,
+        bust: true,
+      });
+    }
+
+    if (isBermudaComplete(state.players)) {
+      finishLeg(checkBermudaWin(state.players));
+    } else {
+      endTurn();
+    }
+  }
+
+  render();
+}
+
 // Cricket's turn structure is simpler than 501's: there's no bust and no
 // start-of-turn value to revert to, so a turn is just three darts. All the
 // rules live in cricket.js - this only applies the result and advances.
@@ -687,7 +748,8 @@ function endTurn() {
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   // Cricket players have no `remaining` - there's nothing to revert to,
   // since it has no bust rule.
-  if (state.gameType !== "cricket" && state.gameType !== "countup") {
+  if (state.gameType !== "cricket" && state.gameType !== "countup"
+      && state.gameType !== "bermuda") {
     state.startOfTurnRemaining = state.players[state.currentPlayerIndex].remaining;
   }
 }
@@ -715,9 +777,10 @@ el.undoBtn.addEventListener("click", undo);
 function render() {
   const cricket = state.gameType === "cricket";
   const countup = state.gameType === "countup";
-  // x01 counts down to zero; Cricket and Count Up both count up, just from
-  // different things.
-  const scoreOf = (p) => (cricket ? p.points : countup ? p.total : p.remaining);
+  const bermuda = state.gameType === "bermuda";
+  // x01 counts down to zero; the rest count up, just from different things.
+  const scoreOf = (p) =>
+    cricket ? p.points : (countup || bermuda) ? p.total : p.remaining;
 
   el.playerTabs.innerHTML = "";
   state.players.forEach((p, i) => {
@@ -745,6 +808,14 @@ function render() {
     el.turnLabel.textContent = state.winnerIndex === null || state.winnerIndex === undefined
       ? "Leg drawn."
       : `${state.players[state.winnerIndex].name} wins the leg! 🎯`;
+  } else if (bermuda) {
+    // The current target is the entire state of a Bermuda turn - without it on
+    // screen the player has nothing to aim at - so it goes where the turn
+    // label sits, with the round number for pacing.
+    const target = bermudaTarget(current.round);
+    el.turnLabel.textContent =
+      `${current.name}'s turn · round ${Math.min(current.round + 1, BERMUDA_ROUNDS)} of ${BERMUDA_ROUNDS}` +
+      ` · throw at ${target?.label ?? "-"}`;
   } else if (countup) {
     // Rounds remaining and the running average are the two numbers that
     // matter in a practice game, so they go where the turn label sits.

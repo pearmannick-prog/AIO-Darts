@@ -23,25 +23,34 @@
 
 import { SegmentType } from "./granboard.js";
 
-// The rounds, in order. `kind` is what makes a dart count:
+// The rounds, IN ORDER. The order matters and is not alphabetical or grouped:
+// the special targets are interleaved between the numbers, so the game keeps
+// changing shape rather than being nine number rounds followed by four odd
+// ones. Arachnid's manual lists which targets exist without stating the
+// sequence, so this is the sequence as actually played:
+//
+//   12, 13, 14, Any Double, 15, 16, 17, Any Triple, 18, 19, 20, Any Bull,
+//   Double Bull
+//
+// `kind` is what makes a dart count:
 //   number - any segment of that number
 //   double - any double, anywhere on the board
 //   triple - any triple, anywhere
-//   bull   - the outer (single) bull specifically
+//   bull   - either bull, outer or inner
 //   dbull  - the inner (double) bull specifically
 export const BERMUDA_TARGETS = Object.freeze([
   { kind: "number", value: 12, label: "12" },
   { kind: "number", value: 13, label: "13" },
   { kind: "number", value: 14, label: "14" },
+  { kind: "double", label: "Any Double" },
   { kind: "number", value: 15, label: "15" },
   { kind: "number", value: 16, label: "16" },
   { kind: "number", value: 17, label: "17" },
+  { kind: "triple", label: "Any Triple" },
   { kind: "number", value: 18, label: "18" },
   { kind: "number", value: 19, label: "19" },
   { kind: "number", value: 20, label: "20" },
-  { kind: "double", label: "Any Double" },
-  { kind: "triple", label: "Any Triple" },
-  { kind: "bull", label: "Bullseye" },
+  { kind: "bull", label: "Any Bull" },
   { kind: "dbull", label: "Double Bull" },
 ]);
 
@@ -95,9 +104,9 @@ export function resolveBermudaThrow(segment, target) {
         : none;
 
     case "bull":
-      // The outer bull specifically. An inner bull is a bull too and is worth
-      // more, so it counts here rather than being a miss - refusing it would
-      // punish the better dart.
+      // Either bull. The inner is worth more and counts for more - refusing it
+      // would punish the better dart - which is also why the LAST round is the
+      // inner bull specifically: it is the harder target, kept for last.
       return segment.section === "BULL"
         ? { hit: true, points: segment.value }
         : none;

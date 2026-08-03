@@ -58,6 +58,7 @@ export function createMedleyBuilder(els) {
           <option value="x01"${isX01 ? " selected" : ""}>x01</option>
           <option value="cricket"${leg.game === "cricket" ? " selected" : ""}>Cricket</option>
           <option value="countup"${isCountUp ? " selected" : ""}>Count Up</option>
+          <option value="bermuda"${leg.game === "bermuda" ? " selected" : ""}>Bermuda Triangle</option>
         </select>
         <select class="leg-score${isX01 ? "" : " hidden"}">${scoreOptions}</select>
         <select class="leg-rules${isX01 ? "" : " hidden"}">${rulesOptions}</select>
@@ -75,6 +76,9 @@ export function createMedleyBuilder(els) {
     const legs = [...rows].map((row) => {
       const game = row.querySelector(".leg-game")?.value;
       if (game === "cricket") return { game: "cricket" };
+      // Bermuda's round count is fixed by its target list, so it has no
+      // options of its own - like Cricket, the row is just the game.
+      if (game === "bermuda") return { game: "bermuda" };
       if (game === "countup") {
         return { game: "countup", rounds: Number(row.querySelector(".leg-rounds")?.value) || DEFAULT_ROUNDS };
       }
