@@ -1980,6 +1980,34 @@
   .status-lobby, .status-online { background: var(--gold); }
   .status-in_match { background: var(--red); }
 
+  /* A match owns the tab. The lobby, the rooms, the chat and the create/join
+     panel are all "between matches" furniture, and leaving them under a live
+     match is what made an accepted challenge look like nothing had happened -
+     the invite-code panel was still sitting there. Restored on teardown. */
+  body.in-match #lobby-panel,
+  body.in-match #challenge-alert { display: none !important; }
+
+  /* Sits above everything, because an unanswered challenge expires and the
+     whole point is that it cannot be missed. Not a modal: it must never block
+     a match already in progress. */
+  .challenge-alert {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--gold);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  }
+  .challenge-alert .challenge-text { font-size: 15px; }
+
   .challenge-card {
     background: rgba(199,162,74,0.22);
     border-radius: 10px;
@@ -2047,6 +2075,12 @@
         </button>
       </div>
     </header>
+
+    <!-- Incoming challenges. Deliberately outside #online-mode: the lobby
+         panel is inside that tab, so a challenge rendered there is invisible to
+         anyone sitting on Local Play or My Darts - they never see it, never
+         accept, and the challenger waits for nothing. -->
+    <div id="challenge-alert" class="challenge-alert hidden"></div>
 
     <div class="mode-tabs">
       <button id="tab-local" class="mode-tab active">Local Play</button>

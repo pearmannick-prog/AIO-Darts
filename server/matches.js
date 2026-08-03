@@ -78,7 +78,11 @@ export function insertMatch(userId, match) {
       .run(
         userId,
         text(match.clientUuid, 64),
-        match.mode === "online" ? "online" : "local",
+        // "practice" is a real third mode, not a variant of local - a match
+        // against a computer must be distinguishable forever, because the
+        // statistics exclude it. Coercing it here would silently fold every
+        // bot match into the player's real record with no way back.
+        ["online", "practice"].includes(match.mode) ? match.mode : "local",
         text(match.startedAt, 40) || new Date().toISOString(),
         text(match.endedAt, 40) || new Date().toISOString(),
         int(match.durationMs),

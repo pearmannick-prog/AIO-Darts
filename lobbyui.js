@@ -28,6 +28,7 @@ const el = {
   cardActions: document.getElementById("player-card-actions"),
   cardClose: document.getElementById("player-card-close"),
   challenges: document.getElementById("lobby-challenges"),
+  alert: document.getElementById("challenge-alert"),
   filter: document.getElementById("lobby-filter"),
   scope: document.getElementById("lobby-scope"),
   players: document.getElementById("lobby-players"),
@@ -322,8 +323,49 @@ function renderChat(messages) {
   el.chatLog.scrollTop = el.chatLog.scrollHeight;
 }
 
+// Incoming challenges, rendered OUTSIDE the online panel so they are visible
+// from any tab. This is separate from the in-panel cards on purpose: those are
+// part of the lobby screen, and this is the thing that makes sure a challenge
+// is not missed by someone who happens to be looking at their statistics.
+function renderAlert(state) {
+  el.alert.innerHTML = "";
+  const incoming = state.incoming ?? [];
+  el.alert.classList.toggle("hidden", incoming.length === 0);
+  if (!incoming.length) return;
+
+  const challenge = incoming[incoming.length - 1];
+
+  const text = document.createElement("div");
+  text.className = "challenge-text";
+  const who = document.createElement("strong");
+  // textContent, always - this is another player's display name.
+  who.textContent = challenge.fromName;
+  text.append(who, document.createTextNode(" wants to play you"));
+
+  const actions = document.createElement("div");
+  actions.className = "person-actions";
+
+  const accept = document.createElement("button");
+  accept.type = "button";
+  accept.className = "btn-ink";
+  accept.textContent = "Accept";
+  accept.addEventListener("click", () => respondToChallenge(challenge.id, true));
+
+  const decline = document.createElement("button");
+  decline.type = "button";
+  decline.className = "btn-quiet";
+  decline.textContent = "Decline";
+  decline.addEventListener("click", () => respondToChallenge(challenge.id, false));
+
+  actions.append(accept, decline);
+  el.alert.append(text, actions);
+}
+
 function render(state) {
   latest = state;
+  // Before the early return below: a challenge must show even when the lobby
+  // panel itself is not on screen, which is the entire bug this fixes.
+  renderAlert(state);
 
   // The panel exists only when there is a working lobby to show. Everything
   // else on the tab - creating a code, joining one - works regardless, so a

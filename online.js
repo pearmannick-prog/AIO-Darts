@@ -677,6 +677,7 @@ el.createBtn.addEventListener("click", async () => {
   el.setupNotice.classList.add("hidden");
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
+  setMatchChrome(true);
 
   try {
     const code = await peerLink.createChallenge();
@@ -687,6 +688,18 @@ el.createBtn.addEventListener("click", async () => {
     el.setupPanel.classList.remove("hidden");
   }
 });
+
+// A match takes over the tab. The lobby list, the room chat and the
+// create/join panel all belong to "between matches" - leaving them on screen
+// while a match is up is what made an accepted challenge look like it had done
+// nothing, because the invite-code panel was still sitting there underneath.
+//
+// Driven by a class on <body> rather than by reaching into lobbyui.js, so the
+// two modules stay independent: online.js says "a match is on" and the styling
+// decides what that hides.
+function setMatchChrome(active) {
+  document.body.classList.toggle("in-match", Boolean(active));
+}
 
 // ---------- Starting from the lobby ----------
 // A challenge was accepted, and the server has minted a code and told both
@@ -715,6 +728,7 @@ onMatchReady(async ({ code, role, opponent }) => {
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
   el.codeDisplay.textContent = code;
+  setMatchChrome(true);
 
   try {
     if (role === "host") await peerLink.createChallenge(code);
@@ -746,6 +760,7 @@ el.joinBtn.addEventListener("click", async () => {
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
   el.codeDisplay.textContent = code.toUpperCase();
+  setMatchChrome(true);
 
   try {
     await peerLink.joinChallenge(code);
@@ -829,6 +844,7 @@ function teardownMatch(message) {
   el.setupPanel.classList.remove("hidden");
   el.setupNotice.textContent = message;
   el.setupNotice.classList.remove("hidden");
+  setMatchChrome(false);
 }
 
 async function ensurePeerLinkLoaded() {

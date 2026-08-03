@@ -22,7 +22,12 @@
 // for achievements and leaderboards to read.
 
 import { highestCheckout } from "./scoring.js";
-import { ratingFrom } from "./rating.js";
+import { ratingFrom, RANKED_MINIMUM_LEGS } from "./rating.js";
+
+// How much real play before practice figures are worth comparing against. The
+// same bar as being ranked - reusing it rather than inventing a second number
+// keeps "established" meaning one thing in this app.
+const PRACTICE_COMPARISON_LEGS = RANKED_MINIMUM_LEGS;
 import { x01Stats } from "./stats/x01stats.js";
 import { cricketStats } from "./stats/cricketstats.js";
 import { countupStats } from "./stats/countupstats.js";
@@ -47,7 +52,9 @@ const modules = [x01Stats, cricketStats, countupStats, bermudaStats];
 // 5: adds the Bermuda Triangle module.
 // 6: reports the rank against BOTH the 80% and 100% figures. Same table, two
 //    lookups - the thresholds are identical, only the averages differ.
-export const ENGINE_VERSION = 6;
+// 7: practice matches - those against a computer opponent - are excluded from
+//    the real statistics and reported separately.
+export const ENGINE_VERSION = 7;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);
@@ -496,9 +503,25 @@ export function allAchievements() {
 // Takes full match documents - the shape matchrecorder.js produces and
 // server/matches.js reads back - and returns everything the dashboard, stats
 // page and leaderboards need.
-export function computeStats(matches = []) {
-  const contexts = legContexts(matches);
-  const career = careerStats(matches);
+// A match against a computer is practice. The darts are real darts, but the
+// record is not a record of playing anybody - so it is kept out of the figures
+// that describe you as a player, and reported on its own.
+//
+// The split is here, in the engine, rather than in a database query: it is a
+// statement about what a statistic MEANS, and every caller - the server, a
+// guest's browser computing from the local queue - has to agree about it.
+function isPractice(match) {
+  return match.mode === "practice";
+}
+
+export function computeStats(matches = [], { practiceDepth = 0 } = {}) {
+  // `practiceDepth` guards the one recursive call below. Practice statistics
+  // are the same engine run over the other pile of matches, and without this a
+  // practice block would try to compute its own practice block forever.
+  const real = practiceDepth ? matches : matches.filter((m) => !isPractice(m));
+
+  const contexts = legContexts(real);
+  const career = careerStats(real);
 
   const games = [];
   for (const module of modules) {
@@ -514,7 +537,7 @@ export function computeStats(matches = []) {
     });
   }
 
-  const weekly = trendBuckets(matches, "week");
+  const weekly = trendBuckets(real, "week");
 
   // The rating reads two game modules' figures, so it is assembled here rather
   // than inside either of them - neither can see the other, by design.
@@ -539,20 +562,53 @@ export function computeStats(matches = []) {
   // needing to know rating is assembled separately.
   career.raw.rating = rating.rating;
   career.raw.rank = rating.rank;
+  // Named so a reader of the cached JSON can tell which pile it came from.
+  career.raw.practice = Boolean(practiceDepth);
 
   return {
     engineVersion: ENGINE_VERSION,
     rating,
     generatedAt: new Date().toISOString(),
-    matchesCounted: matches.length,
+    // `real`, not `matches` - practice is excluded from every figure here, and
+    // a count that included it would be the one number quietly disagreeing
+    // with all the others.
+    matchesCounted: real.length,
     career,
     games,
     trends: {
-      daily: trendBuckets(matches, "day"),
+      daily: trendBuckets(real, "day"),
       weekly,
-      monthly: trendBuckets(matches, "month"),
+      monthly: trendBuckets(real, "month"),
       mostImproved: mostImproved(weekly),
     },
+    // Practice, computed by the same engine over the other pile, so the two are
+    // directly comparable - the whole point is to read one against the other.
+    //
+    // Only surfaced once there is a real standard to compare against. A
+    // practice average on its own says nothing; a practice average beside a
+    // rated one says whether the practice is working. `established` is the same
+    // bar as being ranked, rather than a second invented threshold.
+    practice: practiceDepth ? null : practiceStats(matches),
+  };
+}
+
+function practiceStats(matches) {
+  const practice = matches.filter(isPractice);
+  if (!practice.length) return null;
+
+  const stats = computeStats(practice, { practiceDepth: 1 });
+  const realLegs = matches.filter((m) => !isPractice(m))
+    .reduce((sum, m) => sum + (m.legs?.length ?? 0), 0);
+
+  return {
+    matchesCounted: practice.length,
+    // Below this, the numbers are shown but not compared - there is nothing
+    // meaningful to compare them WITH.
+    established: realLegs >= PRACTICE_COMPARISON_LEGS,
+    legsNeeded: Math.max(0, PRACTICE_COMPARISON_LEGS - realLegs),
+    career: stats.career,
+    games: stats.games,
+    rating: stats.rating,
   };
 }
 
