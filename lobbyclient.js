@@ -29,6 +29,8 @@ const state = {
   messages: [],      // chat, newest last
   incoming: [],      // challenges received
   outgoing: [],      // challenges sent
+  // Quick Match: null when not queued, otherwise how many are waiting.
+  queued: null,
   error: null,
 };
 
@@ -194,10 +196,20 @@ function handle(message) {
       state.outgoing = state.outgoing.filter((c) => c.id !== message.id);
       break;
 
+    case "queued":
+      state.queued = message.waiting;
+      break;
+
+    case "queue_left":
+      state.queued = null;
+      break;
+
     case "match_ready":
-      // Both challenges are resolved by this - whichever side we were on.
+      // Both challenges and the queue are resolved by this, whichever route in
+      // the match came from.
       state.incoming = [];
       state.outgoing = [];
+      state.queued = null;
       notify();
       for (const fn of matchReadyHandlers) {
         try {
@@ -257,6 +269,18 @@ export function cancelChallenge(id) {
 // disconnect resolves the same state anyway.
 export function reportMatchOver() {
   send({ type: "match_over" });
+}
+
+// Quick Match. Joins a queue of people who all want a game right now; the
+// server pairs the two who have waited longest and sends both a match_ready,
+// which is the same handoff an accepted challenge uses.
+export function joinQueue() {
+  state.error = null;
+  send({ type: "queue" });
+}
+
+export function leaveQueue() {
+  send({ type: "queue_leave" });
 }
 
 export function createRoom(name, game) {

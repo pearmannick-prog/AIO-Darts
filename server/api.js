@@ -16,7 +16,7 @@
 
 import { getDatabase, bool, orNull } from "./db.js";
 import { insertMatch, listMatches, loadMatch } from "./matches.js";
-import { statsFor, awardAchievements, achievementsFor } from "./stats.js";
+import { statsFor, awardAchievements, achievementsFor, publicProfileFor } from "./stats.js";
 import {
   searchUsers, friendsOf, requestFriend, acceptFriend, removeFriend, friendIds,
   createClub, joinClub, leaveClub, clubsFor, clubMemberIds,
@@ -554,6 +554,18 @@ export async function handleApiRequest(req, res) {
     const avatarMatch = /^\/api\/users\/(\d+)\/avatar$/.exec(path);
     if (avatarMatch && req.method === "GET") {
       await serveAvatar(req, res, Number(avatarMatch[1]));
+      return true;
+    }
+
+    // A player's public card, for the lobby. Outside the route table because
+    // the id is in the path.
+    const profileMatch = /^\/api\/users\/(\d+)\/profile$/.exec(path);
+    if (profileMatch && req.method === "GET") {
+      const user = userForRequest(req);
+      if (!user) throw unauthorized();
+      const profile = publicProfileFor(user.id, Number(profileMatch[1]));
+      if (!profile) throw new ApiError(404, "No such player.");
+      sendJson(res, 200, { profile });
       return true;
     }
 

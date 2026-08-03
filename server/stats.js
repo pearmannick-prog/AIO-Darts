@@ -50,6 +50,54 @@ export function statsFor(userId) {
   return stats;
 }
 
+// What one player may see about another: enough to decide whether to challenge
+// them, and nothing else.
+//
+// Gated on the same opt-in as the leaderboards. One switch with one meaning is
+// easier to reason about than a matrix of visibilities, and it fails closed - a
+// player who has not opted in has a name and nothing more, which is exactly
+// what they asked for.
+export function publicProfileFor(viewerId, userId) {
+  const db = getDatabase();
+  const row = db
+    .prepare("SELECT id, display_name, created_at, avatar_blob IS NOT NULL AS has_avatar, leaderboard_opt_in FROM users WHERE id = ?")
+    .get(userId);
+  if (!row) return null;
+
+  const profile = {
+    userId: row.id,
+    displayName: row.display_name,
+    hasAvatar: Boolean(row.has_avatar),
+    joinedAt: row.created_at,
+    shared: Boolean(row.leaderboard_opt_in),
+    headline: [],
+    achievements: 0,
+  };
+
+  // Your own card always shows your own figures, opt-in or not - the setting is
+  // about what OTHER people see.
+  if (!profile.shared && viewerId !== userId) return profile;
+
+  const stats = statsFor(userId);
+  const pick = (metrics, key) => metrics.find((m) => m.key === key) ?? null;
+  const x01 = stats.games.find((g) => g.key === "x01");
+  const cricket = stats.games.find((g) => g.key === "cricket");
+
+  profile.headline = [
+    pick(stats.career.metrics, "played"),
+    pick(stats.career.metrics, "winPct"),
+    x01 ? pick(x01.metrics, "threeDart") : null,
+    x01 ? pick(x01.metrics, "highestCheckout") : null,
+    cricket ? pick(cricket.metrics, "mpr") : null,
+  ].filter(Boolean);
+
+  profile.achievements = db
+    .prepare("SELECT COUNT(*) AS n FROM achievements WHERE user_id = ?")
+    .get(userId).n;
+
+  return profile;
+}
+
 export function invalidateStats(userId) {
   getDatabase().prepare("DELETE FROM stats_cache WHERE user_id = ?").run(userId);
 }

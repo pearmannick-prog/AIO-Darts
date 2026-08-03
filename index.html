@@ -1863,6 +1863,23 @@
     flex-wrap: wrap;
     margin-bottom: 14px;
   }
+  .lobby-head-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .player-card {
+    background: rgba(27,26,20,0.05);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .player-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .player-card .stat-grid { margin-top: 12px; }
+  /* The name is a button, so it has to look like one without shouting. */
+  .person-name.clickable { cursor: pointer; text-decoration: underline dotted rgba(27,26,20,0.35); }
+
   .looking-toggle {
     display: inline-flex;
     align-items: center;
@@ -2082,10 +2099,25 @@
             <div class="account-name">Lobby</div>
             <div class="account-sub" id="lobby-count">&nbsp;</div>
           </div>
-          <label class="looking-toggle">
-            <input type="checkbox" id="lobby-looking">
-            <span>Looking for a match</span>
-          </label>
+          <div class="lobby-head-actions">
+            <button type="button" class="btn-primary" id="quick-match-btn">Quick Match</button>
+            <label class="looking-toggle">
+              <input type="checkbox" id="lobby-looking">
+              <span>Open to challenges</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- A player card, opened by tapping someone in the lobby. Their real
+             record, so "should I challenge this person" has an answer. -->
+        <div id="player-card" class="player-card hidden">
+          <div class="player-card-head">
+            <div class="account-name" id="player-card-name">Player</div>
+            <button type="button" class="btn-quiet" id="player-card-close">Close</button>
+          </div>
+          <div class="account-sub" id="player-card-sub">&nbsp;</div>
+          <div id="player-card-stats" class="stat-grid"></div>
+          <div class="account-actions" id="player-card-actions"></div>
         </div>
 
         <div id="lobby-challenges"></div>

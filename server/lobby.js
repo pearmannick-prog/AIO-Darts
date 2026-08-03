@@ -60,6 +60,17 @@ export function createLobby() {
   // roomId -> { id, name, game, createdBy, members:Set<userId>, history:[] }
   const rooms = new Map();
 
+  // Quick Match: userIds waiting to be paired with whoever is next, in arrival
+  // order. A Set rather than an array because the commonest operations are
+  // "add", "remove on disconnect" and "is this player waiting" - and Sets in JS
+  // iterate in insertion order, so first-come-first-served comes free.
+  //
+  // Deliberately NOT skill-based. Pairing by rating needs ratings, ratings need
+  // a lot more matches than this app has seen, and a queue that waits for a
+  // good match is a queue nobody comes out of. Two people who both want a game
+  // right now is the whole requirement.
+  const queue = new Set();
+
   let nextId = 1;
   const newId = (prefix) => `${prefix}${nextId++}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -193,6 +204,45 @@ export function createLobby() {
     return null;
   }
 
+  // Pairs the two longest-waiting players. Called whenever someone joins the
+  // queue, which is the only moment it can become satisfiable.
+  function drainQueue() {
+    while (queue.size >= 2) {
+      const [first, second] = [...queue].slice(0, 2);
+      queue.delete(first);
+      queue.delete(second);
+
+      // Someone may have gone offline or started a match between joining the
+      // queue and being paired. Put the survivor back and stop.
+      const a = presence.get(first);
+      const b = presence.get(second);
+      if (!a || !isChallengeable(a.status)) {
+        if (b && isChallengeable(b.status)) queue.add(second);
+        continue;
+      }
+      if (!b || !isChallengeable(b.status)) {
+        queue.add(first);
+        continue;
+      }
+
+      startMatch(first, second, null);
+    }
+    pushQueueState();
+  }
+
+  function pushQueueState() {
+    for (const userId of queue) {
+      sendToUser(userId, { type: "queued", waiting: queue.size });
+    }
+  }
+
+  function leaveQueue(userId) {
+    if (queue.delete(userId)) {
+      sendToUser(userId, { type: "queue_left" });
+      pushQueueState();
+    }
+  }
+
   function summarise(challenge) {
     const from = presence.get(challenge.from);
     const to = presence.get(challenge.to);
@@ -211,28 +261,38 @@ export function createLobby() {
   // both sides; the host then opens exactly the challenge room an invite code
   // would have opened, and the guest joins it. Everything after this message is
   // the existing peer-to-peer path, untouched.
+  // The handoff, shared by accepting a challenge and by Quick Match. A code is
+  // minted here and sent to both sides; the host then opens exactly the room an
+  // invite code would have opened and the guest joins it. Everything after this
+  // message is the existing peer-to-peer path, untouched.
+  function startMatch(hostId, guestId, legs) {
+    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+    // Neither of them is in a queue or challengeable any more.
+    leaveQueue(hostId);
+    leaveQueue(guestId);
+    presence.update(hostId, { status: STATUS.IN_MATCH });
+    presence.update(guestId, { status: STATUS.IN_MATCH });
+
+    const host = presence.get(hostId);
+    const guest = presence.get(guestId);
+
+    sendToUser(hostId, {
+      type: "match_ready", code, role: "host", legs,
+      opponent: { userId: guestId, displayName: guest?.displayName ?? "Opponent" },
+    });
+    sendToUser(guestId, {
+      type: "match_ready", code, role: "guest", legs,
+      opponent: { userId: hostId, displayName: host?.displayName ?? "Opponent" },
+    });
+  }
+
   function acceptChallenge(challenge) {
     clearTimeout(challenge.timer);
     challenges.delete(challenge.id);
-
-    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-
-    presence.update(challenge.from, { status: STATUS.IN_MATCH });
-    presence.update(challenge.to, { status: STATUS.IN_MATCH });
-
-    const host = presence.get(challenge.from);
-    const guest = presence.get(challenge.to);
-
     // The challenger hosts. Arbitrary but fixed, and it matters: host is seat 0
     // on both sides, so the two recordings of the match agree about who is who.
-    sendToUser(challenge.from, {
-      type: "match_ready", code, role: "host", legs: challenge.legs,
-      opponent: { userId: challenge.to, displayName: guest?.displayName ?? "Opponent" },
-    });
-    sendToUser(challenge.to, {
-      type: "match_ready", code, role: "guest", legs: challenge.legs,
-      opponent: { userId: challenge.from, displayName: host?.displayName ?? "Opponent" },
-    });
+    startMatch(challenge.from, challenge.to, challenge.legs);
   }
 
   // -------------------------------------------------------------------------
@@ -290,6 +350,7 @@ export function createLobby() {
       // Uses the entry captured during detach, because presence.get() would
       // now answer null and the room would keep them as a member forever.
       releaseRoom(userId, entry?.roomId, entry?.displayName);
+      queue.delete(userId);
     });
   });
 
@@ -366,6 +427,24 @@ export function createLobby() {
       // the server genuinely does not know - which is why leaving a match also
       // resolves itself on disconnect.
       case "match_over": {
+        presence.update(userId, { status: STATUS.LOBBY });
+        return;
+      }
+
+      case "queue": {
+        const me = presence.get(userId);
+        if (!isChallengeable(me?.status)) {
+          return send(socket, { type: "error", message: "Finish your match first." });
+        }
+        queue.add(userId);
+        presence.update(userId, { status: STATUS.LOOKING });
+        send(socket, { type: "queued", waiting: queue.size });
+        drainQueue();
+        return;
+      }
+
+      case "queue_leave": {
+        leaveQueue(userId);
         presence.update(userId, { status: STATUS.LOBBY });
         return;
       }

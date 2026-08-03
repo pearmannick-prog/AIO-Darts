@@ -9,7 +9,7 @@
 import {
   subscribeLobby, connectLobby, disconnectLobby, setStatus,
   challengePlayer, respondToChallenge, cancelChallenge,
-  createRoom, joinRoom, leaveRoom, sendChat,
+  createRoom, joinRoom, leaveRoom, sendChat, joinQueue, leaveQueue,
 } from "./lobbyclient.js";
 import { subscribe as subscribeAccount } from "./accountstore.js";
 import { gameLabel } from "./medley.js";
@@ -18,6 +18,13 @@ const el = {
   panel: document.getElementById("lobby-panel"),
   count: document.getElementById("lobby-count"),
   looking: document.getElementById("lobby-looking"),
+  quickMatch: document.getElementById("quick-match-btn"),
+  card: document.getElementById("player-card"),
+  cardName: document.getElementById("player-card-name"),
+  cardSub: document.getElementById("player-card-sub"),
+  cardStats: document.getElementById("player-card-stats"),
+  cardActions: document.getElementById("player-card-actions"),
+  cardClose: document.getElementById("player-card-close"),
   challenges: document.getElementById("lobby-challenges"),
   filter: document.getElementById("lobby-filter"),
   scope: document.getElementById("lobby-scope"),
@@ -72,8 +79,9 @@ function personRow(player) {
 
   const middle = document.createElement("div");
   const name = document.createElement("div");
-  name.className = "person-name";
+  name.className = "person-name clickable";
   name.textContent = player.displayName + (player.isSelf ? " (you)" : "");
+  name.addEventListener("click", () => openCard(player));
   if (player.isFriend && !player.isSelf) {
     const tag = document.createElement("span");
     tag.className = "board-you-tag";
@@ -146,6 +154,70 @@ function challengeCard(challenge, incoming) {
   return card;
 }
 
+// ---------------------------------------------------------------------------
+// Player card
+// ---------------------------------------------------------------------------
+// Their actual record, fetched when asked for rather than pushed with the lobby
+// - a lobby of thirty people should not carry thirty sets of statistics that
+// nobody has looked at.
+async function openCard(player) {
+  el.card.classList.remove("hidden");
+  el.cardName.textContent = player.displayName;
+  el.cardSub.textContent = "Loading…";
+  el.cardStats.innerHTML = "";
+  el.cardActions.innerHTML = "";
+
+  if (player.challengeable) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn-primary";
+    button.textContent = "Challenge";
+    button.addEventListener("click", () => {
+      challengePlayer(player.userId, selectedLegs());
+      el.card.classList.add("hidden");
+    });
+    el.cardActions.appendChild(button);
+  }
+
+  try {
+    const { profile } = await fetch(`/api/users/${player.userId}/profile`, { credentials: "same-origin" })
+      .then((r) => r.json());
+
+    const joined = profile.joinedAt
+      ? new Date(profile.joinedAt).toLocaleDateString(undefined, { year: "numeric", month: "long" })
+      : "";
+
+    if (!profile.shared) {
+      // Not a failure, and worth saying plainly rather than showing an empty
+      // card that looks broken.
+      el.cardSub.textContent = `Playing since ${joined} · keeps their statistics private`;
+      return;
+    }
+
+    el.cardSub.textContent =
+      `Playing since ${joined}${profile.achievements ? ` · ${profile.achievements} achievements` : ""}`;
+
+    for (const metric of profile.headline) {
+      const tile = document.createElement("div");
+      tile.className = "stat-tile";
+      const value = document.createElement("div");
+      value.className = "stat-value";
+      value.textContent = metric.format === "percent"
+        ? `${metric.value}%`
+        : metric.format === "decimal" ? Number(metric.value).toFixed(2) : metric.value;
+      const label = document.createElement("div");
+      label.className = "stat-label";
+      label.textContent = metric.label;
+      tile.append(value, label);
+      el.cardStats.appendChild(tile);
+    }
+  } catch {
+    el.cardSub.textContent = "Couldn't load that profile.";
+  }
+}
+
+el.cardClose.addEventListener("click", () => el.card.classList.add("hidden"));
+
 function renderChat(messages) {
   el.chatLog.innerHTML = "";
   if (!messages.length) {
@@ -187,6 +259,15 @@ function render(state) {
   el.count.textContent = state.count === 1
     ? "1 player online"
     : `${state.count} players online`;
+
+  // Quick Match doubles as its own cancel button while queued, so there is one
+  // control rather than two that contradict each other.
+  const queued = state.queued !== null;
+  el.quickMatch.textContent = queued
+    ? `Waiting… (${state.queued} in queue) · Cancel`
+    : "Quick Match";
+  el.quickMatch.classList.toggle("btn-primary", !queued);
+  el.quickMatch.classList.toggle("btn-quiet", queued);
 
   setMessage(state.error);
 
@@ -268,6 +349,11 @@ function render(state) {
 // ---------------------------------------------------------------------------
 // Controls
 // ---------------------------------------------------------------------------
+el.quickMatch.addEventListener("click", () => {
+  if (latest?.queued !== null && latest?.queued !== undefined) leaveQueue();
+  else joinQueue();
+});
+
 el.looking.addEventListener("change", () => {
   setStatus(el.looking.checked ? "looking" : "lobby");
 });
