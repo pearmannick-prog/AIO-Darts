@@ -34,10 +34,16 @@ import { WebSocketServer } from "ws";
 import { openDatabase } from "./db.js";
 import { purgeExpiredSessions } from "./auth.js";
 import { handleApiRequest } from "./api.js";
+import { createLobby } from "./lobby.js";
 
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || "./public");
 const SIGNALING_PATH = process.env.SIGNALING_PATH || "/signaling";
+// The lobby's own socket. Separate from signaling on purpose: the relay is
+// deliberately dumb and worth keeping that way, so the stateful half lives on
+// its own path rather than being mixed into the code that must not break
+// mid-match. Same server, same port, same origin - see the note at the top.
+const LOBBY_PATH = process.env.LOBBY_PATH || "/lobby";
 
 // Where persistent data lives: the SQLite database holding accounts, match
 // history and statistics. SQLite is just a file, so this stays a
@@ -60,6 +66,10 @@ const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 // /api/* say plainly that accounts are unavailable. /healthz reports it too, so
 // it is still visible to monitoring rather than only to whoever reads the logs.
 let accountsEnabled = false;
+// The lobby needs accounts (it is a list of who is around, and an anonymous
+// entry would be neither identifiable nor challengeable), so it only exists if
+// the database opened. Invite codes carry on regardless.
+let lobby = null;
 
 async function initDatabase() {
   try {
@@ -121,6 +131,9 @@ function buildConfig() {
     // Empty string means "same origin" - the front-end fills it in itself.
     signalingUrl: process.env.SIGNALING_URL || "",
     signalingPath: SIGNALING_PATH,
+    // Sent so the front-end never hard-codes it, the same way it doesn't
+    // hard-code the signaling path.
+    lobbyPath: LOBBY_PATH,
     iceServers,
   };
 }
@@ -248,6 +261,7 @@ const httpServer = createServer(async (req, res) => {
         rooms: rooms.size,
         clients: wss.clients.size,
         accounts: accountsEnabled,
+        lobby: lobby ? lobby.count() : null,
       }));
       return;
     }
@@ -322,7 +336,15 @@ const httpServer = createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 // Signaling WebSocket (same server, same port, scoped to SIGNALING_PATH)
 // ---------------------------------------------------------------------------
-const wss = new WebSocketServer({ server: httpServer, path: SIGNALING_PATH });
+// `noServer` plus the upgrade router below, rather than { server, path }.
+//
+// A WebSocketServer bound with { server, path } installs its own 'upgrade'
+// listener and destroys any upgrade whose path it does not recognise. With two
+// of them - signaling and the lobby - on one HTTP server, whichever attached
+// first hung up on the other's connections, and it did so silently: the browser
+// saw a bare WebSocket error and the server logged nothing at all. Routing
+// upgrades in one place is the documented way to share a port.
+const wss = new WebSocketServer({ noServer: true });
 const rooms = new Map(); // code -> Set<WebSocket>
 
 function send(ws, obj) {
@@ -402,6 +424,24 @@ const heartbeat = setInterval(() => {
 }, 30000);
 wss.on("close", () => clearInterval(heartbeat));
 
+// The single upgrade listener. Anything that isn't a socket we serve is
+// destroyed explicitly - the default with noServer is to leave it hanging.
+httpServer.on("upgrade", (req, socket, head) => {
+  const path = (req.url || "").split("?")[0];
+
+  if (path === SIGNALING_PATH) {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    return;
+  }
+
+  if (lobby && path === LOBBY_PATH) {
+    lobby.handleUpgrade(req, socket, head);
+    return;
+  }
+
+  socket.destroy();
+});
+
 httpServer.listen(PORT, async () => {
   console.log(`AIO Darts listening on port ${PORT}`);
   console.log(`  static files : ${PUBLIC_DIR}`);
@@ -413,6 +453,15 @@ httpServer.listen(PORT, async () => {
   // deploy looks like it didn't take.
   console.log(`  build        : ${sha === "dev" ? "dev (unknown commit)" : sha} (from ${source})`);
   await initDatabase();
+
+  // Mounted after the database, because it authenticates every connection
+  // against the sessions table.
+  if (accountsEnabled) {
+    lobby = createLobby();
+    console.log(`  lobby        : ${LOBBY_PATH} (same port)`);
+  } else {
+    console.log("  lobby        : disabled (needs accounts)");
+  }
 
   // Expired sessions are already ignored when resolving a request, so this is
   // housekeeping to stop the table growing forever rather than a security

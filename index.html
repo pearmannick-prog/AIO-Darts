@@ -1853,6 +1853,83 @@
   }
   .people-empty { font-size: 13px; opacity: 0.65; padding: 6px 4px; }
 
+  /* Lobby */
+  #lobby-panel { margin-bottom: 16px; }
+  .lobby-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .looking-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lobby-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+  }
+  .lobby-controls input, .lobby-controls select {
+    flex: 1 1 160px;
+    min-width: 0;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+  }
+  .lobby-controls button { flex: 0 0 auto; }
+
+  /* A status is never colour alone - the dot is paired with its word. */
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; margin-right: 6px; flex: none;
+    background: rgba(27,26,20,0.3);
+  }
+  .status-looking { background: var(--green-ring); }
+  .status-lobby, .status-online { background: var(--gold); }
+  .status-in_match { background: var(--red); }
+
+  .challenge-card {
+    background: rgba(199,162,74,0.22);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .challenge-card .person-actions { flex-wrap: wrap; }
+  .challenge-text { font-size: 14px; }
+  .challenge-text strong { font-family: 'Oswald', sans-serif; text-transform: uppercase; }
+
+  .chat-log {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid rgba(27,26,20,0.12);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    background: rgba(27,26,20,0.03);
+  }
+  .chat-line { margin-bottom: 5px; word-break: break-word; }
+  .chat-line .chat-who { font-weight: 600; }
+  .chat-line.system { opacity: 0.6; font-style: italic; }
+  .chat-line.whisper .chat-who { color: var(--red); }
+  .chat-empty { opacity: 0.55; }
+
   /* Shown only on a deployment whose branch isn't main - see version.js. Uses
      the warning red rather than the brand gold precisely because it should not
      look like part of the design. */
@@ -1996,6 +2073,57 @@
       <div id="online-setup-notice" class="setup-notice hidden"></div>
 
       <!-- Signaling server config + create/join -->
+      <!-- The lobby. Hidden entirely unless signed in and connected - the
+           invite-code panel below is the whole feature without it, and is
+           still the only way to play without an account. -->
+      <div id="lobby-panel" class="panel hidden">
+        <div class="lobby-head">
+          <div>
+            <div class="account-name">Lobby</div>
+            <div class="account-sub" id="lobby-count">&nbsp;</div>
+          </div>
+          <label class="looking-toggle">
+            <input type="checkbox" id="lobby-looking">
+            <span>Looking for a match</span>
+          </label>
+        </div>
+
+        <div id="lobby-challenges"></div>
+
+        <div class="lobby-controls">
+          <input type="search" id="lobby-filter" placeholder="Search players" autocomplete="off">
+          <select id="lobby-scope">
+            <option value="all">Everyone</option>
+            <option value="friends">Friends only</option>
+          </select>
+        </div>
+
+        <div id="lobby-players" class="people-list"></div>
+
+        <div class="account-section-title">Rooms</div>
+        <p class="board-caveat">
+          A room is a place to wait and chat &mdash; &ldquo;501 Practice&rdquo;,
+          &ldquo;Cricket Only&rdquo; &mdash; not a match. Anyone in one can be challenged.
+        </p>
+        <div id="lobby-rooms" class="people-list"></div>
+        <div class="lobby-controls">
+          <input type="text" id="room-name" maxlength="40" placeholder="New room name">
+          <button type="button" class="btn-ink" id="room-create-btn">Create room</button>
+        </div>
+
+        <div id="lobby-room-view" class="hidden">
+          <div class="account-section-title" id="room-title">Room</div>
+          <div id="chat-log" class="chat-log"></div>
+          <div class="lobby-controls">
+            <input type="text" id="chat-input" maxlength="300" placeholder="Say something">
+            <button type="button" class="btn-ink" id="chat-send-btn">Send</button>
+            <button type="button" class="btn-quiet" id="room-leave-btn">Leave</button>
+          </div>
+        </div>
+
+        <p class="form-message" id="lobby-message"></p>
+      </div>
+
       <div id="online-setup-panel" class="panel">
         <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
         <div class="format-block">
@@ -2576,6 +2704,7 @@
   <script type="module" src="./game.js"></script>
   <script type="module" src="./online.js"></script>
   <script type="module" src="./accountui.js"></script>
+  <script type="module" src="./lobbyui.js"></script>
   <script type="module" src="./version.js"></script>
   <script>
     // Registers the service worker so the app can be installed to the

@@ -17,6 +17,7 @@ import {
 } from "./cricket.js";
 import { createRecorder } from "./matchrecorder.js";
 import { recordMatch, getState as accountState } from "./accountstore.js";
+import { onMatchReady, reportMatchOver } from "./lobbyclient.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
@@ -679,6 +680,43 @@ el.createBtn.addEventListener("click", async () => {
   }
 });
 
+// ---------- Starting from the lobby ----------
+// A challenge was accepted, and the server has minted a code and told both
+// sides which end of it they are. From here this is EXACTLY the invite-code
+// path: the host opens the room, the guest joins it, and the existing
+// hello/match_config handshake does the rest. The lobby is out of the way.
+//
+// The one thing carried over is the opponent's name, which the lobby already
+// knows - so the saved match names them even if the peer's hello is late.
+onMatchReady(async ({ code, role, opponent }) => {
+  await ensurePeerLinkLoaded();
+  rememberSignalingOverride();
+  peerLink = new PeerLink(currentSignalingUrl(), iceServers);
+  wirePeerLink();
+  resetAv();
+  stopDeviceCheck();
+
+  if (opponent?.displayName) setOpponentName(opponent.displayName);
+
+  // Make sure the tab the match is about to appear on is the one being looked
+  // at - a challenge can be accepted from anywhere in the app.
+  el.tabOnline?.click();
+
+  el.setupNotice.classList.add("hidden");
+  el.setupPanel.classList.add("hidden");
+  el.waitingPanel.classList.remove("hidden");
+  el.codeDisplay.textContent = code;
+
+  try {
+    if (role === "host") await peerLink.createChallenge(code);
+    else await peerLink.joinChallenge(code);
+  } catch (err) {
+    alert(`Couldn't start that match: ${err.message}`);
+    el.waitingPanel.classList.add("hidden");
+    el.setupPanel.classList.remove("hidden");
+  }
+});
+
 el.joinBtn.addEventListener("click", async () => {
   const code = el.joinInput.value.trim();
   if (!code) return;
@@ -768,6 +806,10 @@ function teardownMatch(message) {
   // down with darts that were never a real attempt at a finish.
   online.recorder = null;
   online.oppName = "Opponent";
+
+  // The lobby cannot see the darts, so it only knows a match is over because
+  // it is told. Purely a hint - a disconnect resolves the same state anyway.
+  reportMatchOver();
 
   resetAv();
 

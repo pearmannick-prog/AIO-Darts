@@ -32,9 +32,11 @@ const PRECACHE = [
   "./game.js",
   "./online.js",
   "./accountui.js",
+  "./lobbyui.js",
   "./version.js",
   // Accounts, match recording and statistics
   "./accountstore.js",
+  "./lobbyclient.js",
   "./matchrecorder.js",
   "./charts.js",
   // The stats engine and its per-game modules. Each new game module added to

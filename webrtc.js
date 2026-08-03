@@ -553,11 +553,18 @@ export class PeerLink {
     this.#announceMediaState();
   }
 
-  // Generates a short challenge code and opens a room for someone to join.
-  async createChallenge() {
-    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    await this.#join(code);
-    return code;
+  // Opens a room for someone to join, generating a short challenge code unless
+  // one is supplied.
+  //
+  // The lobby supplies one: when a challenge is accepted the server mints the
+  // code and tells both players, so the two sides open and join the SAME room
+  // without either having to type anything. That is the whole handoff - from
+  // here on it is the identical peer-to-peer path an invite code has always
+  // used, which is why the lobby adds no second connection flow to maintain.
+  async createChallenge(code = null) {
+    const room = (code || Math.random().toString(36).slice(2, 8)).toUpperCase();
+    await this.#join(room);
+    return room;
   }
 
   // Joins a challenge someone else created.
