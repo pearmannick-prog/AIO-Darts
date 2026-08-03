@@ -91,6 +91,10 @@ export function publicProfileFor(viewerId, userId) {
     cricket ? pick(cricket.metrics, "mpr") : null,
   ].filter(Boolean);
 
+  // The rank is the headline of a player card - it is the thing someone reads
+  // before deciding whether to challenge - so it goes out with the profile.
+  profile.rating = stats.rating;
+
   profile.achievements = db
     .prepare("SELECT COUNT(*) AS n FROM achievements WHERE user_id = ?")
     .get(userId).n;

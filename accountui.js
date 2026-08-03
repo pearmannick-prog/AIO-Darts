@@ -22,6 +22,7 @@ import {
 import { gameLabel } from "./medley.js";
 import { lineChart, barChart, chartTable } from "./charts.js";
 import { gameLabelFor, computeStats } from "./statsengine.js";
+import { RANK_COLOURS } from "./rating.js";
 
 const el = {
   chip: document.getElementById("account-chip"),
@@ -336,6 +337,9 @@ function renderDashboard(dashboard) {
 
   paintAvatar(el.dashAvatar, user, 56);
   el.dashName.textContent = user?.displayName || "Player";
+  // The badge goes next to the name, which is where a player looks for it.
+  el.dashName.appendChild(document.createTextNode(" "));
+  el.dashName.appendChild(rankBadge(stats.rating));
   // The game's own module is the naming authority, so this reads "Cricket" and
   // "X01" rather than the raw keys they are stored under.
   el.dashSub.textContent = stats.career.raw.favourite
@@ -1292,3 +1296,45 @@ subscribe((snapshot) => {
   showUnlocks(takeUnlocks());
 });
 refresh().then(applyHash);
+
+// ---------------------------------------------------------------------------
+// Rank badge
+// ---------------------------------------------------------------------------
+// Exported so the lobby and the player card render the same badge from the same
+// code - a rank that looked different in two places would read as two different
+// things. See rating.js for the table it comes from.
+export function rankBadge(rating) {
+  const badge = document.createElement("span");
+  badge.className = "rank-badge";
+
+  const letters = document.createElement("span");
+  letters.className = "rank-letters";
+
+  if (!rating || rating.rating === null) {
+    // Unranked is a real state and worth naming, rather than an empty badge
+    // that looks like something failed to load.
+    badge.classList.add("unranked");
+    letters.textContent = "Unranked";
+    badge.appendChild(letters);
+    const need = rating?.needs;
+    if (need && (need.x01Legs || need.cricketLegs)) {
+      const hint = document.createElement("span");
+      hint.className = "rank-value";
+      hint.textContent = need.x01Legs
+        ? `${need.x01Legs} more x01 legs`
+        : `${need.cricketLegs} more Cricket legs`;
+      badge.appendChild(hint);
+    }
+    return badge;
+  }
+
+  letters.textContent = rating.rank;
+  letters.style.color = RANK_COLOURS[rating.rank] || "inherit";
+
+  const value = document.createElement("span");
+  value.className = "rank-value";
+  value.textContent = rating.rating.toFixed(2);
+
+  badge.append(letters, value);
+  return badge;
+}

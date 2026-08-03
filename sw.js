@@ -43,6 +43,7 @@ const PRECACHE = [
   // the registry in statsengine.js has to be listed here too - this is one of
   // the two hand-maintained file lists in the project.
   "./statsengine.js",
+  "./rating.js",
   "./stats/x01stats.js",
   "./stats/cricketstats.js",
   "./stats/countupstats.js",

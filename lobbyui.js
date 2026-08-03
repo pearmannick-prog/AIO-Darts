@@ -13,6 +13,7 @@ import {
 } from "./lobbyclient.js";
 import { subscribe as subscribeAccount } from "./accountstore.js";
 import { gameLabel } from "./medley.js";
+import { rankBadge } from "./accountui.js";
 
 const el = {
   panel: document.getElementById("lobby-panel"),
@@ -203,6 +204,12 @@ async function openCard(player) {
 
     el.cardSub.textContent =
       `Playing since ${joined}${profile.achievements ? ` · ${profile.achievements} achievements` : ""}`;
+
+    // Rank first: it is the one number that answers "am I in for a game here?"
+    if (profile.rating) {
+      el.cardName.appendChild(document.createTextNode(" "));
+      el.cardName.appendChild(rankBadge(profile.rating));
+    }
 
     for (const metric of profile.headline) {
       const tile = document.createElement("div");

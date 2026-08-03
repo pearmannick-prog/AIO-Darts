@@ -22,6 +22,7 @@
 // for achievements and leaderboards to read.
 
 import { highestCheckout } from "./scoring.js";
+import { ratingFrom } from "./rating.js";
 import { x01Stats } from "./stats/x01stats.js";
 import { cricketStats } from "./stats/cricketstats.js";
 import { countupStats } from "./stats/countupstats.js";
@@ -38,7 +39,9 @@ const modules = [x01Stats, cricketStats, countupStats];
 // 2: the checkout ceiling and the doubles denominator now follow each leg's
 //    out rule rather than assuming double out, so 180 counts as a checkout
 //    under master and single out.
-export const ENGINE_VERSION = 2;
+// 3: adds the 1-20 rating and its letter rank, derived from the x01 three-dart
+//    average and Cricket MPR the engine already produces.
+export const ENGINE_VERSION = 3;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);
@@ -346,6 +349,15 @@ function average(values) {
 // they are statements about what the numbers mean, and that is exactly the kind
 // of thing that drifts when it is written twice.
 export const CAREER_BOARDS = [
+  {
+    key: "career-rating",
+    label: "Rating",
+    format: "integer",
+    // Already gated: ratingFrom returns null until there is enough play, and a
+    // null value is "not ranked" rather than a score of zero. So the board
+    // needs no qualification of its own - the rating IS the qualification.
+    value: (raw) => raw.rating,
+  },
   { key: "career-wins", label: "Most wins", format: "integer",
     value: (raw) => raw.won },
   { key: "career-streak", label: "Longest win streak", format: "integer",
@@ -480,6 +492,7 @@ export function allAchievements() {
 // page and leaderboards need.
 export function computeStats(matches = []) {
   const contexts = legContexts(matches);
+  const career = careerStats(matches);
 
   const games = [];
   for (const module of modules) {
@@ -497,11 +510,29 @@ export function computeStats(matches = []) {
 
   const weekly = trendBuckets(matches, "week");
 
+  // The rating reads two game modules' figures, so it is assembled here rather
+  // than inside either of them - neither can see the other, by design.
+  const x01 = games.find((g) => g.key === "x01")?.raw;
+  const cricket = games.find((g) => g.key === "cricket")?.raw;
+  const rating = ratingFrom({
+    threeDart: x01?.threeDart ?? null,
+    mpr: cricket?.mpr ?? null,
+    x01Legs: x01?.legsPlayed ?? 0,
+    cricketLegs: cricket?.legsPlayed ?? 0,
+  });
+
+  // Also folded into the career totals, so a leaderboard - which reads a board
+  // definition against one slice of the statistics - can rank on it without
+  // needing to know rating is assembled separately.
+  career.raw.rating = rating.rating;
+  career.raw.rank = rating.rank;
+
   return {
     engineVersion: ENGINE_VERSION,
+    rating,
     generatedAt: new Date().toISOString(),
     matchesCounted: matches.length,
-    career: careerStats(matches),
+    career,
     games,
     trends: {
       daily: trendBuckets(matches, "day"),

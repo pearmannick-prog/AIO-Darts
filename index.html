@@ -1863,6 +1863,27 @@
     flex-wrap: wrap;
     margin-bottom: 14px;
   }
+  /* Rank badge. The letters are the rank - the colour only decorates it, so it
+     stays readable in print, in forced-colours mode, and to anyone who cannot
+     tell SS from S by hue. The rating number sits beside it for the same
+     reason. */
+  .rank-badge {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(27,26,20,0.08);
+    font-family: 'Oswald', sans-serif;
+  }
+  .rank-badge .rank-letters {
+    font-size: 19px;
+    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+  .rank-badge .rank-value { font-size: 13px; opacity: 0.75; }
+  .rank-badge.unranked .rank-letters { color: var(--ink); opacity: 0.45; font-size: 14px; }
+
   .lobby-head-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .player-card {
     background: rgba(27,26,20,0.05);
