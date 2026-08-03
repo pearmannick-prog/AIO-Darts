@@ -22,7 +22,7 @@ import {
 } from "./bermuda.js";
 import { createRecorder } from "./matchrecorder.js";
 import { recordMatch, getState as accountState } from "./accountstore.js";
-import { onMatchReady, reportMatchOver } from "./lobbyclient.js";
+import { onMatchReady, reportMatchOver, pushMatchState } from "./lobbyclient.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
@@ -73,6 +73,9 @@ const online = {
   // scoreboard has always said that, and history says the same rather than
   // inventing a name.
   oppName: "Opponent",
+  // The lobby's code for this match, when it started from a challenge. Null for
+  // an invite-code match, which nobody can be watching.
+  lobbyCode: null,
 };
 
 // ---------- DOM ----------
@@ -702,6 +705,7 @@ onMatchReady(async ({ code, role, opponent }) => {
   stopDeviceCheck();
 
   if (opponent?.displayName) setOpponentName(opponent.displayName);
+  online.lobbyCode = code;
 
   // Make sure the tab the match is about to appear on is the one being looked
   // at - a challenge can be accepted from anywhere in the app.
@@ -811,6 +815,7 @@ function teardownMatch(message) {
   // down with darts that were never a real attempt at a finish.
   online.recorder = null;
   online.oppName = "Opponent";
+  online.lobbyCode = null;
 
   // The lobby cannot see the darts, so it only knows a match is over because
   // it is told. Purely a hint - a disconnect resolves the same state anyway.
@@ -1081,6 +1086,7 @@ function finishOnlineLeg(side) {
   online.legOver = !online.match.over;
 
   online.recorder?.endLeg(winnerIndex);
+  broadcastMatchState();
 
   if (online.match.over && online.recorder) {
     const document = online.recorder.endMatch({
@@ -1874,6 +1880,33 @@ function applyCricketThrowOnline(side, segment) {
   renderOnline();
 }
 
+// A scoreboard snapshot for anyone watching. Sent at the END of a visit rather
+// than per dart: a spectator wants the scoreline, and one object a visit is a
+// few hundred bytes where relaying every dart would put the server inside the
+// match.
+//
+// Only the HOST sends. Both sides hold identical state - that is the whole
+// determinism guarantee - so a second copy would be pure duplication, and
+// picking one avoids two writers racing over the same snapshot.
+function broadcastMatchState() {
+  if (!online.lobbyCode || online.role !== "host") return;
+
+  const score = (p) =>
+    online.gameType === "cricket" ? p.points
+    : (online.gameType === "countup" || online.gameType === "bermuda") ? p.total
+    : p.remaining;
+
+  pushMatchState(online.lobbyCode, {
+    game: online.gameType,
+    // Absolute seats, so a watcher reads the same order as the players do.
+    scores: { [online.myIndex]: score(online.me), [online.oppIndex]: score(online.opp) },
+    legsWon: online.match?.legsWon ?? [],
+    activeSeat: online.activeSide === "me" ? online.myIndex : online.oppIndex,
+    over: Boolean(online.gameOver),
+    at: Date.now(),
+  });
+}
+
 function endTurn(side) {
   const s = online[side];
   online.recorder?.endTurn();
@@ -1885,6 +1918,7 @@ function endTurn(side) {
     s.startOfTurn = s.remaining;
   }
   online.activeSide = side === "me" ? "opp" : "me";
+  broadcastMatchState();
 }
 
 // ---------- Render ----------

@@ -10,6 +10,7 @@ import {
   subscribeLobby, connectLobby, disconnectLobby, setStatus,
   challengePlayer, respondToChallenge, cancelChallenge,
   createRoom, joinRoom, leaveRoom, sendChat, joinQueue, leaveQueue,
+  watchMatch, stopWatching, takeFriendArrival,
 } from "./lobbyclient.js";
 import { subscribe as subscribeAccount } from "./accountstore.js";
 import { gameLabel } from "./medley.js";
@@ -39,6 +40,11 @@ const el = {
   chatInput: document.getElementById("chat-input"),
   chatSend: document.getElementById("chat-send-btn"),
   roomLeave: document.getElementById("room-leave-btn"),
+  live: document.getElementById("lobby-live"),
+  watchPanel: document.getElementById("watch-panel"),
+  watchTitle: document.getElementById("watch-title"),
+  watchBoard: document.getElementById("watch-board"),
+  watchStop: document.getElementById("watch-stop"),
   message: document.getElementById("lobby-message"),
   // Read, never written, so the challenge carries the format the challenger
   // picked on the panel below rather than a second copy of that control.
@@ -55,9 +61,13 @@ function selectedLegs() {
   return value ? [{ preset: value }] : null;
 }
 
-function setMessage(text) {
+// `kind` matters: the same line carries both "that didn't work" and "your
+// friend just arrived", and showing good news in the error red would be a
+// small lie every time it happened.
+function setMessage(text, kind = "error") {
   el.message.textContent = text || "";
-  el.message.classList.toggle("error", Boolean(text));
+  el.message.classList.remove("error", "ok");
+  if (text) el.message.classList.add(kind);
 }
 
 function statusLabel(status) {
@@ -232,6 +242,58 @@ async function openCard(player) {
 
 el.cardClose.addEventListener("click", () => el.card.classList.add("hidden"));
 
+el.watchStop.addEventListener("click", () => {
+  if (latest?.watching) stopWatching(latest.watching.code);
+});
+
+// The spectator scoreboard. Deliberately just that: this is a copy the players
+// push, not a second connection into their match, and nothing here can affect
+// what they are playing.
+function renderWatch(watching) {
+  el.watchTitle.textContent = watching.players.map((p) => p.displayName).join(" v ");
+  el.watchBoard.innerHTML = "";
+
+  const state = watching.state;
+  if (!state) {
+    const waiting = document.createElement("div");
+    waiting.className = "people-empty";
+    waiting.textContent = "Waiting for the first darts…";
+    el.watchBoard.appendChild(waiting);
+    return;
+  }
+
+  watching.players.forEach((player, seat) => {
+    const box = document.createElement("div");
+    const throwing = state.activeSeat === seat && !state.over;
+    box.className = `watch-player${throwing ? " throwing" : ""}`;
+
+    const name = document.createElement("div");
+    name.className = "watch-name";
+    name.textContent = player.displayName;
+
+    const score = document.createElement("div");
+    score.className = "watch-score";
+    score.textContent = state.scores?.[seat] ?? "-";
+
+    const turn = document.createElement("div");
+    turn.className = "watch-turn";
+    // The ring says whose turn it is; this says it in words too.
+    turn.textContent = state.over ? "match over" : throwing ? "throwing" : " ";
+
+    box.append(name, score, turn);
+    el.watchBoard.appendChild(box);
+  });
+
+  const legs = state.legsWon ?? [];
+  if (legs.length > 1) {
+    const tally = document.createElement("div");
+    tally.className = "person-sub";
+    tally.style.width = "100%";
+    tally.textContent = `Legs: ${legs.join(" - ")}`;
+    el.watchBoard.appendChild(tally);
+  }
+}
+
 function renderChat(messages) {
   el.chatLog.innerHTML = "";
   if (!messages.length) {
@@ -353,6 +415,50 @@ function render(state) {
     }
   }
 
+  // Matches in progress, and the one being watched.
+  el.live.innerHTML = "";
+  if (!state.live.length) {
+    const empty = document.createElement("div");
+    empty.className = "people-empty";
+    empty.textContent = "Nobody is playing right now.";
+    el.live.appendChild(empty);
+  } else {
+    for (const match of state.live) {
+      const row = document.createElement("div");
+      row.className = "person-row";
+
+      const avatar = document.createElement("div");
+      avatar.className = "board-avatar";
+      avatar.textContent = "VS";
+
+      const middle = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "person-name";
+      name.textContent = match.players.map((p) => p.displayName).join(" v ");
+      const sub = document.createElement("div");
+      sub.className = "person-sub";
+      sub.textContent = match.watchers === 1 ? "1 watching" : `${match.watchers} watching`;
+      middle.append(name, sub);
+
+      const actions = document.createElement("div");
+      actions.className = "person-actions";
+      if (state.watching?.code !== match.code) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-quiet";
+        btn.textContent = "Watch";
+        btn.addEventListener("click", () => watchMatch(match.code));
+        actions.appendChild(btn);
+      }
+
+      row.append(avatar, middle, actions);
+      el.live.appendChild(row);
+    }
+  }
+
+  el.watchPanel.classList.toggle("hidden", !state.watching);
+  if (state.watching) renderWatch(state.watching);
+
   el.roomView.classList.toggle("hidden", !state.room);
   if (state.room) {
     el.roomTitle.textContent = state.room.name;
@@ -399,7 +505,13 @@ el.chatInput.addEventListener("keydown", (event) => {
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
-subscribeLobby(render);
+subscribeLobby((state) => {
+  render(state);
+  // A friend arriving is announced once, in the lobby's own message line -
+  // never as a dialog, which would interrupt a match in progress.
+  const arrival = takeFriendArrival();
+  if (arrival) setMessage(`${arrival.displayName} just came online.`, "ok");
+});
 
 // The lobby follows the account: it needs a session to authenticate the socket,
 // and it should not sit connected for someone who has signed out.

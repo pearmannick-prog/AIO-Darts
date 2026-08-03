@@ -1884,6 +1884,26 @@
   .rank-badge .rank-value { font-size: 13px; opacity: 0.75; }
   .rank-badge.unranked .rank-letters { color: var(--ink); opacity: 0.45; font-size: 14px; }
 
+  .watch-panel {
+    background: rgba(15,61,46,0.08);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 14px 0;
+  }
+  .watch-board { display: flex; gap: 12px; flex-wrap: wrap; }
+  .watch-player {
+    flex: 1 1 140px;
+    background: rgba(27,26,20,0.05);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  /* The player currently throwing. Marked with a ring AND the word, never the
+     ring alone. */
+  .watch-player.throwing { outline: 2px solid var(--gold); }
+  .watch-score { font-family: 'Oswald', sans-serif; font-size: 30px; line-height: 1.1; }
+  .watch-name { font-size: 13px; font-weight: 600; }
+  .watch-turn { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.04em; }
+
   .rating-pair { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .rating-block {
     background: rgba(27,26,20,0.045);
@@ -2162,6 +2182,20 @@
         </div>
 
         <div id="lobby-players" class="people-list"></div>
+
+        <div id="watch-panel" class="watch-panel hidden">
+          <div class="account-section-head">
+            <div class="account-name" id="watch-title">Watching</div>
+            <button type="button" class="btn-quiet" id="watch-stop">Stop watching</button>
+          </div>
+          <div id="watch-board" class="watch-board"></div>
+          <p class="stat-hint" id="watch-note">
+            Live scoring only &mdash; the match itself is played directly between the two players.
+          </p>
+        </div>
+
+        <div class="account-section-title">Matches in progress</div>
+        <div id="lobby-live" class="people-list"></div>
 
         <div class="account-section-title">Rooms</div>
         <p class="board-caveat">

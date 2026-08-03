@@ -319,6 +319,40 @@ export function loadMatch(userId, matchId) {
   };
 }
 
+// People this player has actually played, most recent first.
+//
+// Worth having because the lobby's "add friend" flow otherwise depends on
+// remembering how somebody spells their display name - whereas the person you
+// played last night is exactly who you want to add, and the app already knows.
+//
+// Online matches only: a local pass-and-play seat named "Dave" is a name typed
+// into a box, not an account, and offering to befriend it would be offering to
+// befriend a string.
+export function recentOpponents(userId, limit = 10) {
+  return getDatabase()
+    .prepare(
+      `SELECT mp.display_name AS name, MAX(m.ended_at) AS last_played, COUNT(*) AS played
+       FROM matches m
+       JOIN match_players mp ON mp.match_id = m.id AND mp.is_self = 0
+       WHERE m.user_id = ? AND m.mode = 'online'
+       GROUP BY mp.display_name
+       ORDER BY last_played DESC
+       LIMIT ?`
+    )
+    .all(userId, Math.min(Math.max(int(limit, 10), 1), 25))
+    .map((row) => ({
+      displayName: row.name,
+      lastPlayed: row.last_played,
+      played: row.played,
+      // Resolved to a real account by display name where one matches, so the
+      // UI can offer to add them. Null when the name belongs to nobody - which
+      // is normal: an opponent who played as a guest has no account to link to.
+      userId: getDatabase()
+        .prepare("SELECT id FROM users WHERE display_name = ? AND id <> ?")
+        .get(row.name, userId)?.id ?? null,
+    }));
+}
+
 // Every match a user has, in full, for the stats engine.
 //
 // Five queries regardless of how many matches there are, assembled in memory.

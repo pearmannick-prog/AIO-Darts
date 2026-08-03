@@ -31,6 +31,12 @@ const state = {
   outgoing: [],      // challenges sent
   // Quick Match: null when not queued, otherwise how many are waiting.
   queued: null,
+  // Matches other people are playing that can be watched.
+  live: [],
+  // The match this client is spectating, if any: { code, players, state }.
+  watching: null,
+  // A friend who just came online, for a one-off notice. Cleared once shown.
+  friendArrived: null,
   error: null,
 };
 
@@ -181,6 +187,27 @@ function handle(message) {
       state.players = message.players ?? [];
       state.count = message.count ?? 0;
       state.rooms = message.rooms ?? [];
+      state.live = message.live ?? [];
+      break;
+
+    case "friend_online":
+      state.friendArrived = { userId: message.userId, displayName: message.displayName };
+      break;
+
+    case "watching":
+      state.watching = { code: message.code, players: message.players, state: message.state };
+      break;
+
+    case "watch_state":
+      // Ignored unless it is the match being watched - a stale update from a
+      // match just left would otherwise overwrite the new one.
+      if (state.watching?.code === message.code) {
+        state.watching = { ...state.watching, state: message.state };
+      }
+      break;
+
+    case "watch_ended":
+      if (state.watching?.code === message.code) state.watching = null;
       break;
 
     case "challenge_received":
@@ -274,6 +301,30 @@ export function reportMatchOver() {
 // Quick Match. Joins a queue of people who all want a game right now; the
 // server pairs the two who have waited longest and sends both a match_ready,
 // which is the same handoff an accepted challenge uses.
+// Read once and cleared, so a notice is shown exactly once rather than on
+// every subsequent render.
+export function takeFriendArrival() {
+  const arrival = state.friendArrived;
+  state.friendArrived = null;
+  return arrival;
+}
+
+export function watchMatch(code) {
+  send({ type: "watch", code });
+}
+
+export function stopWatching(code) {
+  send({ type: "unwatch", code });
+}
+
+// Pushed by a player so spectators can follow along. Deliberately a small
+// snapshot rather than a stream of darts: a spectator wants the scoreboard, and
+// sending one object per visit is a few hundred bytes where relaying every dart
+// would make the server part of the match.
+export function pushMatchState(code, matchState) {
+  send({ type: "match_state", code, state: matchState });
+}
+
 export function joinQueue() {
   state.error = null;
   send({ type: "queue" });

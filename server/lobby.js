@@ -71,6 +71,19 @@ export function createLobby() {
   // right now is the whole requirement.
   const queue = new Set();
 
+  // Matches currently being played, for spectators. Keyed by the challenge code
+  // the two players are using, which they already both know.
+  //
+  // WHAT THE SERVER HOLDS IS A COPY, NOT THE TRUTH. The players' browsers still
+  // run the match between themselves; one of them pushes a scoreboard snapshot
+  // here and the server fans it out to whoever is watching. If this went away
+  // mid-match the match would not notice.
+  //
+  // Deliberately the SCOREBOARD only - not video. Spectating a scoreline is a
+  // few hundred bytes a visit; spectating a camera means every viewer takes
+  // another uplink from the player, or an SFU, which is a different project.
+  const liveMatches = new Map();
+
   let nextId = 1;
   const newId = (prefix) => `${prefix}${nextId++}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -119,6 +132,7 @@ export function createLobby() {
       players: lobbyFor(userId),
       count: presence.count(),
       rooms: roomList(),
+      live: liveMatchList(),
     });
   }
 
@@ -129,7 +143,26 @@ export function createLobby() {
     for (const entry of presence.all()) pushLobby(entry.userId);
   }
 
-  presence.onChange(() => pushLobbyToAll());
+  presence.onChange((event) => {
+    // A friend arriving is worth saying out loud - it is the single most
+    // useful thing a lobby can tell you, and watching a list for a name to
+    // appear is not a thing anyone does.
+    if (event.type === "joined") {
+      const arrival = presence.get(event.userId);
+      if (arrival) {
+        for (const entry of presence.all()) {
+          if (entry.userId === event.userId) continue;
+          if (!friendIds(entry.userId).includes(event.userId)) continue;
+          sendToUser(entry.userId, {
+            type: "friend_online",
+            userId: arrival.userId,
+            displayName: arrival.displayName,
+          });
+        }
+      }
+    }
+    pushLobbyToAll();
+  });
 
   // -------------------------------------------------------------------------
   // Rooms
@@ -277,6 +310,16 @@ export function createLobby() {
   // minted here and sent to both sides; the host then opens exactly the room an
   // invite code would have opened and the guest joins it. Everything after this
   // message is the existing peer-to-peer path, untouched.
+  // Everything currently watchable, for the lobby payload.
+  function liveMatchList() {
+    return [...liveMatches.values()].map((m) => ({
+      code: m.code,
+      players: m.players,
+      state: m.state,
+      watchers: m.watchers.size,
+    }));
+  }
+
   function startMatch(hostId, guestId, legs) {
     const code = Math.random().toString(36).slice(2, 8).toUpperCase();
 
@@ -297,6 +340,41 @@ export function createLobby() {
       type: "match_ready", code, role: "guest", legs,
       opponent: { userId: hostId, displayName: host?.displayName ?? "Opponent" },
     });
+
+    // Registered as watchable straight away, so a spectator can join before the
+    // first dart rather than only once something has happened.
+    liveMatches.set(code, {
+      code,
+      hostId,
+      guestId,
+      players: [
+        { userId: hostId, displayName: host?.displayName ?? "Host" },
+        { userId: guestId, displayName: guest?.displayName ?? "Guest" },
+      ],
+      state: null,
+      watchers: new Set(),
+      startedAt: Date.now(),
+    });
+    pushLobbyToAll();
+  }
+
+  function endLiveMatch(code) {
+    const live = liveMatches.get(code);
+    if (!live) return;
+    for (const watcherId of live.watchers) {
+      sendToUser(watcherId, { type: "watch_ended", code });
+    }
+    liveMatches.delete(code);
+    pushLobbyToAll();
+  }
+
+  // Any match this player was in. Called when they stop playing or disconnect -
+  // a spectator staring at a frozen scoreboard forever is worse than being told
+  // it is over.
+  function endLiveMatchesFor(userId) {
+    for (const live of [...liveMatches.values()]) {
+      if (live.hostId === userId || live.guestId === userId) endLiveMatch(live.code);
+    }
   }
 
   function acceptChallenge(challenge) {
@@ -363,6 +441,8 @@ export function createLobby() {
       // now answer null and the room would keep them as a member forever.
       releaseRoom(userId, entry?.roomId, entry?.displayName);
       queue.delete(userId);
+      endLiveMatchesFor(userId);
+      for (const live of liveMatches.values()) live.watchers.delete(userId);
     });
   });
 
@@ -446,6 +526,49 @@ export function createLobby() {
       // resolves itself on disconnect.
       case "match_over": {
         presence.update(userId, { status: STATUS.LOBBY });
+        endLiveMatchesFor(userId);
+        return;
+      }
+
+      // A player pushing their scoreboard for spectators. Only the two players
+      // in that match may push, which is the whole of the authorisation: this
+      // is a broadcast copy, and nobody else has any business writing it.
+      case "match_state": {
+        const live = liveMatches.get(message.code);
+        if (!live) return;
+        if (live.hostId !== userId && live.guestId !== userId) return;
+
+        live.state = message.state ?? null;
+        for (const watcherId of live.watchers) {
+          sendToUser(watcherId, { type: "watch_state", code: live.code, state: live.state });
+        }
+        return;
+      }
+
+      case "watch": {
+        const live = liveMatches.get(message.code);
+        if (!live) return send(socket, { type: "error", message: "That match has finished." });
+        // Blocking applies here too - watching someone who blocked you is
+        // still interacting with them.
+        if (isBlocked(userId, live.hostId) || isBlocked(userId, live.guestId)) {
+          return send(socket, { type: "error", message: "That match has finished." });
+        }
+        live.watchers.add(userId);
+        send(socket, {
+          type: "watching",
+          code: live.code,
+          players: live.players,
+          state: live.state,
+        });
+        pushLobbyToAll();
+        return;
+      }
+
+      case "unwatch": {
+        const live = liveMatches.get(message.code);
+        live?.watchers.delete(userId);
+        send(socket, { type: "watch_ended", code: message.code });
+        pushLobbyToAll();
         return;
       }
 

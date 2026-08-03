@@ -15,11 +15,12 @@
 // be written as the happy path plus guards, without a try/catch each.
 
 import { getDatabase, bool, orNull } from "./db.js";
-import { insertMatch, listMatches, loadMatch } from "./matches.js";
+import { insertMatch, listMatches, loadMatch, recentOpponents } from "./matches.js";
 import { statsFor, awardAchievements, achievementsFor, publicProfileFor } from "./stats.js";
 import {
   searchUsers, friendsOf, requestFriend, acceptFriend, removeFriend, friendIds,
   createClub, joinClub, leaveClub, clubsFor, clubMemberIds,
+  blockUser, unblockUser, blockedBy,
 } from "./social.js";
 import { buildLeaderboard } from "./leaderboard.js";
 import { leaderboardCatalogue } from "../statsengine.js";
@@ -428,7 +429,14 @@ const routes = {
   // ---------------------------------------------------------------------
   "GET /api/friends": async (req, res, ctx) => {
     if (!ctx.user) throw unauthorized();
-    sendJson(res, 200, { friends: friendsOf(ctx.user.id), clubs: clubsFor(ctx.user.id) });
+    sendJson(res, 200, {
+      friends: friendsOf(ctx.user.id),
+      clubs: clubsFor(ctx.user.id),
+      // The people you have actually played are the ones you are most likely
+      // to want to add, and the app already knows who they are.
+      recent: recentOpponents(ctx.user.id),
+      blocked: blockedBy(ctx.user.id),
+    });
   },
 
   "GET /api/users/search": async (req, res, ctx) => {
@@ -454,6 +462,18 @@ const routes = {
     if (!ctx.user) throw unauthorized();
     const body = await readJsonBody(req);
     sendJson(res, 200, removeFriend(ctx.user.id, Number(body.userId)));
+  },
+
+  "POST /api/friends/block": async (req, res, ctx) => {
+    if (!ctx.user) throw unauthorized();
+    const body = await readJsonBody(req);
+    sendJson(res, 200, blockUser(ctx.user.id, Number(body.userId)));
+  },
+
+  "POST /api/friends/unblock": async (req, res, ctx) => {
+    if (!ctx.user) throw unauthorized();
+    const body = await readJsonBody(req);
+    sendJson(res, 200, unblockUser(ctx.user.id, Number(body.userId)));
   },
 
   "POST /api/clubs": async (req, res, ctx) => {
