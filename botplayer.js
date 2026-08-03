@@ -194,6 +194,57 @@ export function chooseCricketTarget(marks = {}) {
   return T20;
 }
 
+// Count Up is pure accumulation: there is no target to close and no way to
+// bust, so the highest-value dart on the board is always the right answer.
+// Stated in its own function rather than borrowed from the x01 brain, because
+// "aim at T20 because that scores most" and "aim at T20 because 501 is a long
+// way away" are different reasons that happen to agree.
+export function chooseCountUpTarget() {
+  return T20;
+}
+
+// Bermuda Triangle: the target is dictated by the round, so this is not a
+// choice of WHERE to score but of where to stand the best chance of scoring on
+// the one thing that counts.
+//
+// Every case aims at a TREBLE rather than the fat single, which looks reckless
+// for a weak bot given that missing a round with all three darts halves the
+// total. It isn't, and the geometry is why: a wedge widens as it goes out, so
+// the 18-degree slice is about 16mm across at the treble ring and only about
+// 9mm at the fat single. Aiming at the treble is both the higher-scoring shot
+// AND the wider one - the safe-looking alternative is neither.
+//
+// The two "anywhere on the board" rounds turn that up further. On Any Double
+// and Any Triple a sideways miss off the 20 lands in the 1 or the 5 - which is
+// still a double, or still a triple, and still counts. Only a radial miss
+// leaves the ring. So the bot aims at the most valuable segment of the ring and
+// gets the whole ring as its margin for error.
+export function chooseBermudaTarget(target) {
+  if (!target) return T20;
+
+  switch (target.kind) {
+    // Any segment of the number scores, so aim at its treble.
+    case "number":
+      return { kind: "segment", section: target.value, ring: "triple" };
+
+    case "double":
+      return { kind: "segment", section: 20, ring: "double" };
+
+    case "triple":
+      return T20;
+
+    // Both bulls count on "Any Bull" and only the inner one on "Double Bull",
+    // but the aim point is the centre of the board either way - there is
+    // nowhere else to stand a better chance from.
+    case "bull":
+    case "dbull":
+      return BULL;
+
+    default:
+      return T20;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Calibration
 // ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@ import {
 } from "./bermuda.js";
 import {
   SKILL_LEVELS, skillFor, throwDart, chooseX01Target, chooseCricketTarget,
+  chooseBermudaTarget, chooseCountUpTarget,
 } from "./botplayer.js";
 import { createRecorder } from "./matchrecorder.js";
 import {
@@ -808,15 +809,19 @@ function maybeThrowForBot() {
     const player = state.players[state.currentPlayerIndex];
     const dartsLeft = 3 - state.dartsThisTurn.length;
 
+    // Every game mode gets its own answer here. A bot that threw at the treble
+    // twenty all game is not a practice opponent in Bermuda - it is a bot that
+    // misses the target in twelve of the thirteen rounds and halves its own
+    // score doing it.
     let target;
     if (state.gameType === "cricket") {
       target = chooseCricketTarget(player.marks);
     } else if (state.gameType === "x01") {
       target = chooseX01Target(player.remaining, dartsLeft, rulesFor(state.legConfig?.rules).out);
+    } else if (state.gameType === "bermuda") {
+      target = chooseBermudaTarget(bermudaTarget(player.round));
     } else {
-      // Count Up and Bermuda both just want points; the treble twenty is the
-      // right answer often enough and this is a practice opponent.
-      target = chooseX01Target(501, 3, "straight");
+      target = chooseCountUpTarget();
     }
 
     applyHit(throwDart(target, bot.sigma));
