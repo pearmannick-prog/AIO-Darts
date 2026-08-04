@@ -139,6 +139,58 @@ export function applyBullMode(segment, bullMode) {
   };
 }
 
+// Opens the board's GATT service, retrying, because getting this wrong is the
+// single most common way connecting fails.
+//
+// THE TRAP: `device.gatt.connected` is not a reliable answer to "can this page
+// talk to the board". Leave the board switched on and paired, then reload the
+// page - which is exactly what happens when the site is updated mid-session -
+// and the OS-level link is still up, so the flag reads TRUE while the GATT
+// context the *page* owned died with the old document. The old code took that
+// flag at its word and skipped connecting, and getPrimaryService() then failed
+// with "GATT Server is disconnected. Cannot retrieve services." while the board
+// sat there looking perfectly connected.
+//
+// So: always connect, never ask. `connect()` on an already-connected server
+// resolves immediately, which makes the guard an optimisation worth precisely
+// nothing against a failure mode that looks to the player like the board is
+// broken.
+//
+// The retry is for a second, unrelated fault: Web Bluetooth on desktop
+// routinely drops the first connection to a device that has been idle. The
+// explicit disconnect() between attempts is what makes the next one a genuine
+// reconnect rather than another handshake against the same dead context.
+async function openService(device, attempts = 3) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const server = await device.gatt.connect();
+      // Deliberately inside the try: this is the call that actually proves the
+      // link works, and the one that throws when it doesn't.
+      return await server.getPrimaryService(GRANBOARD_SERVICE_UUID);
+    } catch (err) {
+      lastError = err;
+      // Clear the half-open state before trying again. Failing here is fine -
+      // it usually means it was already gone, which is what we wanted.
+      try { device.gatt.disconnect(); } catch { /* already disconnected */ }
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+      }
+    }
+  }
+
+  // Reported in the board's terms rather than the Bluetooth stack's. "GATT
+  // Server is disconnected" tells a player nothing they can act on; turning it
+  // off and on again is the fix, and is what the message should say.
+  // Phrased to read correctly after the caller's "Couldn't connect: " prefix.
+  throw new Error(
+    `the board didn't respond after ${attempts} attempts. ` +
+    "Switch it off and on again, then try connecting. " +
+    `(${lastError?.message || "unknown Bluetooth error"})`
+  );
+}
+
 export class Granboard {
   #characteristic;
   segmentHitCallback = null;
@@ -154,11 +206,7 @@ export class Granboard {
       throw new Error("Could not find a Bluetooth GATT server on that device.");
     }
 
-    if (!device.gatt.connected) {
-      await device.gatt.connect();
-    }
-
-    const service = await device.gatt.getPrimaryService(GRANBOARD_SERVICE_UUID);
+    const service = await openService(device);
     const characteristics = await service.getCharacteristics();
     const notifyChar = characteristics.find((c) => c.properties.notify);
 
