@@ -1329,12 +1329,31 @@
     pointer-events: none;
   }
 
-  /* Manual entry */
-  #manual-section {
+  /* Manual entry and the throw log, side by side.
+     The keypad is a fixed set of buttons that never fills the width, so the
+     log used to sit below a large empty rectangle - and reading the last few
+     darts meant scrolling the pad off screen. The rule the log follows is the
+     same one .game-top follows above it: two columns on a desktop, stacked on
+     a phone where there is no spare width to fill.
+     The separator lives on the wrapper rather than on the keypad, or it would
+     underline only the left column and look like a mistake. */
+  .entry-and-log {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 24px;
+    align-items: start;
     margin-top: 24px;
     padding-top: 20px;
     border-top: 1px solid rgba(27,26,20,0.15);
   }
+  @media (max-width: 640px) {
+    .entry-and-log { grid-template-columns: 1fr; gap: 0; }
+  }
+  /* Cricket hides the keypad entirely - the mark pad above IS the entry
+     surface - so the log takes the whole row instead of leaving a gap. */
+  #manual-section.cricket-mode + #throw-log { grid-column: 1 / -1; }
+
+  /* Manual entry */
   #manual-section h3 {
     font-family: 'Oswald', sans-serif;
     font-size: 15px;
@@ -1441,11 +1460,20 @@
   }
 
   /* Throw log */
+  /* Taller than it was, because beside the keypad there is vertical room to
+     spend and the whole point of the move was to scroll less. It still scrolls
+     - a long leg outruns any fixed height - but the recent darts, which are
+     the ones anyone actually reads, now fit without moving anything. */
   #throw-log {
-    margin-top: 20px;
-    max-height: 200px;
+    margin-top: 0;
+    max-height: 460px;
     overflow-y: auto;
     font-size: 13px;
+  }
+  @media (max-width: 640px) {
+    /* Stacked again, so the old height applies: the log is below the pad and
+       a tall one would push everything else off the screen. */
+    #throw-log { margin-top: 20px; max-height: 200px; }
   }
   .log-row {
     display: grid;
@@ -2154,31 +2182,37 @@
 
         <div id="cricket-board" class="cricket-board hidden"></div>
 
-        <div id="manual-section">
-          <h3>Manual entry</h3>
-          <div class="entry-mode-tabs">
-            <button type="button" class="entry-mode-tab" data-mode="perdart">Per-Dart</button>
-            <button type="button" class="entry-mode-tab active" data-mode="quicktotal">Quick Total</button>
-          </div>
-          <div id="manual-perdart" class="entry-mode-panel hidden">
-            <div class="manual-row">
-              <label for="manual-ring">Ring:</label>
-              <select id="manual-ring">
-                <option value="outer">Single (outer)</option>
-                <option value="inner">Single (inner)</option>
-                <option value="triple">Triple</option>
-                <option value="double">Double</option>
-              </select>
-              <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-              <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-              <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+        <!-- Manual entry and the throw log are siblings in a two-column grid
+             rather than stacked. The keypad does not use the full width, and
+             the log underneath it meant scrolling past the pad you were about
+             to use in order to read what just happened. -->
+        <div class="entry-and-log">
+          <div id="manual-section">
+            <h3>Manual entry</h3>
+            <div class="entry-mode-tabs">
+              <button type="button" class="entry-mode-tab" data-mode="perdart">Per-Dart</button>
+              <button type="button" class="entry-mode-tab active" data-mode="quicktotal">Quick Total</button>
             </div>
-            <div id="manual-sections"></div>
+            <div id="manual-perdart" class="entry-mode-panel hidden">
+              <div class="manual-row">
+                <label for="manual-ring">Ring:</label>
+                <select id="manual-ring">
+                  <option value="outer">Single (outer)</option>
+                  <option value="inner">Single (inner)</option>
+                  <option value="triple">Triple</option>
+                  <option value="double">Double</option>
+                </select>
+                <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
+                <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
+                <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+              </div>
+              <div id="manual-sections"></div>
+            </div>
+            <div id="manual-quicktotal" class="entry-mode-panel"></div>
           </div>
-          <div id="manual-quicktotal" class="entry-mode-panel"></div>
-        </div>
 
-        <div id="throw-log"></div>
+          <div id="throw-log"></div>
+        </div>
       </div>
     </div>
 
