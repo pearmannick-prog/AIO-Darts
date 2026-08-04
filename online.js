@@ -756,7 +756,12 @@ let waitingOpponent = "";
 function hideWaitingPanel() {
   waitingMode = null;
   waitingOpponent = "";
-  hideWaitingPanel();
+  // The class, not this function. Calling itself here recursed until the stack
+  // blew, which killed startOnlineGame half way through: the match had already
+  // begun, but the panel hiding it never ran and the game panel was never
+  // shown, so both players sat on "Connected - starting..." watching a match
+  // that had in fact started perfectly.
+  el.waitingPanel.classList.add("hidden");
 }
 
 // Reports which STAGE the connection has reached, on the panel the player is
