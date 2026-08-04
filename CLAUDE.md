@@ -308,6 +308,17 @@ unsafe.
 `DATA_DIR` must be persistent. On an ephemeral filesystem (Render's free tier)
 every account is deleted on each deploy — see the long note in `render.yaml`.
 
+**Litestream replicates that file to R2, and the backup story IS the migration
+story.** `docker-entrypoint.sh` restores on boot only when there is no local
+database AND the replica is non-empty, so an existing file is never overwritten
+by an older copy; it then runs the app as a child of `litestream replicate
+-exec`, which is what makes shutdown flush the final WAL segment instead of
+racing it. Unset `R2_BUCKET` and the entrypoint exec's node directly — a missing
+backup target is not a reason to refuse to serve darts. `sync-interval` is 10s
+rather than the 1s default, because 1s is ~2.6M R2 Class A operations a month
+against a 1M free allowance. Replication is NOT a backup: it replicates a
+`DROP TABLE` just as faithfully, so keep periodic snapshots as well.
+
 ## Conventions worth preserving
 
 - Comments in this codebase explain *why*, often at length, and frequently record a

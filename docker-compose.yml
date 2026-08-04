@@ -14,6 +14,14 @@ services:
       # - TURN_CREDENTIAL=change-me # Password for the TURN server above
       # - SIGNALING_URL=wss://example.com/signaling # Only to point players at a DIFFERENT signaling server; leave unset for same-origin
       # - ACCOUNTS=off # Run guests-only, without opening a database at all. Set this when there is NO persistent disk: an ephemeral one lets accounts be created and then silently deletes them, which is worse than not offering them.
+      # Continuous replication of the database to Cloudflare R2. Unset = off, and
+      # the container starts exactly as it did before Litestream existed.
+      # This is also the migration path: restore on a new host and repoint DNS.
+      # - R2_BUCKET=aio-darts-backup
+      # - R2_PATH=prod # A prefix inside the bucket. Production and the test build MUST differ, or they overwrite each other.
+      # - R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+      # - R2_ACCESS_KEY_ID=... # An R2 API token scoped to this bucket only.
+      # - R2_SECRET_ACCESS_KEY=...
     volumes:
       - /mnt/user/appdata/aiodarts:/data # Persistent data - the accounts and statistics SQLite database. Losing this volume deletes every account.
     ports:

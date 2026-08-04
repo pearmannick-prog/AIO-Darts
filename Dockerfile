@@ -17,6 +17,28 @@ FROM node:24-alpine
 
 WORKDIR /app
 
+# Litestream, for continuous replication of the SQLite file to object storage.
+# See litestream.yml and docker-entrypoint.sh - it does nothing at all unless
+# R2_BUCKET is set, so this costs an unconfigured deployment one binary and no
+# behaviour.
+#
+# TARGETARCH is set by BuildKit, so this works for an arm64 image as well as
+# amd64 - which matters, because a free ARM VM is one of the hosts this is
+# meant to be movable to. Litestream names its assets x86_64 rather than amd64.
+ARG LITESTREAM_VERSION=0.5.15
+ARG TARGETARCH
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) LS_ARCH=x86_64 ;; \
+      arm64) LS_ARCH=arm64 ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    wget -qO /tmp/litestream.tar.gz \
+      "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-${LITESTREAM_VERSION}-linux-${LS_ARCH}.tar.gz"; \
+    tar -C /usr/local/bin -xzf /tmp/litestream.tar.gz litestream; \
+    rm /tmp/litestream.tar.gz; \
+    litestream version
+
 # Dependencies first so this layer stays cached unless package*.json changes.
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
@@ -77,8 +99,21 @@ ENV DATA_DIR=/app/data
 # app does not crash: it logs that DATA_DIR is unusable, reports
 # accounts:false, and keeps serving darts.
 RUN mkdir -p /app/data && chown -R node:node /app/data
+
+# The replication config and launcher, at /app rather than only inside
+# public/. The COPY above puts a copy of everything in the web root, so these
+# two are removed from there - they are templates rather than secrets, but a
+# config file and a launch script are not part of the site and there is no
+# reason to serve them.
+COPY litestream.yml /app/litestream.yml
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh \
+    && rm -f /app/public/litestream.yml /app/public/docker-entrypoint.sh
+
 USER node
 
 EXPOSE 8080
 
-CMD ["node", "public/server/server.js"]
+# Starts the app directly when replication is unconfigured, and under
+# litestream when it isn't. See docker-entrypoint.sh.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

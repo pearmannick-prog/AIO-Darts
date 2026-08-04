@@ -556,6 +556,48 @@ docker build -t aiodarts .
 docker run -p 8887:8080 -v /mnt/user/appdata/aiodarts:/data aiodarts
 ```
 
+### Backups, and moving between hosts
+
+The database is one file, and the cheap places to run an MVP all have ephemeral
+filesystems. **Litestream** replicates that file to Cloudflare R2 continuously
+and restores it on boot, which makes the host a preference rather than a
+commitment: a desktop, a free VM and a paid disk all become the same thing, and
+moving between them is restore-and-repoint rather than a migration.
+
+Set five variables and it turns on; leave them unset and the container starts
+exactly as it did before, with no replication and no complaints.
+
+```
+R2_BUCKET=aio-darts-backup
+R2_PATH=prod          # a prefix inside the bucket - prod and dev MUST differ
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=...  # an R2 API token scoped to that bucket only
+R2_SECRET_ACCESS_KEY=...
+```
+
+On boot the entrypoint restores **only** if there is no local database and the
+replica is non-empty, so an existing file is never overwritten by an older copy
+and a first-ever start against an empty bucket is not an error. The app then
+runs as a child of `litestream replicate -exec`, which is what makes shutdown
+correct: Litestream sees the process exit and flushes the final WAL segment
+instead of racing it.
+
+`sync-interval` is **10s**, not Litestream's 1s default. At 1s this would be
+roughly 2.6M Class A operations a month against R2's 1M free allowance, for a
+database that only takes a write burst when somebody finishes a match. The cost
+of the slower interval is at most ten seconds of darts in a hard crash.
+
+**Continuous replication is not the same as a backup.** It faithfully
+replicates a mistake, so `DROP TABLE` is on the replica within ten seconds. Keep
+a periodic snapshot as well - the single-file design makes that a one-liner -
+and test a restore occasionally, because an untested backup is a hypothesis.
+
+To move hosts: bring the new one up with the same five variables and no local
+database, let it restore, verify `/healthz` reports `accounts:true`, stop the
+old one, restore once more to pick up the last few seconds, then repoint DNS.
+Matches in progress are unaffected either way - they are peer-to-peer and do
+not touch the server.
+
 ### Persistent data
 
 The compose file bind-mounts a data directory to `/data` in the container.
@@ -629,6 +671,7 @@ that actually need relaying.
 | `SIGNALING_PATH` | `/signaling` | Path the WebSocket is served on. |
 | `SIGNALING_URL` | *(unset)* | Only to point players at a *different* signaling server. Leave unset for same-origin. |
 | `ACCOUNTS` | *(unset - accounts on)* | Set to `off` to run guests-only without opening a database. See below. |
+| `R2_BUCKET` / `R2_PATH` / `R2_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | *(unset)* | Continuous backup of the database to Cloudflare R2. See below. |
 | `EMAIL_API_KEY` | *(unset)* | Resend API key, for password reset mail. Unset = log the link instead. |
 | `EMAIL_FROM` | *(unset)* | From address, e.g. `AIO Darts <noreply@aiodarts.com>`. Must be a domain verified with the provider. |
 | `PUBLIC_URL` | *(unset)* | The site's own address, used to build reset links. |
