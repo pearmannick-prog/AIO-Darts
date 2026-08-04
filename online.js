@@ -96,6 +96,8 @@ const el = {
   waitingPanel: document.getElementById("online-waiting-panel"),
   gamePanel: document.getElementById("online-game-panel"),
   codeDisplay: document.getElementById("challenge-code-display"),
+  waitingTitle: document.getElementById("online-waiting-title"),
+  waitingNote: document.getElementById("online-waiting-note"),
   cancelBtn: document.getElementById("cancel-challenge-btn"),
 
   statusLabel: document.getElementById("online-status-label"),
@@ -673,11 +675,9 @@ el.createBtn.addEventListener("click", async () => {
   // the preview has no reason to keep running once a match is starting.
   stopDeviceCheck();
 
-  // Whatever ended the last match is no longer news.
-  el.setupNotice.classList.add("hidden");
-  el.setupPanel.classList.add("hidden");
-  el.waitingPanel.classList.remove("hidden");
-  setMatchChrome(true);
+  // The code doesn't exist until the server mints it, so the panel opens with
+  // an empty one and fills it in below.
+  showWaitingPanel("create");
 
   try {
     const code = await peerLink.createChallenge();
@@ -699,6 +699,49 @@ el.createBtn.addEventListener("click", async () => {
 // decides what that hides.
 function setMatchChrome(active) {
   document.body.classList.toggle("in-match", Boolean(active));
+}
+
+// One panel, three situations, and only one of them is "share this".
+//
+// Every route into a match goes through the same challenge code, deliberately:
+// an accepted lobby challenge mints an ordinary invite code and hands it to
+// both sides, so there is ONE connection path rather than a lobby-shaped one
+// and an invite-shaped one. That is worth keeping - but it is an
+// implementation detail, and showing a lobby player a code with "share this
+// with the person you're challenging" invites them to do something pointless
+// for a match that is already agreed. Worse, it reads as though the match has
+// not started, when in fact both sides are already connecting.
+//
+// So the mechanism stays and the wording adapts:
+//   create - the only case where a human needs the code. Show it, say share it.
+//   join   - they already have the code; showing it back confirms they typed
+//            the right one, but nobody is sharing anything.
+//   lobby  - both players are known. The code is noise; name the opponent
+//            instead, which is the thing the player actually cares about.
+function showWaitingPanel(mode, { code = "", opponent = "" } = {}) {
+  const lobby = mode === "lobby";
+
+  el.waitingTitle.textContent = lobby ? "Starting match…" : "Waiting for opponent…";
+
+  if (lobby) {
+    // textContent, never innerHTML - a display name is attacker-controlled and
+    // this is exactly the sink that made lobbyui.js a stored XSS once already.
+    el.waitingNote.textContent = opponent
+      ? `Connecting to ${opponent}…`
+      : "Connecting…";
+  } else if (mode === "join") {
+    el.waitingNote.textContent = "Joining challenge:";
+  } else {
+    el.waitingNote.textContent = "Share this code with the person you're challenging:";
+  }
+
+  el.codeDisplay.textContent = lobby ? "" : code;
+  el.codeDisplay.classList.toggle("hidden", lobby);
+
+  el.setupNotice.classList.add("hidden");
+  el.setupPanel.classList.add("hidden");
+  el.waitingPanel.classList.remove("hidden");
+  setMatchChrome(true);
 }
 
 // A match that never connects used to sit on "Waiting for opponent..." forever,
@@ -763,11 +806,9 @@ onMatchReady(async ({ code, role, opponent }) => {
   // at - a challenge can be accepted from anywhere in the app.
   el.tabOnline?.click();
 
-  el.setupNotice.classList.add("hidden");
-  el.setupPanel.classList.add("hidden");
-  el.waitingPanel.classList.remove("hidden");
-  el.codeDisplay.textContent = code;
-  setMatchChrome(true);
+  // No code on screen: both players are already known to each other, and the
+  // code is only the room they are about to meet in.
+  showWaitingPanel("lobby", { opponent: opponent?.displayName || online.oppName });
   startConnectWatchdog();
 
   try {
@@ -796,12 +837,7 @@ el.joinBtn.addEventListener("click", async () => {
   // the preview has no reason to keep running once a match is starting.
   stopDeviceCheck();
 
-  // Whatever ended the last match is no longer news.
-  el.setupNotice.classList.add("hidden");
-  el.setupPanel.classList.add("hidden");
-  el.waitingPanel.classList.remove("hidden");
-  el.codeDisplay.textContent = code.toUpperCase();
-  setMatchChrome(true);
+  showWaitingPanel("join", { code: code.toUpperCase() });
   // A code you were given is a code whose host is already sitting in the room,
   // so this side has no legitimate reason to wait indefinitely.
   startConnectWatchdog();
@@ -824,6 +860,13 @@ el.cancelBtn.addEventListener("click", () => {
   // the watchdog has to be disarmed here too - otherwise it fires later and
   // drops a "couldn't connect" notice on someone who already walked away.
   stopConnectWatchdog();
+  // A cancelled LOBBY match has to be reported, or the server keeps showing you
+  // as playing and nobody can challenge you again. Harmless on the invite-code
+  // path, where there is no lobbyCode and the server was never told anything.
+  if (online.lobbyCode) {
+    online.lobbyCode = null;
+    reportMatchOver();
+  }
   el.waitingPanel.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
   setMatchChrome(false);

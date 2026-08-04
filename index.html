@@ -2402,8 +2402,13 @@
 
       <!-- Waiting for opponent -->
       <div id="online-waiting-panel" class="panel hidden">
-        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Waiting for opponent…</h3>
-        <p>Share this code with the person you're challenging:</p>
+        <!-- Wording is set by online.js, because this one panel serves three
+             different situations and only ONE of them involves sharing
+             anything: creating an invite code. A lobby match already knows who
+             both players are, and joining a code means somebody already shared
+             it with you. See showWaitingPanel(). -->
+        <h3 id="online-waiting-title" style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Waiting for opponent…</h3>
+        <p id="online-waiting-note">Share this code with the person you're challenging:</p>
         <div id="challenge-code-display"></div>
         <button id="cancel-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Cancel</button>
       </div>
