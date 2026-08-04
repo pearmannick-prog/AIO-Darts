@@ -160,7 +160,18 @@ function throttleKey(req, email) {
   return `${ip}|${email}`;
 }
 
-function checkThrottle(key) {
+// Registration is throttled per IP ALONE, not per IP+email.
+//
+// The login key includes the address because the thing being guessed there is
+// one account's password. Registration is the opposite: the address is what an
+// attacker varies, because a 409 on a taken email says which addresses have
+// accounts. Keying on IP+email would hand out a fresh budget for every address
+// tried, which is no limit at all on the thing worth limiting.
+function registerThrottleKey(req) {
+  return `${req.socket.remoteAddress || "?"}|register`;
+}
+
+function checkThrottle(key, message = "Too many sign-in attempts. Wait a few minutes and try again.") {
   const record = attempts.get(key);
   if (!record) return;
   if (Date.now() - record.first > ATTEMPT_WINDOW_MS) {
@@ -168,7 +179,7 @@ function checkThrottle(key) {
     return;
   }
   if (record.count >= ATTEMPT_LIMIT) {
-    throw new ApiError(429, "Too many sign-in attempts. Wait a few minutes and try again.");
+    throw new ApiError(429, message);
   }
 }
 
@@ -225,6 +236,14 @@ function personalBestsFrom(stats) {
 // ---------------------------------------------------------------------------
 const routes = {
   "POST /api/auth/register": async (req, res) => {
+    // Counted BEFORE the work and on every attempt, successful or not - the
+    // budget being spent here is "requests from this address", and a successful
+    // signup consumes it just as a probe does. recordFailure is the counter;
+    // the name is about login, where the two happen to be the same thing.
+    const registerKey = registerThrottleKey(req);
+    checkThrottle(registerKey, "Too many sign-up attempts. Wait a few minutes and try again.");
+    recordFailure(registerKey);
+
     const body = await readJsonBody(req);
     const email = normalizeEmail(body.email);
     const displayName = normalizeDisplayName(body.displayName);

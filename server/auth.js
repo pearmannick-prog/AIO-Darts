@@ -15,7 +15,7 @@
 // long enough to make guessing expensive - that is also why registration and
 // login are the only two places this runs.
 
-import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { randomBytes, scrypt, timingSafeEqual, createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { getDatabase } from "./db.js";
 
@@ -51,6 +51,26 @@ export async function verifyPassword(password, hash, salt) {
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
+// STORED HASHED. The raw token exists in exactly one place - the cookie in the
+// browser it was issued to - and the database holds only its SHA-256.
+//
+// This used to store the token as sent. The consequence was that a stolen copy
+// of the database was a stolen copy of every LIVE SESSION: paste a value into a
+// cookie and you are that user for up to thirty days, with no password needed,
+// no reset triggered, and nothing anywhere to notice. Passwords were already
+// safe behind scrypt, so the sessions table was the softest thing in the file.
+//
+// SHA-256 rather than scrypt, for the same reason as the reset tokens: this is
+// 256 bits of randomness, not a password. There is no dictionary to try, so
+// there is nothing for a slow hash to slow down - and a slow hash here would be
+// paid on every single authenticated request.
+//
+// Lookup is still an exact match on a 64-character hex string, so nothing about
+// the schema or the queries' shape changes.
+function hashToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export function createSession(userId, userAgent) {
   const token = randomBytes(TOKEN_BYTES).toString("hex");
   const now = new Date();
@@ -61,8 +81,10 @@ export function createSession(userId, userAgent) {
       `INSERT INTO sessions (token, user_id, created_at, expires_at, user_agent)
        VALUES (?, ?, ?, ?, ?)`
     )
-    .run(token, userId, now.toISOString(), expires.toISOString(), (userAgent || "").slice(0, 200));
+    .run(hashToken(token), userId, now.toISOString(), expires.toISOString(), (userAgent || "").slice(0, 200));
 
+  // The RAW token goes back to the caller, and from there into the cookie. It
+  // is never written down here.
   return { token, expires };
 }
 
@@ -79,7 +101,7 @@ export function userForRequest(req) {
        JOIN users u ON u.id = s.user_id
        WHERE s.token = ? AND s.expires_at > ?`
     )
-    .get(token, new Date().toISOString());
+    .get(hashToken(token), new Date().toISOString());
 
   return row || null;
 }
@@ -87,7 +109,7 @@ export function userForRequest(req) {
 export function destroySession(req) {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (!token) return;
-  getDatabase().prepare("DELETE FROM sessions WHERE token = ?").run(token);
+  getDatabase().prepare("DELETE FROM sessions WHERE token = ?").run(hashToken(token));
 }
 
 // Expired rows are dead weight that nothing reads (userForRequest filters them
