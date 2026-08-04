@@ -256,19 +256,52 @@ for (const [name, { tab }] of Object.entries(MODES)) {
 let currentMode = Object.entries(MODES)
   .find(([, { tab }]) => tab?.classList.contains("active"))?.[0] || "local";
 
-function switchTab(which) {
+// Is a local game in progress? Asked rather than inspected, so this module
+// never reaches into game.js's state or its DOM - game.js answers by filling
+// in the event it is handed. Synchronous because the answer decides whether a
+// tab click happens at all.
+function localMatchInProgress() {
+  const query = new CustomEvent("aio-query-local-match", { detail: { active: false } });
+  document.dispatchEvent(query);
+  return query.detail.active;
+}
+
+// `ask` is false for switches the player has already committed to elsewhere -
+// accepting a lobby challenge is itself the decision to leave whatever you
+// were doing, and asking again mid-handoff would be a dialog nobody asked for.
+function switchTab(which, { ask = true } = {}) {
   if (which === currentMode) return;
   const from = currentMode;
-  currentMode = which;
 
   // LEAVING A MATCH ENDS IT. A match you have walked away from is over in every
   // sense the other player recognises - and leaving it running in a hidden
   // panel is what made a dead local scoreboard look like a broken online one.
   //
+  // But it is destructive, and unlike the End Match button - which arms and
+  // needs a second tap - a tab is one click away at all times, including the
+  // account chip in the header. So it asks first.
+  //
+  // A modal, despite the End Match button deliberately avoiding one. That
+  // choice was about a control you press WHILE SCORING, where a dialog is in
+  // the way. This is navigation, where "leave without saving?" is the expected
+  // pattern - and it has to be synchronous, because the answer decides whether
+  // the tab switch happens at all.
+  const leavingOnline = from === "online" && online.active;
+  const leavingLocal = from === "local" && localMatchInProgress();
+
+  if (ask && (leavingOnline || leavingLocal)) {
+    const message = leavingOnline
+      ? "Leaving ends this match for you and your opponent. Leave anyway?"
+      : "Leaving ends this game and it won't be saved. Leave anyway?";
+    if (!window.confirm(message)) return;
+  }
+
+  currentMode = which;
+
   // Online is torn down here rather than by an event, because teardownMatch
   // must tell the opponent BEFORE the connection closes or there is nothing
   // left to send it on.
-  if (from === "online" && online.active) {
+  if (leavingOnline) {
     peerLink?.sendGameMessage({ type: "end_match" });
     teardownMatch("You left the match.");
   }
@@ -899,8 +932,10 @@ onMatchReady(async ({ code, role, opponent }) => {
   online.lobbyCode = code;
 
   // Make sure the tab the match is about to appear on is the one being looked
-  // at - a challenge can be accepted from anywhere in the app.
-  el.tabOnline?.click();
+  // at - a challenge can be accepted from anywhere in the app. No confirm:
+  // accepting the challenge was the decision, and a local game left running
+  // is ended by the switch exactly as if the tab had been clicked by hand.
+  switchTab("online", { ask: false });
 
   // No code on screen: both players are already known to each other, and the
   // code is only the room they are about to meet in.

@@ -248,6 +248,13 @@ document.addEventListener("aio-mode-left", (event) => {
   abandonGame();
 });
 
+// Answers "is a local game in progress?" for the leave confirmation. online.js
+// owns the tabs but must not own this - it asks, and this fills in the answer.
+document.addEventListener("aio-query-local-match", (event) => {
+  if (!event.detail) return;
+  event.detail.active = state.players.length > 0 && !state.gameOver;
+});
+
 function abandonGame() {
   cancelBot();
   // An abandoned match is not saved. Half a game would drag every average down
