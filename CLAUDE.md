@@ -186,6 +186,17 @@ left to send it on). `media_state` also rides the channel but is intercepted in
 about it. `hello` and `match_config` also carry the sender's display name, so a
 saved match can name the opponent.
 
+**Rematch is the only other handshake**: `rematch_offer` → `rematch_accept` or
+`rematch_decline`. It is mutual on purpose and must stay that way — a one-sided
+rematch restarts the scoreboard of someone who has already walked away, and they
+return to a match they never agreed to. The offer carries the `legs` rather than
+assuming the last ones, which costs nothing and is what lets "rematch, but
+Cricket this time" become a picker rather than a protocol change. It also
+carries `startSeat`, decided by the offerer and adopted by the accepter, so the
+opening throw alternates between matches without two independently-maintained
+counters that can disagree. No reconnection is involved: both sides are still
+connected when a match ends, which is the entire speed of the feature.
+
 **Adding a game mode does not add a peer message.** Bermuda Triangle rides the
 existing `dart` message: a dart is a dart, and the pure rules on each side decide
 what it meant. Both browsers computed the same halving independently from the same

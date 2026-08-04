@@ -76,6 +76,9 @@ const online = {
   // The lobby's code for this match, when it started from a challenge. Null for
   // an invite-code match, which nobody can be watching.
   lobbyCode: null,
+  // Which absolute seat opens. Flipped by each rematch so the same player
+  // does not always throw first; sent with the offer so both sides agree.
+  startSeat: 0,
 };
 
 // ---------- DOM ----------
@@ -142,6 +145,12 @@ const el = {
   cricketBoard: document.getElementById("online-cricket-board"),
   matchBar: document.getElementById("online-match-bar"),
   nextLegBtn: document.getElementById("online-next-leg-btn"),
+  rematchRow: document.getElementById("online-rematch-row"),
+  rematchBtn: document.getElementById("online-rematch-btn"),
+  rematchStatus: document.getElementById("online-rematch-status"),
+  rematchChoice: document.getElementById("online-rematch-choice"),
+  rematchAccept: document.getElementById("online-rematch-accept"),
+  rematchDecline: document.getElementById("online-rematch-decline"),
   manualPerdart: document.getElementById("online-manual-perdart"),
   manualQuickTotal: document.getElementById("online-manual-quicktotal"),
   manualRing: document.getElementById("online-manual-ring"),
@@ -1056,6 +1065,8 @@ function teardownMatch(message) {
   online.recorder = null;
   online.oppName = "Opponent";
   online.lobbyCode = null;
+  online.startSeat = 0;
+  resetRematch();
   stopConnectWatchdog();
   stopHello();
 
@@ -1065,6 +1076,7 @@ function teardownMatch(message) {
 
   resetAv();
 
+  el.rematchRow?.classList.add("hidden");
   el.gamePanel.classList.add("hidden");
   hideWaitingPanel();
   el.winnerBanner.classList.add("hidden");
@@ -1181,6 +1193,40 @@ function wirePeerLink() {
       return;
     }
 
+    // ---- Rematch ----
+    // The only handshake in the protocol besides the opening one, and it is a
+    // handshake for the same reason: BOTH sides have to agree before either
+    // starts, or one player's scoreboard changes underneath them for a match
+    // they never accepted.
+    //
+    // The offer carries the legs rather than assuming the last ones, which
+    // costs nothing now and is what will let "rematch, but Cricket this time"
+    // be a picker rather than a protocol change.
+    if (msg.type === "rematch_offer") {
+      if (!online.gameOver) return;
+      rematch.incoming = normalizeLegList(msg.legs);
+      rematch.startSeat = Number(msg.startSeat) === 1 ? 1 : 0;
+      renderRematch();
+      return;
+    }
+
+    if (msg.type === "rematch_accept") {
+      // Only meaningful to the side that offered, and only once.
+      if (!rematch.offered) return;
+      const legs = rematch.offered;
+      const startSeat = rematch.startSeat;
+      resetRematch();
+      beginRematch(legs, startSeat);
+      return;
+    }
+
+    if (msg.type === "rematch_decline") {
+      resetRematch();
+      rematch.notice = "Opponent declined the rematch.";
+      renderRematch();
+      return;
+    }
+
     if (msg.type === "dart") {
       applyThrow("opp", msg.segment);
     } else if (msg.type === "end_turn") {
@@ -1230,6 +1276,99 @@ function sendHelloUntilStarted(attempt = 0) {
 function stopHello() {
   clearTimeout(helloTimer);
   helloTimer = null;
+}
+
+// ---------- Rematch ----------
+// Same opponent, same connection, no signaling and no lobby round trip: when a
+// match ends both sides are still connected, so a rematch is a handshake rather
+// than a reconnection. That is the whole speed of it.
+//
+// MUTUAL, ALWAYS. One side offers and nothing happens until the other accepts.
+// A one-sided rematch would restart the scoreboard of somebody who had already
+// walked away, and they would come back to a match in progress they never
+// agreed to.
+const rematch = {
+  offered: null,   // legs THIS side proposed, waiting on an answer
+  incoming: null,  // legs the opponent proposed, waiting on ours
+  startSeat: 0,    // who throws first, decided by the offerer so both agree
+  notice: "",      // a declined offer, or one that outlived its match
+};
+
+function resetRematch() {
+  rematch.offered = null;
+  rematch.incoming = null;
+  rematch.notice = "";
+}
+
+// Legs arriving from the peer are normalised the same way match_config's are -
+// they crossed a wire, so they are input rather than data.
+function normalizeLegList(legs) {
+  return Array.isArray(legs) && legs.length ? legs.map(normalizeLeg) : null;
+}
+
+el.rematchBtn?.addEventListener("click", () => {
+  if (!online.gameOver || rematch.offered) return;
+
+  const legs = online.match?.legs;
+  if (!legs?.length) return;
+
+  // Who opens alternates every rematch. Decided HERE and sent, rather than
+  // computed on both sides from a counter each maintains alone - two counters
+  // that must agree are two counters that can disagree.
+  rematch.startSeat = online.startSeat === 0 ? 1 : 0;
+  rematch.offered = legs;
+  rematch.notice = "";
+  peerLink?.sendGameMessage({ type: "rematch_offer", legs, startSeat: rematch.startSeat });
+  renderRematch();
+});
+
+el.rematchAccept?.addEventListener("click", () => {
+  if (!rematch.incoming) return;
+  const legs = rematch.incoming;
+  const startSeat = rematch.startSeat;
+  peerLink?.sendGameMessage({ type: "rematch_accept" });
+  resetRematch();
+  beginRematch(legs, startSeat);
+});
+
+el.rematchDecline?.addEventListener("click", () => {
+  if (!rematch.incoming) return;
+  peerLink?.sendGameMessage({ type: "rematch_decline" });
+  resetRematch();
+  rematch.notice = "Rematch declined.";
+  renderRematch();
+});
+
+// Starts the agreed match on this side. Both sides run this from the same two
+// values, which is the determinism guarantee doing its usual work - neither is
+// told the resulting state.
+function beginRematch(legs, startSeat) {
+  online.startSeat = startSeat;
+  online.recorder = null; // the finished match was saved and cleared already
+  startOnlineGame(online.role, legs);
+  renderOnline();
+  renderRematch();
+}
+
+function renderRematch() {
+  if (!el.rematchRow) return;
+
+  // Only once the whole match is decided, and only while still connected.
+  const available = Boolean(online.active && online.gameOver && online.match?.over);
+  el.rematchRow.classList.toggle("hidden", !available);
+  if (!available) return;
+
+  const waiting = Boolean(rematch.offered);
+  const asked = Boolean(rematch.incoming);
+
+  el.rematchBtn.classList.toggle("hidden", waiting || asked);
+  el.rematchBtn.disabled = waiting;
+  el.rematchChoice.classList.toggle("hidden", !asked);
+
+  el.rematchStatus.textContent =
+    asked ? `${online.oppName} wants a rematch — same format.`
+    : waiting ? "Waiting for your opponent to accept…"
+    : rematch.notice;
 }
 
 function statusText(status) {
@@ -1341,7 +1480,10 @@ function startOnlineLeg() {
 
   // Throw alternates each leg, and both sides compute it from the same
   // absolute index so they never disagree about whose turn it is.
-  const starter = startingPlayerForLeg(online.match.currentLeg, 2);
+  // Offset by whichever seat opens this match, so a rematch alternates the
+  // first throw as well as the legs within it. Both sides hold the same
+  // startSeat - it came with the offer - so they agree without being told.
+  const starter = startingPlayerForLeg(online.match.currentLeg + online.startSeat, 2);
   online.activeSide = starter === online.myIndex ? "me" : "opp";
 
   online.gameOver = false;
@@ -2300,6 +2442,7 @@ function renderOnline() {
 
   el.winnerBanner.classList.toggle("hidden", !online.gameOver);
   if (online.gameOver) el.winnerBanner.textContent = onlineBannerText();
+  renderRematch();
 
   // Manual entry stays clickable at all times - a hard CSS block here was
   // indistinguishable from a bug if the visual state ever fell out of sync

@@ -52,6 +52,10 @@ const state = {
   throwLog: [], // {playerName, label, value, remainingAfter, bust}
   // One entry per seat: null for a person, a skill level for a computer.
   bots: [],
+  // Which seat is the account holder, and how many rematches deep this is.
+  // The latter alternates who throws first between matches.
+  selfSeat: 0,
+  rematchCount: 0,
   // Records every dart of the match for history and statistics. Null until a
   // match starts, and deliberately never consulted by any scoring code - it
   // only ever receives what the rules have already decided. See
@@ -91,6 +95,7 @@ const el = {
   medleyPreset: document.getElementById("medley-preset"),
   matchBar: document.getElementById("match-bar"),
   nextLegBtn: document.getElementById("next-leg-btn"),
+  rematchBtn: document.getElementById("rematch-btn"),
   cricketBoard: document.getElementById("cricket-board"),
   scoreBlock: document.getElementById("score-block"),
   winnerBanner: document.getElementById("winner-banner"),
@@ -210,6 +215,9 @@ el.startGameBtn.addEventListener("click", () => {
 
   // A bot is never "you", however the seat is named.
   state.bots = kinds.map((kind) => (kind === "human" ? null : skillFor(kind)));
+  // Kept so a rematch rebuilds the recorder with the same seat marked as you,
+  // rather than re-deriving it from a form that may since have been edited.
+  state.selfSeat = selfSeat;
 
   state.recorder = createRecorder({
     // A match against a computer is practice, and saying so in the record is
@@ -224,6 +232,15 @@ el.startGameBtn.addEventListener("click", () => {
     })),
   });
 
+  state.rematchCount = 0;
+  beginMatch(names, legs);
+});
+
+// The part of starting a match that a rematch repeats. Split out so the two
+// cannot drift: everything a rematch needs is already in `state` when a match
+// ends - the names, the bots, the format - so it replays this rather than
+// reading the setup form again.
+function beginMatch(names, legs) {
   startLeg(names);
   undoStack = [];
 
@@ -231,6 +248,38 @@ el.startGameBtn.addEventListener("click", () => {
   el.gamePanel.classList.remove("hidden");
   el.winnerBanner.classList.add("hidden");
   render();
+}
+
+// Same players, same format, no setup screen. "New game" is deliberately left
+// as the change-the-format path: it returns to setup with the names and the
+// format still filled in, so switching to Cricket is two clicks and a rematch
+// is none.
+el.rematchBtn?.addEventListener("click", () => {
+  if (!state.gameOver || state.players.length === 0) return;
+
+  const names = state.playerNames;
+  const legs = state.match.legs;
+
+  // Who throws first alternates between rematches. Within a match the leg
+  // index already alternates it; across matches nothing did, so the same seat
+  // opened every single time - a real advantage in a short format, and free to
+  // fix.
+  state.rematchCount = (state.rematchCount || 0) + 1;
+  state.match = createMatch(legs, names.length);
+
+  // A fresh recorder, because this is a new match rather than a continuation.
+  // The finished one has already been saved and cleared by the end of the last
+  // leg - see finishMatch.
+  state.recorder = createRecorder({
+    mode: state.bots.some(Boolean) ? "practice" : "local",
+    format: legs,
+    players: names.map((name, seat) => ({
+      displayName: name,
+      isSelf: seat === state.selfSeat && !state.bots[seat],
+    })),
+  });
+
+  beginMatch(names, legs);
 });
 
 el.newGameBtn.addEventListener("click", () => abandonGame());
@@ -409,7 +458,11 @@ function startLeg(names) {
     // starts open and it never matters again.
     return { name, remaining: start, opened: rules.in !== "double" };
   });
-  state.currentPlayerIndex = startingPlayerForLeg(state.match.currentLeg, names.length);
+  // Offset by the rematch count so the opening throw alternates between
+  // MATCHES as well as between legs. Without it the same seat opened every
+  // rematch, which is a real advantage in a short format and free to fix.
+  state.currentPlayerIndex = startingPlayerForLeg(
+    state.match.currentLeg + (state.rematchCount || 0), names.length);
   state.dartsThisTurn = [];
   state.startOfTurnRemaining = start;
   state.gameOver = false;
@@ -603,6 +656,9 @@ function renderMatchBar() {
 
   el.matchBar.classList.toggle("hidden", !multiLeg);
   el.nextLegBtn?.classList.toggle("hidden", !state.legOver);
+  // Next leg and Rematch are never both offered: one continues this match,
+  // the other starts another, and only one of those is possible at a time.
+  el.rematchBtn?.classList.toggle("hidden", !(state.gameOver && state.match?.over));
 
   if (!multiLeg) return;
 

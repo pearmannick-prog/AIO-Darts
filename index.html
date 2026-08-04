@@ -1586,6 +1586,19 @@
     padding-top: 16px;
     border-top: 1px solid rgba(27,26,20,0.12);
   }
+  /* The rematch row sits under the winner banner: a button, then whatever the
+     handshake has to say, then Accept/Decline when it is this player's move.
+     Only ever one of those states is on screen at a time - see renderRematch. */
+  #online-rematch-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 10px 0 14px;
+  }
+  #online-rematch-status { font-size: 13px; opacity: 0.8; }
+  #online-rematch-choice { display: inline-flex; gap: 8px; align-items: center; }
+
   .account-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   /* A secondary action that shouldn't compete with the submit button beside
      it: "Forgot password?" is the escape hatch, not the thing most people are
@@ -2169,6 +2182,10 @@
         </div>
         <div id="winner-banner" class="hidden"></div>
         <button type="button" id="next-leg-btn" class="btn-primary next-leg-btn hidden">Next leg &rarr;</button>
+        <!-- Same players, same format, no setup screen. "New game" beside it is
+             the change-the-format path: it returns to setup with the names and
+             format still filled in. -->
+        <button type="button" id="rematch-btn" class="btn-primary next-leg-btn hidden">Rematch &orarr;</button>
         <div id="player-tabs"></div>
 
         <div class="game-top">
@@ -2523,6 +2540,19 @@
         </div>
 
         <button type="button" id="online-next-leg-btn" class="btn-primary next-leg-btn hidden">Next leg &rarr;</button>
+
+        <!-- Rematch, over the connection that is still open. Mutual by design:
+             one side offers, the other accepts, and nothing starts until it
+             does - a match the other player never agreed to would leave them
+             staring at a scoreboard that changed by itself. -->
+        <div id="online-rematch-row" class="hidden">
+          <button type="button" id="online-rematch-btn" class="btn-primary next-leg-btn">Offer rematch &orarr;</button>
+          <span id="online-rematch-status"></span>
+          <span id="online-rematch-choice" class="hidden">
+            <button type="button" id="online-rematch-accept" class="btn-primary next-leg-btn">Accept</button>
+            <button type="button" id="online-rematch-decline" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Decline</button>
+          </span>
+        </div>
 
         <div id="online-cricket-board" class="cricket-board hidden"></div>
 
