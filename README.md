@@ -587,10 +587,31 @@ roughly 2.6M Class A operations a month against R2's 1M free allowance, for a
 database that only takes a write burst when somebody finishes a match. The cost
 of the slower interval is at most ten seconds of darts in a hard crash.
 
-**Continuous replication is not the same as a backup.** It faithfully
-replicates a mistake, so `DROP TABLE` is on the replica within ten seconds. Keep
-a periodic snapshot as well - the single-file design makes that a one-liner -
-and test a restore occasionally, because an untested backup is a hypothesis.
+**Continuous replication is not the same as a backup.** It protects against
+losing the machine, not against losing the data: a bad `DELETE` is on the
+replica within ten seconds, and the good copy is gone.
+
+Snapshots are what close that gap, and they are configured in `litestream.yml`
+rather than run as a separate job:
+
+```yaml
+snapshot:
+  interval: 24h
+  retention: 720h   # 30 days
+```
+
+A full snapshot every 24h is Litestream's default. Keeping them is not -
+retention also defaults to 24h, so yesterday's snapshot is deleted before it is
+a day old. Thirty days is the actual protection, and it gives point-in-time
+restore anywhere in that window (`litestream restore -timestamp ...`).
+
+The cost is storage, and it scales with the database: thirty snapshots of a 5MB
+file is 150MB against a 10GB free tier and irrelevant; thirty of a 400MB file
+would be 12GB and is not. Revisit the number if the bucket approaches the free
+tier - the window is a judgement about how long a mistake can go unnoticed.
+
+**Test a restore occasionally**, because an untested backup is a hypothesis. On
+a host with an ephemeral disk you get one free with every deploy.
 
 To move hosts: bring the new one up with the same five variables and no local
 database, let it restore, verify `/healthz` reports `accounts:true`, stop the

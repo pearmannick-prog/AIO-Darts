@@ -316,8 +316,16 @@ by an older copy; it then runs the app as a child of `litestream replicate
 racing it. Unset `R2_BUCKET` and the entrypoint exec's node directly — a missing
 backup target is not a reason to refuse to serve darts. `sync-interval` is 10s
 rather than the 1s default, because 1s is ~2.6M R2 Class A operations a month
-against a 1M free allowance. Replication is NOT a backup: it replicates a
-`DROP TABLE` just as faithfully, so keep periodic snapshots as well.
+against a 1M free allowance.
+
+Replication protects against losing the MACHINE, not the DATA — it replicates a
+bad `DELETE` just as faithfully. Snapshots close that, and they are config
+rather than a separate job: `snapshot.interval` defaults to 24h, so nightly
+snapshots already happened, but `snapshot.retention` also defaults to 24h,
+which threw each one away before it was useful. It is set to 720h, giving
+point-in-time restore across thirty days. That number is a storage judgement —
+thirty snapshots of a 400MB database would exceed R2's free tier — so revisit
+it as the database grows rather than treating it as a constant.
 
 ## Conventions worth preserving
 

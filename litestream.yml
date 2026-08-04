@@ -13,6 +13,28 @@
 # thing, and moving between them is restore-and-repoint rather than a migration.
 # The backup strategy and the migration strategy are one mechanism.
 
+# Snapshots, which are what makes this a backup rather than only a replica.
+#
+# Continuous replication protects against losing the MACHINE. It does not
+# protect against losing the DATA, because it replicates a mistake just as
+# faithfully as anything else - a bad DELETE is on the replica within ten
+# seconds and the good copy is gone.
+#
+# A full snapshot every 24h is Litestream's default and already happened. What
+# did not was keeping them: retention also defaults to 24h, so yesterday's
+# snapshot was deleted before it was a day old, and anything noticed later than
+# that was unrecoverable. Thirty days is the actual protection.
+#
+# THE COST IS STORAGE, and it scales with the database. Thirty daily snapshots
+# of a 5MB database is 150MB against R2's 10GB free tier - irrelevant. Thirty
+# of a 400MB database (roughly ten thousand matches) would be 12GB, which is
+# not. Revisit this number if the bucket ever approaches the free tier; the
+# window is a judgement about how long a mistake can go unnoticed, not a
+# constant.
+snapshot:
+  interval: 24h
+  retention: 720h
+
 dbs:
   - path: ${DATA_DIR}/aio-darts.db
     replicas:
