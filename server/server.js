@@ -143,7 +143,71 @@ async function initDatabase() {
 //                   traffic (~0.5-1 Mbit/s each way). See the README before
 //                   enabling TURN on a metered connection.
 //                   Needs TURN_USERNAME and TURN_CREDENTIAL too.
-function buildConfig() {
+//
+//   TURN_KEY_ID + TURN_KEY_API_TOKEN
+//                 - Cloudflare Realtime TURN instead of the static pair above.
+//                   Cloudflare does NOT issue long-lived credentials: you hold
+//                   a key and an API token, and mint short-lived ones per
+//                   session. So the API token stays here, on the server, and
+//                   only the minted credential is ever sent to a browser -
+//                   which is the entire point of the design and why it cannot
+//                   be expressed as TURN_USERNAME/TURN_CREDENTIAL.
+
+// Cloudflare's minted ICE servers, cached. Refreshed before expiry rather than
+// fetched per request: /config.json is hit on every page load, and a round trip
+// to Cloudflare on each one would add latency to startup and invite rate
+// limiting for a value that is good for hours.
+const TURN_TTL_SECONDS = 86_400;      // what we ask Cloudflare for
+const TURN_REFRESH_MARGIN_MS = 3_600_000; // re-mint with an hour to spare
+let turnCache = { iceServers: null, expiresAt: 0 };
+
+async function cloudflareIceServers() {
+  const keyId = process.env.TURN_KEY_ID;
+  const token = process.env.TURN_KEY_API_TOKEN;
+  if (!keyId || !token) return null;
+
+  if (turnCache.iceServers && Date.now() < turnCache.expiresAt) {
+    return turnCache.iceServers;
+  }
+
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ttl: TURN_TTL_SECONDS }),
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    const iceServers = body?.iceServers
+      ? [].concat(body.iceServers)
+      : null;
+    if (!iceServers?.length) throw new Error("no iceServers in response");
+
+    turnCache = {
+      iceServers,
+      expiresAt: Date.now() + TURN_TTL_SECONDS * 1000 - TURN_REFRESH_MARGIN_MS,
+    };
+    return iceServers;
+  } catch (err) {
+    // Never fatal. A TURN outage must not stop the app serving darts: most
+    // players connect directly and never need a relay, and the ones who do get
+    // the same failure they would have had with no TURN configured at all.
+    // Deliberately does not clear a cached value - a stale credential that
+    // still has hours left is far better than none.
+    console.warn(`TURN credentials could not be minted: ${err.message}`);
+    return turnCache.iceServers;
+  }
+}
+
+async function buildConfig() {
   const stunUrls = (process.env.STUN_URLS || "stun:stun.l.google.com:19302")
     .split(",")
     .map((u) => u.trim())
@@ -158,6 +222,12 @@ function buildConfig() {
       credential: process.env.TURN_CREDENTIAL || undefined,
     });
   }
+
+  // Cloudflare's minted servers come with their own urls, username and
+  // credential, so they are appended whole rather than merged with anything.
+  // Both can be configured at once; a browser simply tries all of them.
+  const cloudflare = await cloudflareIceServers();
+  if (cloudflare) iceServers.push(...cloudflare);
 
   return {
     // Empty string means "same origin" - the front-end fills it in itself.
@@ -327,7 +397,7 @@ const httpServer = createServer(async (req, res) => {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
       });
-      res.end(JSON.stringify(buildConfig()));
+      res.end(JSON.stringify(await buildConfig()));
       return;
     }
 

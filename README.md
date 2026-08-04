@@ -610,7 +610,22 @@ Set them in `docker-compose.yml` under the `darts` service.
 | `PORT` | `8080` | Port inside the container. |
 | `STUN_URLS` | Google's public STUN | Comma-separated STUN servers. |
 | `TURN_URL` | *(unset)* | TURN relay address - see below. |
-| `TURN_USERNAME` / `TURN_CREDENTIAL` | *(unset)* | TURN credentials. |
+| `TURN_USERNAME` / `TURN_CREDENTIAL` | *(unset)* | TURN credentials, for a relay that issues static ones. |
+| `TURN_KEY_ID` / `TURN_KEY_API_TOKEN` | *(unset)* | Cloudflare Realtime TURN. See below. |
+
+**Cloudflare Realtime TURN** doesn't issue static credentials, so it can't use
+the `TURN_USERNAME`/`TURN_CREDENTIAL` pair: you hold a key and an API token, and
+the server mints short-lived credentials per session. Create a TURN app in the
+Cloudflare dashboard, then set `TURN_KEY_ID` and `TURN_KEY_API_TOKEN`. **The API
+token stays on the server** - only the minted credential is ever sent to a
+browser, which is the whole point of the design. Credentials are cached and
+re-minted an hour before they expire, so `/config.json` doesn't call Cloudflare
+on every page load. If minting fails the app logs it and carries on with
+whatever STUN is configured: players who could connect directly still can.
+
+Free tier is 1,000 GB, which for scoring alone is unreachable - a dart is a few
+bytes. Camera and mic are what consume it, and only for the minority of matches
+that actually need relaying.
 | `SIGNALING_PATH` | `/signaling` | Path the WebSocket is served on. |
 | `SIGNALING_URL` | *(unset)* | Only to point players at a *different* signaling server. Leave unset for same-origin. |
 | `ACCOUNTS` | *(unset - accounts on)* | Set to `off` to run guests-only without opening a database. See below. |
