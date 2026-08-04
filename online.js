@@ -251,7 +251,33 @@ for (const [name, { tab }] of Object.entries(MODES)) {
   tab?.addEventListener("click", () => switchTab(name));
 }
 
+// Which mode is showing. Tracked rather than read back off the DOM so that
+// "am I leaving a match?" is answered before anything has moved.
+let currentMode = Object.entries(MODES)
+  .find(([, { tab }]) => tab?.classList.contains("active"))?.[0] || "local";
+
 function switchTab(which) {
+  if (which === currentMode) return;
+  const from = currentMode;
+  currentMode = which;
+
+  // LEAVING A MATCH ENDS IT. A match you have walked away from is over in every
+  // sense the other player recognises - and leaving it running in a hidden
+  // panel is what made a dead local scoreboard look like a broken online one.
+  //
+  // Online is torn down here rather than by an event, because teardownMatch
+  // must tell the opponent BEFORE the connection closes or there is nothing
+  // left to send it on.
+  if (from === "online" && online.active) {
+    peerLink?.sendGameMessage({ type: "end_match" });
+    teardownMatch("You left the match.");
+  }
+
+  // Local play is game.js's to end. Announced rather than called, so the two
+  // controllers stay independent - the same reason match chrome is a body
+  // class rather than a cross-module call.
+  document.dispatchEvent(new CustomEvent("aio-mode-left", { detail: { from, to: which } }));
+
   for (const [name, { tab, panel }] of Object.entries(MODES)) {
     tab?.classList.toggle("active", name === which);
     panel?.classList.toggle("hidden", name !== which);

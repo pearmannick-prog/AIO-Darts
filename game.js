@@ -233,11 +233,33 @@ el.startGameBtn.addEventListener("click", () => {
   render();
 });
 
-el.newGameBtn.addEventListener("click", () => {
+el.newGameBtn.addEventListener("click", () => abandonGame());
+
+// Leaving the Local Play tab ends the local game, the same way leaving an
+// online match ends that. A game running on a tab nobody is looking at is not
+// paused, it is abandoned - and leaving it there is what let a dead scoreboard
+// sit around looking like a live one that had stopped working.
+//
+// online.js owns the tabs and announces the change; this module decides what
+// leaving means for its own half, so neither has to know about the other.
+document.addEventListener("aio-mode-left", (event) => {
+  if (event.detail?.from !== "local") return;
+  if (state.players.length === 0) return;
+  abandonGame();
+});
+
+function abandonGame() {
   cancelBot();
+  // An abandoned match is not saved. Half a game would drag every average down
+  // with darts that were never a real attempt at a finish - the same rule
+  // online.js applies when a match is walked out of.
+  state.recorder = null;
+  state.players = [];
+  state.gameOver = false;
+  undoStack = [];
   el.gamePanel.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
-});
+}
 
 // ---------- Bluetooth connection ----------
 el.connectBtn.addEventListener("click", async () => {
