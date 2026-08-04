@@ -58,6 +58,27 @@ ENV PORT=8080
 # loudly, reports accounts:false on /healthz, and carries on.
 ENV DATA_DIR=/app/data
 
+# Runs as an unprivileged user, not root.
+#
+# This matters most for the deployment this project is most likely to have: a
+# container on somebody's own desktop or NAS, exposed to the internet. Root in
+# a container is not root on the host, but it is one kernel bug or one careless
+# `--privileged` away from being exactly that - and unlike a cloud VM, the host
+# here is the machine with the owner's personal files on it.
+#
+# `node` (uid/gid 1000) already exists in the official image. DATA_DIR is
+# created and handed over at build time, because the running process no longer
+# has the rights to create it under /app.
+#
+# A BIND MOUNT overrides all of this: the host directory's ownership is what
+# applies, so it must be readable and writable by uid 1000 -
+#   sudo chown -R 1000:1000 /path/on/host
+# or set `user:` in compose to match whoever owns it. If you get this wrong the
+# app does not crash: it logs that DATA_DIR is unusable, reports
+# accounts:false, and keeps serving darts.
+RUN mkdir -p /app/data && chown -R node:node /app/data
+USER node
+
 EXPOSE 8080
 
 CMD ["node", "public/server/server.js"]

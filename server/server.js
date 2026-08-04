@@ -56,6 +56,27 @@ const LOBBY_PATH = process.env.LOBBY_PATH || "/lobby";
 // disk and point DATA_DIR at it. See render.yaml.
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 
+// ACCOUNTS=off turns the accounts half of the app off DELIBERATELY, without
+// touching the database or the disk.
+//
+// This exists because "no persistent disk" and "no accounts" are not the same
+// state, and the difference is dangerous. On an ephemeral filesystem the
+// database opens perfectly well - so the app offers sign-up, takes people's
+// passwords, records their matches, and then deletes all of it on the next
+// deploy. That is strictly worse than not offering accounts at all: it loses
+// data that someone believed was saved.
+//
+// So the honest deployment of this app on a host with no disk is to say so.
+// Guests are unaffected - the front-end already hides the account tab and the
+// header chip when there is no accounts API behind them, which is the same
+// path the Android APK takes.
+//
+// Unset is the default and means "try": that keeps every existing deployment
+// behaving exactly as it did.
+const ACCOUNTS_DISABLED = /^(off|0|false|no|disabled)$/i.test(
+  (process.env.ACCOUNTS || "").trim()
+);
+
 // Whether the accounts half of the app is available. Gameplay does not depend
 // on it - local and online darts are pure browser code and a signaling relay -
 // so a database that won't open must NOT take the whole server down with it.
@@ -73,6 +94,16 @@ let accountsEnabled = false;
 let lobby = null;
 
 async function initDatabase() {
+  // Switched off on purpose. Logged as a normal line rather than a warning:
+  // the failure path below shouts about bind mounts and permissions, and an
+  // operator who chose this should not be told to go and investigate a problem
+  // they don't have.
+  if (ACCOUNTS_DISABLED) {
+    accountsEnabled = false;
+    console.log("  accounts     : disabled by ACCOUNTS=off (no database opened)");
+    return;
+  }
+
   try {
     await mkdir(DATA_DIR, { recursive: true });
     await access(DATA_DIR, FS.W_OK);

@@ -44,10 +44,17 @@ Health probe: `GET /healthz` → `{"ok":true,rooms,clients,accounts}`. `accounts
 false when the database could not be opened; `ok` stays true, because the app can
 still serve darts.
 
-Statistics tests: `node --test server/statsengine.test.js`.
-
 `DATA_DIR` (default `./data`) holds the SQLite database. It must be persistent -
 see the note in `render.yaml`.
+
+`ACCOUNTS=off` disables the accounts half deliberately, without opening a
+database. This exists because "no disk" and "no accounts" are different states
+and the difference is dangerous: an ephemeral filesystem lets the database open
+fine, so the app takes sign-ups and then deletes them. Unset means "try", so
+every existing deployment is unaffected. Tests: `/healthz` reports
+`accounts:false`, `/api/*` 503s, the lobby doesn't start.
+
+Statistics tests: `node --test server/autodarts.test.js server/statsengine.test.js`.
 
 `SITE_PASSWORD` (unset by default) puts one shared password in front of the whole
 deployment. Used on the test build; leave unset in production.

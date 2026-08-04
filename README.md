@@ -613,6 +613,16 @@ Set them in `docker-compose.yml` under the `darts` service.
 | `TURN_USERNAME` / `TURN_CREDENTIAL` | *(unset)* | TURN credentials. |
 | `SIGNALING_PATH` | `/signaling` | Path the WebSocket is served on. |
 | `SIGNALING_URL` | *(unset)* | Only to point players at a *different* signaling server. Leave unset for same-origin. |
+| `ACCOUNTS` | *(unset - accounts on)* | Set to `off` to run guests-only without opening a database. See below. |
+
+**`ACCOUNTS=off` is the honest setting for a host with no persistent disk.** An
+ephemeral filesystem doesn't stop the database opening - it lets people sign up,
+records their matches, and then deletes all of it on the next deploy, which is
+worse than not offering accounts at all. Setting this skips the database
+entirely: `/healthz` reports `accounts:false`, `/api/*` answers 503, the lobby
+doesn't start, and the front-end hides the account tab exactly as it does in the
+Android APK. Darts is unaffected - local play, invite-code online play and
+on-device statistics all work.
 
 ### Adding a TURN relay
 
