@@ -1092,6 +1092,15 @@ function wirePeerLink() {
   };
 
   peerLink.onMessage = (msg) => {
+    // The handshake is two messages and everything depends on them, so they
+    // say so. A match that connects and never starts is otherwise completely
+    // silent on both sides - which is precisely the failure that made this
+    // necessary. Only the handshake is logged; darts are not, or a long leg
+    // would bury it.
+    if (msg.type === "hello" || msg.type === "match_config") {
+      console.log(`[AIO] recv ${msg.type} (my role=${peerLink.role}, active=${online.active})`);
+    }
+
     if (msg.type === "hello") {
       // Only the host answers this, and only once.
       if (peerLink.role !== "host" || online.active) return;
@@ -1157,6 +1166,7 @@ function sendHelloUntilStarted(attempt = 0) {
   clearTimeout(helloTimer);
   if (online.active || !peerLink) return;
 
+  console.log(`[AIO] send hello attempt ${attempt} (my role=${peerLink.role})`);
   peerLink.sendGameMessage({ type: "hello", name: myDisplayName() });
 
   if (attempt < HELLO_RETRIES) {
@@ -1240,6 +1250,7 @@ function buildOnlinePlayer(name, legConfig) {
 }
 
 function startOnlineGame(role, legs) {
+  console.log(`[AIO] startOnlineGame role=${role} legs=${legs?.length ?? 0}`);
   online.active = true;
   online.role = role;
   online.myIndex = role === "host" ? 0 : 1;

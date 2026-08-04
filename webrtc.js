@@ -785,23 +785,34 @@ export class PeerLink {
     }
     this.#channel.addEventListener("close", () => this.#setStatus("disconnected"));
     this.#channel.addEventListener("message", (event) => {
+      // ONLY the parse is guarded. Handing the game handler's exceptions to
+      // this catch as well made every bug in the handler look like a malformed
+      // message from the peer, and then hid it: a match that connected and
+      // never started reported nothing at all, on either side, because the
+      // throw was caught here and logged as somebody else's fault.
+      let msg;
       try {
-        const msg = JSON.parse(event.data);
-        // Mute/camera state is a transport concern, not a game event - it's
-        // handled here so the game controller never has to know the peer
-        // protocol carries anything other than darts.
-        if (msg.type === "media_state") {
-          this.onRemoteMediaChange?.({
-            audio: !!msg.audio,
-            video: !!msg.video,
-            video2: !!msg.video2,
-          });
-          return;
-        }
-        this.onMessage?.(msg);
+        msg = JSON.parse(event.data);
       } catch (err) {
         console.warn("Received malformed game message", err);
+        return;
       }
+
+      // Mute/camera state is a transport concern, not a game event - it's
+      // handled here so the game controller never has to know the peer
+      // protocol carries anything other than darts.
+      if (msg.type === "media_state") {
+        this.onRemoteMediaChange?.({
+          audio: !!msg.audio,
+          video: !!msg.video,
+          video2: !!msg.video2,
+        });
+        return;
+      }
+
+      // Deliberately not wrapped. An exception here is a bug in this app, and
+      // it belongs in the console with its real stack, not swallowed.
+      this.onMessage?.(msg);
     });
   }
 
