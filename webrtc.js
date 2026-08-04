@@ -756,13 +756,33 @@ export class PeerLink {
   }
 
   #wireChannel() {
-    this.#channel.addEventListener("open", () => {
+    const onOpen = () => {
       this.#setStatus("connected");
       // A player who switched their camera on while still on the "waiting for
       // opponent" screen already sent a media_state into a closed channel,
       // where it was dropped. Re-announce now that there's someone to hear it.
       this.#announceMediaState();
-    });
+    };
+
+    // The two sides come by their channel differently, and only one of them is
+    // safe to wait on an event for. The HOST creates it, long before there is a
+    // connection, so its "open" is always still to come. The GUEST is handed a
+    // channel by the `datachannel` event - and that channel can already BE open
+    // by the time this runs, in which case "open" has fired and will never fire
+    // again. The guest then never reports connected, never sends its hello, and
+    // the host waits at "Connected - starting..." for a greeting nobody sent.
+    //
+    // Nothing about the game code can fix that: the match genuinely never
+    // started. So the state is checked as well as the event, and whichever
+    // arrives first wins.
+    if (this.#channel.readyState === "open") {
+      // Asynchronously, so callers get the same ordering they would from a real
+      // event - #wireChannel is called mid-setup and a synchronous status change
+      // would re-enter the caller before it had finished wiring itself up.
+      queueMicrotask(onOpen);
+    } else {
+      this.#channel.addEventListener("open", onOpen);
+    }
     this.#channel.addEventListener("close", () => this.#setStatus("disconnected"));
     this.#channel.addEventListener("message", (event) => {
       try {

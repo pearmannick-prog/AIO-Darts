@@ -928,6 +928,7 @@ el.cancelBtn.addEventListener("click", () => {
   // the watchdog has to be disarmed here too - otherwise it fires later and
   // drops a "couldn't connect" notice on someone who already walked away.
   stopConnectWatchdog();
+  stopHello();
   // A cancelled LOBBY match has to be reported, or the server keeps showing you
   // as playing and nobody can challenge you again. Harmless on the invite-code
   // path, where there is no lobbyCode and the server was never told anything.
@@ -993,6 +994,7 @@ function teardownMatch(message) {
   online.oppName = "Opponent";
   online.lobbyCode = null;
   stopConnectWatchdog();
+  stopHello();
 
   // The lobby cannot see the darts, so it only knows a match is over because
   // it is told. Purely a hint - a disconnect resolves the same state anyway.
@@ -1079,7 +1081,7 @@ function wirePeerLink() {
         // so learning who you are playing costs no extra round trip. It is
         // optional in both directions: a signed-out player simply doesn't have
         // one, and the match plays identically without it.
-        peerLink.sendGameMessage({ type: "hello", name: myDisplayName() });
+        sendHelloUntilStarted();
       }
     }
     if (status === "disconnected" || status === "room-full") {
@@ -1134,6 +1136,37 @@ function wirePeerLink() {
       renderOnline();
     }
   };
+}
+
+// The whole handshake hangs off ONE message. The guest says hello, the host
+// answers with the format, and both start. If that hello is lost - or is sent
+// into a channel the other side isn't listening on yet - neither player sees an
+// error: they both sit on "Connected - starting..." indefinitely, which is the
+// exact failure this is here to stop.
+//
+// Repeating it is safe by construction. The host ignores a hello once it is
+// already active, so a duplicate is a no-op, and if it was never heard the
+// first time then a second copy is precisely what is needed. Bounded, because
+// past a few seconds the problem is not a lost message and retrying forever
+// would just hide it from the watchdog.
+const HELLO_RETRIES = 4;
+const HELLO_RETRY_MS = 1500;
+let helloTimer = null;
+
+function sendHelloUntilStarted(attempt = 0) {
+  clearTimeout(helloTimer);
+  if (online.active || !peerLink) return;
+
+  peerLink.sendGameMessage({ type: "hello", name: myDisplayName() });
+
+  if (attempt < HELLO_RETRIES) {
+    helloTimer = setTimeout(() => sendHelloUntilStarted(attempt + 1), HELLO_RETRY_MS);
+  }
+}
+
+function stopHello() {
+  clearTimeout(helloTimer);
+  helloTimer = null;
 }
 
 function statusText(status) {
@@ -1222,6 +1255,7 @@ function startOnlineGame(role, legs) {
   online.recorder = createRecorder({ mode: "online", format: legs, players });
 
   stopConnectWatchdog();
+  stopHello();
   startOnlineLeg();
 
   hideWaitingPanel();
