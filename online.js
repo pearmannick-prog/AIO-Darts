@@ -9,7 +9,8 @@
 // in lockstep with no need for a rollback/replay system - see the
 // architecture notes in the top-level README.
 
-import { Granboard, SegmentID, SegmentType, createSegment, applyBullMode } from "./granboard.js";
+import { SegmentID, SegmentType, createSegment, applyBullMode } from "./granboard.js";
+import { subscribeToBoard } from "./boardlink.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import {
   createCricketPlayer, resolveCricketThrow, applyCricketResult,
@@ -41,7 +42,6 @@ const STARTING_SCORE = 501;
 
 let PeerLink; // lazy-imported so a missing webrtc.js doesn't break local mode
 let peerLink = null;
-let myBoard = null;
 
 const online = {
   active: false,
@@ -114,9 +114,6 @@ const el = {
   turnDarts: document.getElementById("online-turn-darts"),
   winnerBanner: document.getElementById("online-winner-banner"),
 
-  connectBtn: document.getElementById("online-connect-btn"),
-  connectionDot: document.getElementById("online-connection-dot"),
-  connectionLabel: document.getElementById("online-connection-label"),
 
   videoStrip: document.getElementById("online-video-strip"),
   localVideo: document.getElementById("online-local-video"),
@@ -1097,15 +1094,6 @@ function wirePeerLink() {
   };
 
   peerLink.onMessage = (msg) => {
-    // The handshake is two messages and everything depends on them, so they
-    // say so. A match that connects and never starts is otherwise completely
-    // silent on both sides - which is precisely the failure that made this
-    // necessary. Only the handshake is logged; darts are not, or a long leg
-    // would bury it.
-    if (msg.type === "hello" || msg.type === "match_config") {
-      console.log(`[AIO] recv ${msg.type} (my role=${peerLink.role}, active=${online.active})`);
-    }
-
     if (msg.type === "hello") {
       // Only the host answers this, and only once.
       if (peerLink.role !== "host" || online.active) return;
@@ -1171,7 +1159,6 @@ function sendHelloUntilStarted(attempt = 0) {
   clearTimeout(helloTimer);
   if (online.active || !peerLink) return;
 
-  console.log(`[AIO] send hello attempt ${attempt} (my role=${peerLink.role})`);
   peerLink.sendGameMessage({ type: "hello", name: myDisplayName() });
 
   if (attempt < HELLO_RETRIES) {
@@ -1255,7 +1242,6 @@ function buildOnlinePlayer(name, legConfig) {
 }
 
 function startOnlineGame(role, legs) {
-  console.log(`[AIO] startOnlineGame role=${role} legs=${legs?.length ?? 0}`);
   online.active = true;
   online.role = role;
   online.myIndex = role === "host" ? 0 : 1;
@@ -1341,41 +1327,27 @@ function finishOnlineLeg(side) {
 }
 
 // ---------- My physical board ----------
-el.connectBtn.addEventListener("click", async () => {
-  if (!navigator.bluetooth) {
-    if (!window.isSecureContext) {
-      alert(
-        "Web Bluetooth needs a secure context - it's blocked because this page is loaded over plain HTTP. " +
-        "This works on http://localhost, but NOT on a plain http://<ip-address> address like this one, even on your own network. " +
-        "Put the site behind HTTPS (e.g. a reverse proxy with a TLS cert) to fix this - see the README."
-      );
-    } else {
-      alert("This browser doesn't support Web Bluetooth. Use Chrome or Edge on desktop.");
+// There is no connect button here any more. The board is connected once, from
+// the header, and boardlink.js hands the darts to whichever mode is playing -
+// so a board attached during a local game is still attached when a challenge
+// starts, and the other way round. Reconnecting between modes was busywork
+// caused by there being two connections; now there is one.
+//
+// Registered ABOVE game.js's subscriber, so a live online match takes the dart.
+// The two controllers never have to know about each other: this one simply
+// says whether it is playing, and the answer decides.
+subscribeToBoard({
+  priority: 10,
+  wants: () => online.active && !online.gameOver,
+  onHit: (segment) => {
+    if (segment.id === SegmentID.RESET_BUTTON) {
+      // The board's physical button - ends the turn now, without waiting for
+      // three darts to register.
+      onLocalEndTurn();
+      return;
     }
-    return;
-  }
-  try {
-    el.connectionLabel.textContent = "Connecting…";
-    myBoard = await Granboard.connect();
-    el.connectionDot.classList.add("connected");
-    el.connectionLabel.textContent = `Connected: ${myBoard.deviceName}`;
-
-    myBoard.segmentHitCallback = (segment) => {
-      if (segment.id === SegmentID.RESET_BUTTON) {
-        onLocalEndTurn();
-        return;
-      }
-      onLocalHit(segment);
-    };
-    myBoard.disconnectCallback = () => {
-      el.connectionDot.classList.remove("connected");
-      el.connectionLabel.textContent = "Disconnected";
-    };
-  } catch (err) {
-    console.error(err);
-    el.connectionLabel.textContent = "Connection failed";
-    alert(`Couldn't connect: ${err.message}`);
-  }
+    onLocalHit(segment);
+  },
 });
 
 // ---------- Camera & mic ----------

@@ -1,6 +1,7 @@
 // game.js - 501 scoring, board visualization, and all UI wiring.
 
-import { Granboard, SegmentType, createSegment, SegmentID, applyBullMode } from "./granboard.js";
+import { SegmentType, createSegment, SegmentID, applyBullMode } from "./granboard.js";
+import { connectBoard, subscribeToBoard, onBoardStatusChange } from "./boardlink.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
@@ -59,7 +60,6 @@ const state = {
 };
 
 let undoStack = [];
-let board = null;
 
 // ---------- DOM references ----------
 const el = {
@@ -248,30 +248,44 @@ el.connectBtn.addEventListener("click", async () => {
 
   try {
     el.connectionLabel.textContent = "Connecting…";
-    board = await Granboard.connect();
-    el.connectionDot.classList.add("connected");
-    el.connectionLabel.textContent = `Connected: ${board.deviceName}`;
-
-    board.segmentHitCallback = (segment) => {
-      if (segment.id === SegmentID.RESET_BUTTON) {
-        // Physical button on the board - confirmed to mean "end my turn now"
-        // (useful if you're done before 3 darts register, e.g. a dart
-        // bounced out or missed the board entirely).
-        endTurnEarly();
-        return;
-      }
-      applyHit(segment);
-    };
-
-    board.disconnectCallback = () => {
-      el.connectionDot.classList.remove("connected");
-      el.connectionLabel.textContent = "Disconnected";
-    };
+    // THE board, not this controller's board. boardlink.js owns the connection
+    // and routes each dart to whichever mode is playing, so connecting here
+    // also connects it for online play - and stays connected when you switch
+    // between them. See the note at the top of boardlink.js for why there used
+    // to be two of these and why that was the bug.
+    await connectBoard();
   } catch (err) {
     console.error(err);
     el.connectionLabel.textContent = "Connection failed";
     alert(`Couldn't connect: ${err.message}`);
   }
+});
+
+// The header is the one place the board's state is reported, for both modes.
+// Driven by boardlink rather than by the click handler, so it is also correct
+// when the board drops on its own or was connected from somewhere else.
+onBoardStatusChange(({ connected, name }) => {
+  el.connectionDot.classList.toggle("connected", connected);
+  el.connectionLabel.textContent = connected ? `Connected: ${name}` : "Disconnected";
+});
+
+// Local play takes a dart only when no online match wants it - online.js
+// registers at a higher priority and answers first. The guard is the same one
+// the clickable board uses, so all three input paths agree about when a dart
+// means anything.
+subscribeToBoard({
+  priority: 0,
+  wants: () => state.players.length > 0 && !state.gameOver,
+  onHit: (segment) => {
+    if (segment.id === SegmentID.RESET_BUTTON) {
+      // Physical button on the board - confirmed to mean "end my turn now"
+      // (useful if you're done before 3 darts register, e.g. a dart bounced
+      // out or missed the board entirely).
+      endTurnEarly();
+      return;
+    }
+    applyHit(segment);
+  },
 });
 
 // ---------- Manual entry ----------

@@ -133,12 +133,6 @@
     opacity: 0.85;
   }
 
-  #online-connection-label {
-    font-size: 13px;
-    color: var(--ink);
-    opacity: 0.8;
-  }
-
   /* Mode tabs */
   .mode-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
   .mode-tab {
@@ -779,7 +773,6 @@
   /* --- below the stage: ordinary cream surface, ordinary controls --- */
   .immersive #online-status-label,
   .immersive #online-manual-section,
-  .immersive #online-connect-row,
   .immersive #online-throw-log,
   .immersive .end-match-row,
   .immersive #online-next-leg-btn,
@@ -876,7 +869,6 @@
   }
   #online-manual-sections { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 12px; }
 
-  #online-connect-row { align-items: center; }
 
   #online-throw-log {
     margin-top: 16px;
@@ -2542,11 +2534,12 @@
           <div id="online-manual-quicktotal" class="entry-mode-panel"></div>
         </div>
 
-        <div id="online-connect-row" class="actions-row">
-          <button id="online-connect-btn" class="btn-primary">Connect My Board</button>
-          <span id="online-connection-dot" class="conn-dot"></span>
-          <span id="online-connection-label">Not connected</span>
-        </div>
+        <!-- The board's connect button and status used to be repeated here.
+             There is one physical board, so there is now one connection and
+             one place that reports it: the header, which is on screen during
+             an online match too. Two buttons meant two connections, and a
+             board attached from the wrong one delivered its darts to a game
+             that wasn't running. See boardlink.js. -->
 
         <div id="online-throw-log"></div>
 
