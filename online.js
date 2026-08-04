@@ -684,7 +684,7 @@ el.createBtn.addEventListener("click", async () => {
     el.codeDisplay.textContent = code;
   } catch (err) {
     alert(`Couldn't create a challenge: ${err.message}`);
-    el.waitingPanel.classList.add("hidden");
+    hideWaitingPanel();
     el.setupPanel.classList.remove("hidden");
   }
 });
@@ -738,10 +738,62 @@ function showWaitingPanel(mode, { code = "", opponent = "" } = {}) {
   el.codeDisplay.textContent = lobby ? "" : code;
   el.codeDisplay.classList.toggle("hidden", lobby);
 
+  waitingMode = mode;
+  waitingOpponent = opponent;
+
   el.setupNotice.classList.add("hidden");
   el.setupPanel.classList.add("hidden");
   el.waitingPanel.classList.remove("hidden");
   setMatchChrome(true);
+}
+
+// Which situation the waiting panel is currently showing, and who for. Kept
+// because the connection status arrives LATER, from the peer link, and has to
+// be phrased differently depending on how the match was started.
+let waitingMode = null;
+let waitingOpponent = "";
+
+function hideWaitingPanel() {
+  waitingMode = null;
+  waitingOpponent = "";
+  hideWaitingPanel();
+}
+
+// Reports which STAGE the connection has reached, on the panel the player is
+// actually looking at.
+//
+// The stage messages used to go to #online-status-label, which lives inside the
+// game panel - hidden until the match starts. So they were written on every
+// status change and never once seen during the wait they describe, which is the
+// only time they mean anything. Waiting looked identical whether the signaling
+// socket was still opening or had been open for twenty seconds with nobody on
+// the other end.
+//
+// Create is deliberately left alone: there the instruction to share the code is
+// the useful text, and "waiting for opponent" is not news - it is the entire
+// expected state, possibly for several minutes.
+function updateWaitingNote(status) {
+  if (!waitingMode || waitingMode === "create") return;
+  const who = waitingOpponent || "the other player";
+
+  switch (status) {
+    case "connecting-to-server":
+      el.waitingNote.textContent = "Connecting to the signaling server…";
+      break;
+    case "joining":
+      el.waitingNote.textContent = "Joining the match…";
+      break;
+    case "waiting-for-opponent":
+      el.waitingNote.textContent = waitingMode === "lobby"
+        ? `Waiting for ${who} to connect…`
+        : "Waiting for the host…";
+      break;
+    case "connected":
+      el.waitingNote.textContent = "Connected - starting…";
+      break;
+    default:
+      break;
+  }
 }
 
 // A match that never connects used to sit on "Waiting for opponent..." forever,
@@ -755,16 +807,29 @@ function showWaitingPanel(mode, { code = "", opponent = "" } = {}) {
 // wait while you send the code to a friend, and timing that out after half a
 // minute would break the feature rather than diagnose it.
 //
-// The message names the signaling server, because that is the thing most likely
-// to be wrong - everything else in the handshake happens after it.
-const CONNECT_TIMEOUT_MS = 25_000;
+// TWO clocks, because "we never reached the server" and "the server was fine
+// and nobody came" are different failures with different fixes, and one timer
+// covering both blames whichever it was told to.
+//
+// The first version armed a single 25s clock on the click. That is wrong on a
+// host that sleeps: the free tier spins down after about fifteen minutes, so
+// the WebSocket upgrade can take most of that budget on its own, and a match
+// that was about to connect got killed and reported as the opponent's fault.
+//
+// So the signaling phase gets its own, longer budget, and reaching the server
+// RESTARTS the clock for the peer phase. Time spent waking a container is no
+// longer charged to the player who is patiently waiting.
+const SIGNALING_TIMEOUT_MS = 45_000;
+const PEER_TIMEOUT_MS = 25_000;
 let connectTimer = null;
 
-function startConnectWatchdog() {
+function startConnectWatchdog(phase = "signaling") {
   clearTimeout(connectTimer);
+  const signaling = phase === "signaling";
+
   connectTimer = setTimeout(() => {
-    // Still not connected. `online.active` is set the moment the two sides
-    // exchange hello/match_config, so its absence is exactly "we never paired".
+    // `online.active` is set the moment the two sides exchange
+    // hello/match_config, so its absence is exactly "we never paired".
     if (online.active) return;
 
     // Hand the tab back so the player can try again rather than being stranded
@@ -772,10 +837,13 @@ function startConnectWatchdog() {
     // notice, not the status line - teardownMatch hides the waiting panel the
     // status line lives on, so anything written there is never read.
     teardownMatch(
-      "Couldn't reach the other player. They may have closed the app, or the " +
-      `signaling server isn't reachable from one of you (${currentSignalingUrl()}).`
+      signaling
+        ? `Couldn't reach the signaling server (${currentSignalingUrl()}). ` +
+          "It may be starting up, or blocked by a network in between - try again."
+        : "Reached the server, but the other player never joined. They may have " +
+          "closed the app, or their connection couldn't be established."
     );
-  }, CONNECT_TIMEOUT_MS);
+  }, signaling ? SIGNALING_TIMEOUT_MS : PEER_TIMEOUT_MS);
 }
 
 function stopConnectWatchdog() {
@@ -817,7 +885,7 @@ onMatchReady(async ({ code, role, opponent }) => {
   } catch (err) {
     stopConnectWatchdog();
     alert(`Couldn't start that match: ${err.message}`);
-    el.waitingPanel.classList.add("hidden");
+    hideWaitingPanel();
     el.setupPanel.classList.remove("hidden");
   }
 });
@@ -847,7 +915,7 @@ el.joinBtn.addEventListener("click", async () => {
   } catch (err) {
     stopConnectWatchdog();
     alert(`Couldn't join that challenge: ${err.message}`);
-    el.waitingPanel.classList.add("hidden");
+    hideWaitingPanel();
     el.setupPanel.classList.remove("hidden");
   }
 });
@@ -867,7 +935,7 @@ el.cancelBtn.addEventListener("click", () => {
     online.lobbyCode = null;
     reportMatchOver();
   }
-  el.waitingPanel.classList.add("hidden");
+  hideWaitingPanel();
   el.setupPanel.classList.remove("hidden");
   setMatchChrome(false);
 });
@@ -933,7 +1001,7 @@ function teardownMatch(message) {
   resetAv();
 
   el.gamePanel.classList.add("hidden");
-  el.waitingPanel.classList.add("hidden");
+  hideWaitingPanel();
   el.winnerBanner.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
   el.setupNotice.textContent = message;
@@ -990,6 +1058,16 @@ function wirePeerLink() {
 
   peerLink.onStatusChange = (status) => {
     el.statusLabel.textContent = statusText(status);
+    updateWaitingNote(status);
+
+    // Reaching the server ends the signaling phase and starts the peer one, so
+    // a slow container wake-up isn't charged against the opponent's clock.
+    // Create is excluded on purpose: waiting there is the feature, and the code
+    // may sit unshared for minutes.
+    if ((status === "waiting-for-opponent" || status === "joining")
+        && waitingMode && waitingMode !== "create" && !online.active) {
+      startConnectWatchdog("peer");
+    }
 
     if (status === "connected" && !online.active) {
       // The guest announces itself and the host replies with the format.
@@ -1146,7 +1224,7 @@ function startOnlineGame(role, legs) {
   stopConnectWatchdog();
   startOnlineLeg();
 
-  el.waitingPanel.classList.add("hidden");
+  hideWaitingPanel();
   el.gamePanel.classList.remove("hidden");
   el.winnerBanner.classList.add("hidden");
   renderOnline();
