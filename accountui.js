@@ -14,6 +14,7 @@
 import {
   subscribe, refresh, register, login, logout,
   updateProfile, changePassword, uploadAvatar, avatarUrl, ApiUnavailable,
+  requestPasswordReset, resetPassword,
   fetchMatches, fetchStats, fetchDashboard, fetchAchievements,
   fetchBoardCatalogue, fetchLeaderboard, fetchFriends, searchPlayers,
   friendAction, createClub, joinClub, leaveClub,
@@ -85,6 +86,14 @@ const el = {
   historyQueueNote: document.getElementById("history-queue-note"),
 
   loginForm: document.getElementById("login-form"),
+  forgotLink: document.getElementById("forgot-link"),
+  forgotForm: document.getElementById("forgot-form"),
+  forgotEmail: document.getElementById("forgot-email"),
+  forgotCancel: document.getElementById("forgot-cancel"),
+  forgotMessage: document.getElementById("forgot-message"),
+  resetForm: document.getElementById("reset-form"),
+  resetPassword: document.getElementById("reset-password"),
+  resetMessage: document.getElementById("reset-message"),
   loginEmail: document.getElementById("login-email"),
   loginPassword: document.getElementById("login-password"),
   loginMessage: document.getElementById("login-message"),
@@ -1137,27 +1146,71 @@ function openAccountTab() {
 
 el.chip.addEventListener("click", openAccountTab);
 
-for (const tab of document.querySelectorAll(".auth-tab")) {
-  tab.addEventListener("click", () => {
-    const which = tab.dataset.auth;
-    for (const other of document.querySelectorAll(".auth-tab")) {
-      other.classList.toggle("active", other === tab);
-    }
-    el.loginForm.classList.toggle("hidden", which !== "login");
-    el.registerForm.classList.toggle("hidden", which !== "register");
-  });
+// Four forms share this panel now, and only one is ever on screen. Routed
+// through one function so a new one cannot be added without deciding what the
+// others do - the bug where two are visible at once is otherwise inevitable.
+function showAuthForm(which) {
+  el.loginForm.classList.toggle("hidden", which !== "login");
+  el.registerForm.classList.toggle("hidden", which !== "register");
+  el.forgotForm.classList.toggle("hidden", which !== "forgot");
+  el.resetForm.classList.toggle("hidden", which !== "reset");
+
+  // The tabs describe login and register only. Forgot and reset are states you
+  // arrive at rather than pick, so neither lights a tab - but "Sign in" stays
+  // lit through them, because that is what you are in the middle of doing.
+  const lit = which === "register" ? "register" : "login";
+  for (const other of document.querySelectorAll(".auth-tab")) {
+    other.classList.toggle("active", other.dataset.auth === lit);
+  }
 }
+
+for (const tab of document.querySelectorAll(".auth-tab")) {
+  tab.addEventListener("click", () => showAuthForm(tab.dataset.auth));
+}
+
+el.forgotLink?.addEventListener("click", () => {
+  // Carried across, because the commonest way to end up here is mistyping the
+  // password for an address you did get right.
+  el.forgotEmail.value = el.loginEmail.value || "";
+  setMessage(el.forgotMessage, "");
+  showAuthForm("forgot");
+});
+
+el.forgotCancel?.addEventListener("click", () => showAuthForm("login"));
 
 // Deep links, so "the stats page" is a thing you can bookmark or send to
 // yourself. Deliberately minimal: the app is one page with tabs, and a real
 // router would be a framework's worth of machinery to serve four URLs.
+// The reset link carries a token, so this route has a query string on it -
+// "#/reset?token=...". Parsed by hand rather than with URLSearchParams on
+// location.search, because the token is after the hash and never reaches the
+// server: a reset token in a request path would end up in access logs.
+let pendingResetToken = "";
+
 function applyHash() {
-  const route = location.hash.replace(/^#\/?/, "");
+  const raw = location.hash.replace(/^#\/?/, "");
+  const [route, query = ""] = raw.split("?");
+
+  if (route === "reset") {
+    pendingResetToken = new URLSearchParams(query).get("token") || "";
+    openAccountTab();
+    if (pendingResetToken) {
+      setMessage(el.resetMessage, "");
+      showAuthForm("reset");
+    } else {
+      showAuthForm("forgot");
+      setMessage(el.forgotMessage, "That reset link is missing its token. Ask for a new one.");
+    }
+    // Clears the token out of the address bar so it isn't left in history or
+    // handed to whoever the next screenshot goes to. replaceState rather than
+    // assigning location.hash, which would fire hashchange and re-enter here.
+    history.replaceState(null, "", location.pathname + location.search);
+    return;
+  }
+
   if (["account", "login", "profile", "signin"].includes(route)) {
     openAccountTab();
-    if (route === "login" || route === "signin") {
-      document.querySelector('.auth-tab[data-auth="login"]')?.click();
-    }
+    if (route === "login" || route === "signin") showAuthForm("login");
   }
 }
 
@@ -1175,6 +1228,37 @@ el.loginForm.addEventListener("submit", async (event) => {
       el.loginForm.reset();
     } catch (err) {
       setMessage(el.loginMessage, describeError(err));
+    }
+  });
+});
+
+el.forgotForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setMessage(el.forgotMessage, "");
+  await withBusy(event.submitter, async () => {
+    try {
+      const { message } = await requestPasswordReset(el.forgotEmail.value);
+      // Reported as a success, not an error, and the server's own wording is
+      // used: it says "if that address has an account", which is the whole
+      // point - this screen must not reveal whether one does.
+      setMessage(el.forgotMessage, message || "If that address has an account, a reset link is on its way.", "ok");
+    } catch (err) {
+      setMessage(el.forgotMessage, describeError(err));
+    }
+  });
+});
+
+el.resetForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setMessage(el.resetMessage, "");
+  await withBusy(event.submitter, async () => {
+    try {
+      await resetPassword({ token: pendingResetToken, password: el.resetPassword.value });
+      // The server signs you back in, so there is nowhere left to go here.
+      pendingResetToken = "";
+      el.resetForm.reset();
+    } catch (err) {
+      setMessage(el.resetMessage, describeError(err));
     }
   });
 });

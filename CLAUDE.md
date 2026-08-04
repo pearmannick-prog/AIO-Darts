@@ -56,6 +56,21 @@ every existing deployment is unaffected. Tests: `/healthz` reports
 
 Statistics tests: `node --test server/autodarts.test.js server/statsengine.test.js`.
 
+**Password reset is the only mail this app sends, and it works with no mail
+provider.** `server/email.js` posts to Resend when `EMAIL_API_KEY`, `EMAIL_FROM`
+and `PUBLIC_URL` are all set, and otherwise LOGS the reset link. That is not a
+degraded mode - it is what makes the feature work on a self-hosted box from day
+one, and what makes the flow testable without sending anything. Tokens are
+stored as a SHA-256 hash (they travel in email, so a stolen database must not
+yield live links), last an hour, work once, and redeeming one deletes every
+session for that user.
+
+Note the enumeration asymmetry: `/api/auth/forgot` answers identically for
+known and unknown addresses, but `/api/auth/register` still returns 409 for a
+taken email, so addresses can be probed there. Throttling register is the
+change that would fix it - login already has a throttle (`ATTEMPT_LIMIT`),
+register does not.
+
 `SITE_PASSWORD` (unset by default) puts one shared password in front of the whole
 deployment. Used on the test build; leave unset in production.
 

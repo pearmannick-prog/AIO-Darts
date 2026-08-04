@@ -1587,6 +1587,22 @@
     border-top: 1px solid rgba(27,26,20,0.12);
   }
   .account-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  /* A secondary action that shouldn't compete with the submit button beside
+     it: "Forgot password?" is the escape hatch, not the thing most people are
+     here to do. Still a real <button>, because it does something rather than
+     going somewhere - a bare <a href="#"> would lie to a screen reader. */
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 4px 2px;
+    color: var(--ink);
+    opacity: 0.7;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .link-btn:hover { opacity: 1; }
   .btn-ink {
     background: var(--felt);
     color: var(--cream);
@@ -2576,8 +2592,41 @@
           </div>
           <div class="account-actions">
             <button type="submit" class="btn-primary" id="login-submit">Sign in</button>
+            <button type="button" class="link-btn" id="forgot-link">Forgot password?</button>
           </div>
           <p class="form-message" id="login-message"></p>
+        </form>
+
+        <!-- Asking for a link. Deliberately a separate form rather than a
+             prompt: the address may not be the one already typed above, and
+             half the point of arriving here is that you are not sure which
+             address you used. -->
+        <form id="forgot-form" class="hidden" autocomplete="on">
+          <div class="field">
+            <label for="forgot-email">Email</label>
+            <input type="email" id="forgot-email" name="email" autocomplete="username" required>
+            <span class="hint">We'll send a link that works once and lasts an hour.</span>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-primary" id="forgot-submit">Send reset link</button>
+            <button type="button" class="link-btn" id="forgot-cancel">Back to sign in</button>
+          </div>
+          <p class="form-message" id="forgot-message"></p>
+        </form>
+
+        <!-- Where the emailed link lands. Shown only by the #/reset route, and
+             the token never appears on screen - it is read from the URL. -->
+        <form id="reset-form" class="hidden" autocomplete="on">
+          <div class="field">
+            <label for="reset-password">New password</label>
+            <input type="password" id="reset-password" name="password"
+                   autocomplete="new-password" minlength="8" required>
+            <span class="hint">At least 8 characters. Length beats punctuation.</span>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-primary" id="reset-submit">Set new password</button>
+          </div>
+          <p class="form-message" id="reset-message"></p>
         </form>
 
         <form id="register-form" class="hidden" autocomplete="on">

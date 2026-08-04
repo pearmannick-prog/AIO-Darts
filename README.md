@@ -629,6 +629,29 @@ that actually need relaying.
 | `SIGNALING_PATH` | `/signaling` | Path the WebSocket is served on. |
 | `SIGNALING_URL` | *(unset)* | Only to point players at a *different* signaling server. Leave unset for same-origin. |
 | `ACCOUNTS` | *(unset - accounts on)* | Set to `off` to run guests-only without opening a database. See below. |
+| `EMAIL_API_KEY` | *(unset)* | Resend API key, for password reset mail. Unset = log the link instead. |
+| `EMAIL_FROM` | *(unset)* | From address, e.g. `AIO Darts <noreply@aiodarts.com>`. Must be a domain verified with the provider. |
+| `PUBLIC_URL` | *(unset)* | The site's own address, used to build reset links. |
+
+**Password reset works with no email provider at all.** With `EMAIL_API_KEY`,
+`EMAIL_FROM` or `PUBLIC_URL` missing, the server does not fail - it writes the
+reset link to its log:
+
+```
+  password reset for someone@example.com
+    https://aiodarts.com/#/reset?token=a1b2c3...
+```
+
+That is the intended path for a self-hosted deployment: the operator reads the
+link out of the log and hands it over, with no API key, no DNS records and no
+account with a mail provider. It also means the whole flow can be tested
+without sending anything. Setting the three variables switches it to real mail
+with no other change; the API key stays on the server exactly like the TURN
+one.
+
+Links work **once** and expire after **an hour**, asking again invalidates any
+earlier link, and completing a reset signs out every other session - a reset is
+what you do when you think someone else is in your account.
 
 **`ACCOUNTS=off` is the honest setting for a host with no persistent disk.** An
 ephemeral filesystem doesn't stop the database opening - it lets people sign up,

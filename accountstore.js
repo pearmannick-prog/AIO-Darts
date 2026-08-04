@@ -148,6 +148,28 @@ export async function login({ email, password }) {
   return user;
 }
 
+// Asks for a reset link. Returns whatever the server said, which is
+// deliberately the same sentence whether or not the address has an account -
+// see the note on the endpoint. Nothing about local state changes: asking for
+// a link does not sign anybody in or out.
+export async function requestPasswordReset(email) {
+  return apiFetch("/api/auth/forgot", { method: "POST", body: { email } });
+}
+
+// Redeems a link. The server signs the user straight back in, so this behaves
+// like login from here on - including flushing any guest matches, since the
+// person may have played some while locked out.
+export async function resetPassword({ token, password }) {
+  const { user } = await apiFetch("/api/auth/reset", {
+    method: "POST",
+    body: { token, password },
+  });
+  state.user = user;
+  notify();
+  flushQueue().catch(() => {});
+  return user;
+}
+
 // The local state is cleared even if the request fails. Someone who clicks
 // "Sign out" on a flaky connection expects to be signed out of the screen in
 // front of them; the server-side session expires on its own.

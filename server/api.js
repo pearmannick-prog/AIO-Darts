@@ -28,6 +28,20 @@ import {
   hashPassword, verifyPassword, createSession, destroySession,
   userForRequest, sessionCookie, clearedCookie,
 } from "./auth.js";
+import { sendPasswordReset } from "./email.js";
+import { randomBytes, createHash } from "node:crypto";
+
+// A reset link is a password sitting in an inbox, so the window in which a
+// leaked one is dangerous is kept short.
+const RESET_TTL_MS = 60 * 60_000;
+
+// Stored hashed, never raw - see the note in 004_password_reset.sql. SHA-256
+// rather than scrypt on purpose: this is a 256-bit random token, not a
+// password, so there is nothing to brute-force and no reason to pay scrypt's
+// cost on every redemption.
+function hashToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 // Big enough for a long match's worth of darts (a 500-dart match serialises to
 // well under 100KB) and for a capped avatar, small enough that a bad actor
@@ -272,6 +286,105 @@ const routes = {
   "POST /api/auth/logout": async (req, res) => {
     destroySession(req);
     sendJson(res, 200, { ok: true }, { "Set-Cookie": clearedCookie(req) });
+  },
+
+  // Asks for a reset link. ALWAYS answers 200 with the same body, whether or
+  // not the address has an account.
+  //
+  // Worth being honest about the limit of that: POST /api/auth/register still
+  // returns 409 "That email address already has an account", so anyone can
+  // already probe addresses there. Keeping this endpoint quiet is still right -
+  // it costs nothing and there is no reason to add a second oracle - but it is
+  // not on its own an anti-enumeration measure. Throttling register is what
+  // would make that true, and is a separate change.
+  "POST /api/auth/forgot": async (req, res) => {
+    const body = await readJsonBody(req);
+    const email = normalizeEmail(body.email);
+
+    // Same throttle as login, keyed the same way: this endpoint sends mail on
+    // demand, so unthrottled it is both an enumeration oracle and a way to use
+    // someone else's inbox as a target.
+    const key = throttleKey(req, email);
+    checkThrottle(key);
+    recordFailure(key);
+
+    const db = getDatabase();
+    const user = db.prepare("SELECT id, email FROM users WHERE email = ?").get(email);
+
+    if (user) {
+      const token = randomBytes(32).toString("hex");
+      const now = new Date();
+
+      // Any outstanding link for this user stops working. Asking again is what
+      // someone does when the first mail did not arrive, and leaving several
+      // live at once widens the window for no benefit.
+      db.prepare("DELETE FROM password_resets WHERE user_id = ?").run(user.id);
+      db.prepare(
+        `INSERT INTO password_resets (token_hash, user_id, created_at, expires_at)
+         VALUES (?, ?, ?, ?)`
+      ).run(
+        hashToken(token),
+        user.id,
+        now.toISOString(),
+        new Date(now.getTime() + RESET_TTL_MS).toISOString()
+      );
+
+      // Deliberately not awaited. The response must not take longer when the
+      // account exists than when it doesn't - that timing difference is the
+      // enumeration signal this endpoint exists to avoid.
+      sendPasswordReset(user.email, token).catch((err) => {
+        console.warn("Password reset send failed:", err.message);
+      });
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      message: "If that address has an account, a reset link is on its way.",
+    });
+  },
+
+  // Redeems a link. The token arrives from an email, so everything about it is
+  // treated as hostile: it is looked up by hash, expiry is checked in SQL the
+  // way sessions are, and it works exactly once.
+  "POST /api/auth/reset": async (req, res) => {
+    const body = await readJsonBody(req);
+    const token = String(body.token ?? "").trim();
+    const password = checkPassword(body.password);
+
+    if (!token) throw badRequest("That reset link is missing its token.");
+
+    const db = getDatabase();
+    const row = db
+      .prepare("SELECT * FROM password_resets WHERE token_hash = ?")
+      .get(hashToken(token));
+
+    // One message for every way this can fail. "Expired" and "already used"
+    // are useful to a person and equally useful to someone guessing tokens,
+    // and a link that has lapsed is replaced the same way either way.
+    if (!row || row.used_at || new Date(row.expires_at) <= new Date()) {
+      throw badRequest("That reset link is invalid or has expired. Request a new one.");
+    }
+
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(row.user_id);
+    if (!user) throw badRequest("That reset link is invalid or has expired. Request a new one.");
+
+    const { hash, salt } = await hashPassword(password);
+    db.prepare("UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?")
+      .run(hash, salt, user.id);
+    db.prepare("UPDATE password_resets SET used_at = ? WHERE token_hash = ?")
+      .run(new Date().toISOString(), row.token_hash);
+
+    // EVERY session, including whoever prompted this. Resetting a password is
+    // what you do when you think someone else is in your account; leaving their
+    // session alive would make the reset a gesture rather than a fix.
+    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
+
+    // Signed straight back in, so the reset ends somewhere useful rather than
+    // on a login form.
+    const { token: sessionToken, expires } = createSession(user.id, req.headers["user-agent"]);
+    sendJson(res, 200, { user: publicUser(user) }, {
+      "Set-Cookie": sessionCookie(req, sessionToken, expires),
+    });
   },
 
   // The front-end calls this on load to find out whether it is a guest or a
