@@ -2892,10 +2892,40 @@
     height: 100%;
     object-fit: cover;
   }
-  /* The tiles carry their own little score overlays for the immersive layout.
-     In here the real scoreboard is directly underneath them at ten times the
-     size, so they are just clutter. */
-  .oche-mode .tile-score { display: none; }
+  /* On a phone the tiles are too small to carry a score as well as a face, so
+     the central row stays and the overlays go. Desktop does the opposite - see
+     the block below. */
+  @media (max-width: 899px) {
+    .oche-mode .tile-score { display: none; }
+  }
+
+  /* ---- Desktop: the score rides the camera ----
+     Each player's score sits on their own picture, so whoever is in the corner
+     takes their number to the corner with them and the big view keeps its own.
+     Swapping the big view swaps both, because .as-thumb is simply whichever
+     player is not staged - the existing view button already maintains that, so
+     "and vice versa" needs no new state.
+     It also stops the two numbers floating unattached over somebody's living
+     room, which is what a centred row does once a camera is behind it. */
+  @media (min-width: 900px) {
+    .oche-mode.immersive .online-scoreboard { display: none; }
+    /* Both of these beat the immersive rules that hide them (0,3,0) at 0,4,0. */
+    .oche-mode.immersive .video-tile.as-stage .tile-score,
+    .oche-mode.immersive .video-tile.as-thumb .tile-score { display: flex; }
+    .oche-mode.immersive .video-tile.as-thumb .tile-score-value { display: inline; }
+
+    .oche-mode.immersive .video-tile.as-stage .tile-score {
+      padding: 40px 20px 14px;
+    }
+    .oche-mode.immersive .video-tile.as-stage .tile-score-label { font-size: 15px; }
+    .oche-mode.immersive .video-tile.as-stage .tile-score-value { font-size: 40px; }
+
+    .oche-mode.immersive .video-tile.as-thumb .tile-score {
+      padding: 26px 10px 7px;
+    }
+    .oche-mode.immersive .video-tile.as-thumb .tile-score-label { font-size: 11px; }
+    .oche-mode.immersive .video-tile.as-thumb .tile-score-value { font-size: 24px; }
+  }
   /* With a band of video up top the number takes what is left rather than what
      it would like. .immersive is the honest signal that a camera is actually
      live - it is what the AV code already sets when any feed is staged. */
