@@ -2317,6 +2317,81 @@
     z-index: 50;
   }
 </style>
+<script>
+  /* Applies personal settings, and MUST run before first paint.
+
+     Not a module, and that is not an oversight. A module is deferred: the page
+     would paint in the default theme and then flip to yours, on every single
+     load. That flash is the difference between an app that has themes and an
+     app that looks broken, and it is the one bug in this feature that every
+     user sees every time.
+
+     It is also the ONLY code that stamps a preference onto the DOM. prefs.js
+     owns the schema, the validation and the storage, then calls back into this
+     function rather than reimplementing it - because two copies of "which
+     attribute does this setting set" drift, and the copy that drifts is the one
+     that only runs on first load, which is the hardest place to notice.
+
+     Absent keys stamp NOTHING and fall through to the CSS defaults. That is
+     what lets this run without knowing the schema: it needs no table of default
+     values, so there is nothing here to fall out of step with prefs.js. */
+  (function () {
+    var root = document.documentElement;
+
+    function set(attr, value, omitWhen) {
+      if (value == null || value === omitWhen) root.removeAttribute(attr);
+      else root.setAttribute(attr, value);
+    }
+
+    function apply(prefs) {
+      var p = prefs || {};
+
+      /* "auto" is resolved HERE rather than in prefs.js so that the rule lives
+         in one place, and so CSS never has to know that auto exists - it only
+         ever sees data-mode="light" or "dark". */
+      var mode = p.mode;
+      if (mode !== "light" && mode !== "dark") {
+        mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark" : "light";
+      }
+      root.setAttribute("data-mode", mode);
+
+      set("data-theme", p.theme, "baize");
+      set("data-motion", p.motion, "full");
+      set("data-contrast", p.contrast, "normal");
+      set("data-density", p.density, "comfortable");
+      set("data-boardview", p.boardView, "desk");
+      set("data-cb-board", p.colourblindBoard ? "on" : null);
+
+      /* A named accent is a class of curated swatch defined in CSS; only a
+         custom hex needs a property written from script. Keeping the palette in
+         the stylesheet is what stops eight colours being defined twice. */
+      if (typeof p.accent === "string" && p.accent.charAt(0) === "#") {
+        root.setAttribute("data-accent", "custom");
+        root.style.setProperty("--accent", p.accent);
+      } else {
+        set("data-accent", p.accent, "gold");
+        root.style.removeProperty("--accent");
+      }
+
+      if (typeof p.textScale === "number" && p.textScale !== 1) {
+        root.style.setProperty("--text-scale", String(p.textScale));
+      } else {
+        root.style.removeProperty("--text-scale");
+      }
+    }
+
+    window.__aioApplyPrefs = apply;
+
+    try {
+      apply(JSON.parse(localStorage.getItem("aio-darts-prefs") || "{}"));
+    } catch (err) {
+      /* Corrupt storage, or none at all. The app is fully usable unthemed, so
+         there is nothing here worth failing a page load over. */
+      apply({});
+    }
+  })();
+</script>
 </head>
 <body>
   <div class="wrap">

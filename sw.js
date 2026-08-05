@@ -52,6 +52,8 @@ const PRECACHE = [
   "./accountui.js",
   "./lobbyui.js",
   "./version.js",
+  // Personalization
+  "./prefs.js",
   // Accounts, match recording and statistics
   "./accountstore.js",
   "./lobbyclient.js",
