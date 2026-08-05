@@ -26,7 +26,15 @@ function showEnvironmentBanner(branch) {
 
   const banner = document.createElement("div");
   banner.className = "env-banner";
-  banner.textContent = `Test deployment · ${branch} · accounts here are wiped regularly`;
+  // It used to say accounts here are wiped regularly. That was true before
+  // Litestream replicated the database to R2 and restored it on boot, and it
+  // stopped being true without anyone updating the sentence - so the app was
+  // telling people to distrust data that now survives.
+  //
+  // The banner's job was never the accounts anyway: it is to stop a test build
+  // being mistaken for the live one, which is a statement about WHICH SITE this
+  // is and needs no caveat about storage to make its point.
+  banner.textContent = `Test deployment · ${branch} · not the live site`;
   document.body.prepend(banner);
 }
 

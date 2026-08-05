@@ -310,17 +310,23 @@
   }
 
   /* Device check (setup panel) */
-  .device-check {
+  /* Every panel in Settings is the same box. Styled by position rather than by
+     class so a new one matches automatically - the camera check and the scorer
+     looked like different kinds of thing purely because one carried its own
+     border and the other had none. */
+  #settings-body > details {
     border: 1px solid #cfc4a3;
     border-radius: 10px;
     padding: 10px 14px;
-    margin-bottom: 14px;
+    background: rgba(255, 255, 255, 0.35);
   }
-  .device-check summary {
+  #settings-body > details > summary {
     cursor: pointer;
     font-weight: 600;
     font-size: 14px;
   }
+  /* Open panels get a little breathing room between the summary and content. */
+  #settings-body > details[open] > summary { margin-bottom: 8px; }
   .device-check-note { font-size: 13px; opacity: 0.75; margin: 8px 0 12px; }
   .device-preview {
     position: relative;
