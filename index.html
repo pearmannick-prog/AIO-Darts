@@ -2767,25 +2767,16 @@
     .oche-mode.oche-entry-open .entry-and-log,
     .oche-mode.oche-entry-open #online-manual-section { height: 72vh; }
 
-    /* Video goes BESIDE the score here rather than above it. A band across the
-       top of a 390px-tall screen leaves nothing underneath worth reading,
-       whereas the width is the one thing landscape has spare.
-       Absolutely positioned against the panel with matching padding to make
-       room, because the tiles and the scoreboard are siblings - a side-by-side
-       flow layout would need a wrapper element that does not exist, and adding
-       one means touching markup that game code reads by id. */
-    #online-game-panel.oche-mode.immersive { padding-left: 42vw; }
-    #online-game-panel.oche-mode.immersive #online-video-strip {
-      position: absolute;
-      left: 1.5vw;
-      top: 1.5vh;
-      bottom: 1.5vh;
-      width: 39vw;
-      height: auto;
-      max-width: none;
-      margin: 0;
-      flex-direction: column;
-    }
+    /* NO SEPARATE LANDSCAPE LAYOUT. There was one - video in a column down the
+       left, the panel padded to make room - and it was wrong twice over: it
+       made landscape a third design to maintain, and the centred score row
+       still flowed full-width underneath the absolutely-positioned column, so
+       "YOU 501" printed across the opponent's face.
+       Landscape gets the desktop treatment instead. A landscape phone reports
+       well under 900px wide, so the rules that matter are keyed on ORIENTATION
+       rather than width - see the score-on-camera block above. Only the type
+       sizes are tightened here, because 390px of height is genuinely short;
+       the layout itself is the same one. */
     .oche-mode.immersive #big-score,
     .oche-mode.immersive #online-big-score { font-size: clamp(56px, 28vh, 180px); }
   }
@@ -2895,7 +2886,7 @@
   /* On a phone the tiles are too small to carry a score as well as a face, so
      the central row stays and the overlays go. Desktop does the opposite - see
      the block below. */
-  @media (max-width: 899px) {
+  @media (max-width: 899px) and (orientation: portrait) {
     .oche-mode .tile-score { display: none; }
   }
 
@@ -2907,7 +2898,10 @@
      "and vice versa" needs no new state.
      It also stops the two numbers floating unattached over somebody's living
      room, which is what a centred row does once a camera is behind it. */
-  @media (min-width: 900px) {
+  /* Landscape is included by ORIENTATION, not width: a phone on its side
+     reports well under 900px, and "landscape should look like desktop" is
+     about shape rather than size. */
+  @media (min-width: 900px), (orientation: landscape) {
     .oche-mode.immersive .online-scoreboard { display: none; }
     /* Both of these beat the immersive rules that hide them (0,3,0) at 0,4,0. */
     .oche-mode.immersive .video-tile.as-stage .tile-score,
@@ -3149,6 +3143,47 @@
   /* Bottom right, not top right. At the top they sit on the player cards,
      which span the full width - and the corner nearest your hand is the
      bottom one when the screen is a tablet on a stand. */
+  /* ---- The running average ----
+     Where the arcade machines put it: down the right-hand side, out of the
+     score's way, big enough to read from the oche but never competing with the
+     number you are actually throwing at.
+     Only ever visible in oche view. On the ordinary game screen the stats
+     pages already carry this, in far more detail. */
+  .oche-stat { display: none; }
+  .oche-mode .oche-stat {
+    display: block;
+    position: absolute;
+    right: 2vw;
+    top: 50%;
+    transform: translateY(-50%);
+    text-align: right;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .oche-stat-label {
+    display: block;
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(10px, 1.6vh, 16px);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.65;
+  }
+  .oche-stat-value {
+    display: block;
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: clamp(22px, 6vh, 64px);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Behind the score band it needs its own scrim, the same reasoning as the
+     tile scores: the video underneath is an arbitrary room. */
+  .oche-mode.immersive .oche-stat {
+    padding: 1vh 1.4vh;
+    border-radius: 1vh;
+    background: rgba(0,0,0,0.45);
+  }
+
   .oche-controls {
     position: absolute;
     bottom: 1.6vh;
@@ -3510,6 +3545,7 @@
             <div id="turn-label">Player 1's turn</div>
             <div id="turn-darts"></div>
             <div id="checkout-hint" class="checkout-hint hidden"></div>
+            <div id="oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span></div>
             <div class="actions-row">
               <button id="undo-btn" class="btn-secondary btn-soft">Undo last dart</button>
               <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
@@ -3827,6 +3863,7 @@
         <div id="online-turn-label" style="text-align:center; margin:14px 0; font-weight:600;"></div>
         <div id="online-turn-darts" class="online-turn-darts"></div>
         <div id="online-checkout-hint" class="checkout-hint hidden"></div>
+        <div id="online-oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span></div>
 
         <div class="dartboard-wrap">
           <div class="dartboard"></div>

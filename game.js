@@ -14,7 +14,7 @@ import {
   renderCricketBoard as renderCricketBoard_, wireCricketBoard,
 } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
-import { renderCheckoutHint } from "./checkouthint.js";
+import { renderCheckoutHint, renderLiveAverage } from "./checkouthint.js";
 import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
@@ -87,6 +87,7 @@ const el = {
   turnLabel: document.getElementById("turn-label"),
   turnDarts: document.getElementById("turn-darts"),
   checkoutHint: document.getElementById("checkout-hint"),
+  ocheStat: document.getElementById("oche-stat"),
   undoBtn: document.getElementById("undo-btn"),
   newGameBtn: document.getElementById("new-game-btn"),
   manualSection: document.getElementById("manual-section"),
@@ -1066,6 +1067,7 @@ function render() {
 
   const current = state.players[state.currentPlayerIndex];
   el.bigScore.textContent = scoreOf(current);
+  renderLiveAverage(el.ocheStat, state.recorder?.liveStats(state.currentPlayerIndex));
   renderCheckoutHint(el.checkoutHint, {
     // x01 only: Cricket has no "remaining", Count Up counts upwards, and
     // Bermuda's target is fixed by the round, so there is nothing to suggest.

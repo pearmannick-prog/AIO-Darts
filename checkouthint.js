@@ -13,6 +13,37 @@ import { checkoutAdvice } from "./checkout.js";
 import { getPref } from "./prefs.js";
 
 /**
+ * The running average for the leg in progress - PPD in x01, MPR in Cricket.
+ *
+ * The figure comes from the recorder (see liveStats there), which is the only
+ * thing that sees every dart from both controllers, so this cannot disagree
+ * between local and online play or with what is saved at the end. All this does
+ * is put it on screen.
+ *
+ * Count Up and Bermuda return nothing, because a points-per-dart figure for a
+ * game you win by scoring MORE is a number that reads backwards.
+ *
+ * @param {HTMLElement} node   where it goes; absent is fine
+ * @param {object|null} stats  whatever recorder.liveStats(seat) returned
+ */
+export function renderLiveAverage(node, stats) {
+  if (!node) return;
+  const label = node.querySelector(".oche-stat-label");
+  const value = node.querySelector(".oche-stat-value");
+  if (!label || !value) return;
+
+  if (!stats) {
+    // A dash rather than 0.00: before the first dart there is no average, and
+    // showing zero reads as a bad one.
+    label.textContent = "PPD";
+    value.textContent = "-";
+    return;
+  }
+  label.textContent = stats.label;
+  value.textContent = stats.value.toFixed(stats.digits ?? 2);
+}
+
+/**
  * @param {HTMLElement} node   where it goes; absent is fine
  * @param {object} state       { on, remaining, dartsLeft, rules, bull }
  */

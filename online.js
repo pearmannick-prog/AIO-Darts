@@ -36,7 +36,7 @@ import {
 } from "./medley.js";
 import { renderCricketBoard, wireCricketBoard } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
-import { renderCheckoutHint } from "./checkouthint.js";
+import { renderCheckoutHint, renderLiveAverage } from "./checkouthint.js";
 import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
@@ -119,6 +119,7 @@ const el = {
   turnLabel: document.getElementById("online-turn-label"),
   turnDarts: document.getElementById("online-turn-darts"),
   checkoutHint: document.getElementById("online-checkout-hint"),
+  ocheStat: document.getElementById("online-oche-stat"),
   winnerBanner: document.getElementById("online-winner-banner"),
 
 
@@ -2634,6 +2635,8 @@ function renderOnline() {
   // Only ever for your OWN score. Telling you how your opponent gets out is
   // not help, it is a scoreboard reading their mind, and it would be showing
   // during their visit when you have nothing to throw at anyway.
+  // My own seat only. The opponent's average is not mine to put on screen.
+  renderLiveAverage(el.ocheStat, online.recorder?.liveStats(online.myIndex));
   renderCheckoutHint(el.checkoutHint, {
     on: !cricket && !countup && !bermuda && !online.gameOver && myTurn,
     remaining: online.me?.remaining,

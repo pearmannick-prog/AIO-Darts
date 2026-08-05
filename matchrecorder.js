@@ -171,6 +171,55 @@ export function createRecorder({ mode, format, players }) {
       return doc.clientUuid;
     },
 
+    // The average for the leg IN PROGRESS, for a scoreboard to show while it is
+    // still being played.
+    //
+    // It lives here because the recorder is the only thing that already sees
+    // every dart from BOTH controllers - game.js and online.js feed it the
+    // same way - so a live figure computed here cannot drift between local and
+    // online play, and cannot drift from what is saved at the end either.
+    // Counting darts a second time inside each controller is exactly the kind
+    // of duplicate bookkeeping this module exists to avoid.
+    //
+    // The 100% figure, deliberately: every visit, including the ones spent
+    // setting up a finish. That is what an arcade machine shows mid-match and
+    // what a player expects to see moving after every visit. The 80% scoring
+    // average is a post-match statistic and needs the whole leg to mean
+    // anything (see the note on averages in statsengine.js).
+    liveStats(seat) {
+      if (!leg) return null;
+      // The open visit counts too - an average that only moved when a turn
+      // ended would sit still for the three darts you are actually throwing.
+      const all = turn ? [...leg.turns, turn] : leg.turns;
+      const mine = all.filter((t) => t.seat === seat);
+      if (!mine.length) return null;
+
+      if (leg.game === "cricket") {
+        // A round IS a visit here, matching cricketstats.js.
+        let marks = 0;
+        for (const t of mine) {
+          marks += t.throws.reduce((sum, th) => sum + (th.extra?.marks || 0), 0);
+        }
+        return { kind: "mpr", label: "MPR", value: marks / mine.length, digits: 2 };
+      }
+
+      // Bermuda and Count Up count upwards and have no meaningful per-dart
+      // average to offer mid-leg, so they get nothing rather than a number
+      // that looks like one.
+      if (leg.game !== "x01") return null;
+
+      let darts = 0;
+      let scored = 0;
+      for (const t of mine) {
+        darts += t.throws.length;
+        // A bust visit scores nothing however good its darts looked on the way
+        // there - the same rule closeTurn applies when it writes the visit.
+        scored += t.bust ? 0 : (t.scored || 0);
+      }
+      if (!darts) return null;
+      return { kind: "ppd", label: "PPD", value: scored / darts, digits: 2, perVisit: (scored / darts) * 3 };
+    },
+
     startLeg({ legIndex, game, x01Start, rules, bull, rounds }) {
       closeTurn();
       cricketTally = new Map();
