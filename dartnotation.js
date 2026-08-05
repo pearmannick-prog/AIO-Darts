@@ -80,6 +80,10 @@ export const SOURCES = Object.freeze({
   // first throw.
   autodarts: {
     label: "Autodarts",
+    // Its board manager listens here; the path is still unverified, which is
+    // why the connection UI accepts a full ws:// URL as an override.
+    defaultPort: 3180,
+    path: "/api/events",
     names: { ...COMMON_NAMES, bull: SegmentID.BULL, bullseye: SegmentID.DBL_BULL, outside: SegmentID.MISS },
   },
 
@@ -92,6 +96,10 @@ export const SOURCES = Object.freeze({
   // means boardlink.js routes it to end-turn in both modes with no new code.
   opendartboard: {
     label: "OpenDartboard",
+    // Confirmed from source: websocket_service.hpp defaults to 13520 and
+    // websocket_service.cpp registers the /scores route on 0.0.0.0.
+    defaultPort: 13520,
+    path: "/scores",
     names: {
       ...COMMON_NAMES,
       bull: SegmentID.DBL_BULL,

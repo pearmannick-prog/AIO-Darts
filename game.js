@@ -1,7 +1,12 @@
 // game.js - 501 scoring, board visualization, and all UI wiring.
 
 import { SegmentType, createSegment, SegmentID, applyBullMode } from "./granboard.js";
-import { connectBoard, subscribeToBoard, onBoardStatusChange } from "./boardlink.js";
+import {
+  connectBoard, subscribeToBoard, onBoardStatusChange,
+  setExternalSource, deliverExternalSegment,
+} from "./boardlink.js";
+import { createScorerLink } from "./scorerlink.js";
+import { SOURCES as SCORER_SOURCES } from "./dartnotation.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
@@ -96,6 +101,10 @@ const el = {
   matchBar: document.getElementById("match-bar"),
   nextLegBtn: document.getElementById("next-leg-btn"),
   rematchBtn: document.getElementById("rematch-btn"),
+  scorerHost: document.getElementById("scorer-host"),
+  scorerConnect: document.getElementById("scorer-connect"),
+  scorerDisconnect: document.getElementById("scorer-disconnect"),
+  scorerStatus: document.getElementById("scorer-status"),
   cricketBoard: document.getElementById("cricket-board"),
   scoreBlock: document.getElementById("score-block"),
   winnerBanner: document.getElementById("winner-banner"),
@@ -338,6 +347,55 @@ el.connectBtn.addEventListener("click", async () => {
     alert(`Couldn't connect: ${err.message}`);
   }
 });
+
+// ---------- Automatic camera scorer ----------
+// An alternative producer for the same input bus the Granboard feeds, so a
+// dart seen by a camera is indistinguishable downstream from one felt by a
+// board - it lands in whichever mode is playing, gets recorded, and undoes.
+//
+// Lives in game.js because that is where the header status lives, not because
+// it belongs to local play. It does not.
+const SCORER_HOST_KEY = "aiodarts-scorer-host";
+const SCORER_SOURCE = "opendartboard";
+
+const scorer = createScorerLink({
+  source: SCORER_SOURCE,
+  onSegment: (segment) => deliverExternalSegment(segment),
+  onStatus: ({ status, detail }) => {
+    const label = SCORER_SOURCES[SCORER_SOURCE].label;
+    // The header says what is attached; boardlink owns that, so the scorer
+    // tells it rather than writing the label itself.
+    setExternalSource(status === "connected" ? label : null);
+
+    const text = {
+      connecting: `Connecting to ${label}…`,
+      connected: `Connected to ${label}. Throws will score automatically.`,
+      retrying: `Lost the ${label} connection — ${detail}`,
+      disconnected: "Not connected.",
+      error: detail || "Couldn't connect.",
+    }[status] || "";
+
+    if (el.scorerStatus) el.scorerStatus.textContent = text;
+    const live = status === "connected" || status === "connecting" || status === "retrying";
+    el.scorerConnect?.classList.toggle("hidden", live);
+    el.scorerDisconnect?.classList.toggle("hidden", !live);
+  },
+});
+
+if (el.scorerHost) {
+  el.scorerHost.value = localStorage.getItem(SCORER_HOST_KEY) || "";
+}
+
+el.scorerConnect?.addEventListener("click", () => {
+  const host = el.scorerHost.value.trim();
+  // Remembered before connecting rather than after: the commonest reason to
+  // come back to this box is that the address was wrong, and losing what you
+  // typed on a failed attempt makes correcting it worse.
+  localStorage.setItem(SCORER_HOST_KEY, host);
+  scorer.connect(host);
+});
+
+el.scorerDisconnect?.addEventListener("click", () => scorer.disconnect());
 
 // The header is the one place the board's state is reported, for both modes.
 // Driven by boardlink rather than by the click handler, so it is also correct

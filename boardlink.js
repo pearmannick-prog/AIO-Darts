@@ -26,6 +26,12 @@ let board = null;
 const subscribers = [];
 const statusListeners = new Set();
 
+// A second way in. The Bluetooth board is not the only thing that can produce a
+// dart any more - a camera scorer on the network produces exactly the same
+// segments - so this is the bus they share rather than a Bluetooth-only path.
+// What a consumer sees is identical either way, which is the point.
+let externalSource = null;
+
 // Registers a consumer of board hits.
 //
 //   wants()  - true when this consumer is in a state to accept a dart. Called
@@ -52,15 +58,15 @@ export function onBoardStatusChange(fn) {
 }
 
 export function isBoardConnected() {
-  return Boolean(board);
+  return Boolean(board) || Boolean(externalSource);
 }
 
 export function boardName() {
-  return board?.deviceName || "";
+  return board?.deviceName || externalSource || "";
 }
 
 function announce() {
-  const state = { connected: Boolean(board), name: boardName() };
+  const state = { connected: isBoardConnected(), name: boardName() };
   for (const fn of statusListeners) {
     try {
       fn(state);
@@ -85,6 +91,22 @@ function deliver(segment) {
   }
   // Nobody is playing. Not an error - a board left switched on between games
   // reports the darts you pull out of it - so this is quiet by design.
+}
+
+// An input source other than the Bluetooth board - a camera scorer - saying it
+// is attached, or gone. Named rather than boolean so the header can report WHAT
+// is attached, which is the only thing a player wants to know.
+export function setExternalSource(name) {
+  externalSource = name || null;
+  announce();
+}
+
+// A dart from that source. Goes through exactly the same routing as a Bluetooth
+// hit, so an online match takes it while it is live and local play takes it
+// otherwise - the consumers cannot tell, and must not be able to.
+export function deliverExternalSegment(segment) {
+  if (!segment) return;
+  deliver(segment);
 }
 
 // Opens the connection, or returns the existing one. Idempotent on purpose:

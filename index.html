@@ -2167,6 +2167,32 @@
         </div>
 
 
+        <!-- An automatic camera scorer on the network, as an alternative to a
+             Bluetooth board. Collapsed by default: most people have neither,
+             and the ones who do only set it up once. It feeds the same input
+             bus the Granboard does, so it works in local AND online play with
+             nothing else to configure. -->
+        <details id="scorer-panel" class="scorer-panel">
+          <summary>Automatic camera scorer (optional)</summary>
+          <p class="format-note">
+            An <strong>OpenDartboard</strong> setup on your network scores darts
+            with cameras. Enter its address and this app will read its throws
+            exactly as it reads a Bluetooth board — in local play and online.
+          </p>
+          <div class="setup-row">
+            <label for="scorer-host">Address</label>
+            <input type="text" id="scorer-host" placeholder="192.168.1.50" autocomplete="off">
+            <button type="button" id="scorer-connect" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Connect</button>
+            <button type="button" id="scorer-disconnect" class="btn-secondary hidden" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Disconnect</button>
+          </div>
+          <p class="format-note" id="scorer-status">Not connected.</p>
+          <p class="format-note">
+            The port and path are added for you. Your browser will ask once for
+            permission to reach devices on your local network — that prompt is
+            this connection, and it has to be allowed for the scorer to work.
+          </p>
+        </details>
+
         <div id="player-inputs"></div>
         <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
         <div class="setup-actions">
