@@ -82,7 +82,7 @@ jobs:
           # exclusion-based approach, and they drift for the same reason, so
           # they are worth keeping legible and worth checking together.
           for f in game.js online.js accountui.js lobbyui.js version.js \
-                   prefs.js theme.js customize.js ocheview.js checkout.js checkouthint.js \
+                   prefs.js theme.js customize.js ocheview.js checkout.js checkouthint.js audio.js \
                    accountstore.js lobbyclient.js matchrecorder.js charts.js statsengine.js \
                    granboard.js boardlink.js dartnotation.js scorerlink.js webrtc.js \
                    scoring.js cricket.js countup.js bermuda.js medley.js rating.js botplayer.js \

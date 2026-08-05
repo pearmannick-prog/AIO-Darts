@@ -193,6 +193,51 @@ function wireBoardViewButtons() {
   return refresh;
 }
 
+function soundSection() {
+  const wrap = field("Sound");
+
+  const row = el("label", "cz-check");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = getPref("sound");
+  row.appendChild(box);
+  row.appendChild(el("span", null, "Match sounds"));
+  wrap.appendChild(row);
+
+  const callerRow = el("label", "cz-check");
+  const callerBox = document.createElement("input");
+  callerBox.type = "checkbox";
+  callerBox.checked = getPref("caller");
+  callerBox.addEventListener("change", () => setPref("caller", callerBox.checked));
+  callerRow.appendChild(callerBox);
+  callerRow.appendChild(el("span", null, "Caller announces your score"));
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.className = "cz-slider";
+  slider.min = "0";
+  slider.max = "1";
+  slider.step = "0.05";
+  slider.value = String(getPref("soundVolume"));
+  slider.addEventListener("input", () => setPref("soundVolume", Number(slider.value)));
+
+  const extras = el("div", "cz-sound-extras");
+  extras.appendChild(callerRow);
+  extras.appendChild(slider);
+  extras.hidden = !getPref("sound");
+
+  box.addEventListener("change", () => {
+    setPref("sound", box.checked);
+    extras.hidden = !box.checked;
+  });
+
+  wrap.appendChild(extras);
+  // Honest about the state of it rather than letting someone turn it on, hear
+  // nothing, and conclude the app is broken.
+  wrap.appendChild(el("div", "cz-hint", "No sounds are bundled yet - see sounds/README.md."));
+  return wrap;
+}
+
 function checkoutSection() {
   const wrap = field("Checkout help");
   wrap.appendChild(segmented(
@@ -385,6 +430,7 @@ function render() {
   mount.appendChild(modeSection());
   mount.appendChild(boardViewSection());
   mount.appendChild(checkoutSection());
+  mount.appendChild(soundSection());
   mount.appendChild(accentSection());
   mount.appendChild(landingSection());
   mount.appendChild(resetRow());

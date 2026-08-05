@@ -37,6 +37,7 @@ import {
 import { renderCricketBoard, wireCricketBoard } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
 import { renderCheckoutHint } from "./checkouthint.js";
+import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
 
@@ -1680,6 +1681,10 @@ function finishOnlineLeg(side) {
   recordLegWin(online.match, winnerIndex);
   online.legOver = !online.match.over;
 
+  // The match, not the leg, and only when you won it. A fanfare for losing is
+  // not a feature.
+  if (online.match.over && online.iWon) cueWin();
+
   online.recorder?.endLeg(winnerIndex);
   broadcastMatchState();
 
@@ -2314,9 +2319,18 @@ function applyThrow(side, rawSegment) {
     scored: ignored || isBust ? 0 : segment.value,
   });
 
+  // Only your own darts make a noise. A sound for every throw your opponent
+  // takes, on a connection where you may also have their microphone open, is
+  // a room nobody wants to be in.
+  if (side === "me") {
+    cueHit();
+    if (isBust) cueBust();
+    else if (isWin) cueCheckout();
+  }
+
   if (isBust) {
     s.remaining = s.startOfTurn;
-    endTurn(side);
+    endTurn(side, { busted: true });
   } else {
     s.remaining = after;
     if (isWin) {
@@ -2488,8 +2502,13 @@ function broadcastMatchState() {
   });
 }
 
-function endTurn(side) {
+function endTurn(side, { busted = false } = {}) {
   const s = online[side];
+  // Your own visit only, and not on a bust - cueBust has already said what
+  // happened, and a total would be a lie.
+  if (side === "me" && !busted) {
+    callScore(s.dartsThisTurn.reduce((sum, d) => sum + (d?.value || 0), 0));
+  }
   online.recorder?.endTurn();
   s.dartsThisTurn = [];
   // Cricket has no bust, so there's no start-of-turn value to revert to.

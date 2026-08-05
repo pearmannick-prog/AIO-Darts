@@ -15,6 +15,7 @@ import {
 } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
 import { renderCheckoutHint } from "./checkouthint.js";
+import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
   startingPlayerForLeg, matchScoreText, legProgressText, gameLabel, normalizeLeg,
@@ -556,6 +557,10 @@ function finishLeg(winnerIndex) {
   // A one-leg match is over the moment the leg is - nothing to advance to.
   state.legOver = !state.match.over;
 
+  // The match, not the leg. Winning a leg of a best-of-five is not the moment
+  // for the sound that means it is finished.
+  if (state.match.over) cueWin();
+
   state.recorder?.endLeg(winnerIndex ?? null);
 
   // Only a finished match is saved. Abandoning one halfway (New Game) leaves
@@ -619,13 +624,16 @@ function applyHit(rawSegment) {
   });
 
   moveMarker(el.dartboardMarker, segment);
+  cueHit();
 
   if (isBust) {
+    cueBust();
     player.remaining = state.startOfTurnRemaining;
-    endTurn();
+    endTurn({ busted: true });
   } else {
     player.remaining = after;
     if (isWin) {
+      cueCheckout();
       finishLeg(state.currentPlayerIndex);
     } else if (state.dartsThisTurn.length >= 3) {
       endTurn();
@@ -991,7 +999,13 @@ function maybeThrowForBot() {
   }, 700);
 }
 
-function endTurn() {
+function endTurn({ busted = false } = {}) {
+  // The caller announces the VISIT, so the total is taken before the darts are
+  // cleared - and not at all on a bust, where cueBust has already said what
+  // happened and a number would be a lie.
+  if (!busted) {
+    callScore(state.dartsThisTurn.reduce((sum, s) => sum + (s?.value || 0), 0));
+  }
   state.recorder?.endTurn();
   state.dartsThisTurn = [];
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
