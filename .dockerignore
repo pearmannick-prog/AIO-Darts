@@ -9,6 +9,10 @@ docker-compose.dev.yml
 Dockerfile
 .dockerignore
 capacitor.config.json
-package.json
+# package.json is deliberately NOT excluded any more. It declares
+# "type": "module" for every .js file at the repo root, and the server now
+# imports several of them - statsengine.js and the rules modules it pulls in are
+# shared with the browser so the two can never disagree. Without it in the
+# image, Node has to guess how to parse them.
 www
 android

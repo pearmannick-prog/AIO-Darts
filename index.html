@@ -133,12 +133,6 @@
     opacity: 0.85;
   }
 
-  #online-connection-label {
-    font-size: 13px;
-    color: var(--ink);
-    opacity: 0.8;
-  }
-
   /* Mode tabs */
   .mode-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
   .mode-tab {
@@ -779,7 +773,6 @@
   /* --- below the stage: ordinary cream surface, ordinary controls --- */
   .immersive #online-status-label,
   .immersive #online-manual-section,
-  .immersive #online-connect-row,
   .immersive #online-throw-log,
   .immersive .end-match-row,
   .immersive #online-next-leg-btn,
@@ -876,7 +869,6 @@
   }
   #online-manual-sections { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 12px; }
 
-  #online-connect-row { align-items: center; }
 
   #online-throw-log {
     margin-top: 16px;
@@ -924,6 +916,19 @@
   /* Setup panel */
   #player-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
   .player-row { display: flex; align-items: center; gap: 8px; }
+  .player-kind {
+    flex: 0 0 auto;
+    max-width: 160px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    padding: 9px 8px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    color: var(--ink);
+  }
+  @media (max-width: 560px) { .player-kind { max-width: 120px; font-size: 12px; } }
+
   .player-input {
     flex: 1;
     min-width: 0;
@@ -1316,12 +1321,31 @@
     pointer-events: none;
   }
 
-  /* Manual entry */
-  #manual-section {
+  /* Manual entry and the throw log, side by side.
+     The keypad is a fixed set of buttons that never fills the width, so the
+     log used to sit below a large empty rectangle - and reading the last few
+     darts meant scrolling the pad off screen. The rule the log follows is the
+     same one .game-top follows above it: two columns on a desktop, stacked on
+     a phone where there is no spare width to fill.
+     The separator lives on the wrapper rather than on the keypad, or it would
+     underline only the left column and look like a mistake. */
+  .entry-and-log {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 24px;
+    align-items: start;
     margin-top: 24px;
     padding-top: 20px;
     border-top: 1px solid rgba(27,26,20,0.15);
   }
+  @media (max-width: 640px) {
+    .entry-and-log { grid-template-columns: 1fr; gap: 0; }
+  }
+  /* Cricket hides the keypad entirely - the mark pad above IS the entry
+     surface - so the log takes the whole row instead of leaving a gap. */
+  #manual-section.cricket-mode + #throw-log { grid-column: 1 / -1; }
+
+  /* Manual entry */
   #manual-section h3 {
     font-family: 'Oswald', sans-serif;
     font-size: 15px;
@@ -1428,11 +1452,20 @@
   }
 
   /* Throw log */
+  /* Taller than it was, because beside the keypad there is vertical room to
+     spend and the whole point of the move was to scroll less. It still scrolls
+     - a long leg outruns any fixed height - but the recent darts, which are
+     the ones anyone actually reads, now fit without moving anything. */
   #throw-log {
-    margin-top: 20px;
-    max-height: 200px;
+    margin-top: 0;
+    max-height: 460px;
     overflow-y: auto;
     font-size: 13px;
+  }
+  @media (max-width: 640px) {
+    /* Stacked again, so the old height applies: the log is below the pad and
+       a tall one would push everything else off the screen. */
+    #throw-log { margin-top: 20px; max-height: 200px; }
   }
   .log-row {
     display: grid;
@@ -1442,6 +1475,633 @@
     border-bottom: 1px solid rgba(27,26,20,0.08);
   }
   .log-row.bust { color: var(--red); font-weight: 600; }
+
+  /* ---------------------------------------------------------------------
+     Accounts
+     ---------------------------------------------------------------------
+     The account chip sits in the header next to the board connection, which
+     is the other piece of persistent "who/what am I attached to" state on
+     the page. It stays quiet: a guest sees a plain text button, not a
+     call-to-action, because playing without an account is a first-class way
+     to use this app rather than a trial of it. */
+  header .account-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px 5px 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(239, 230, 210, 0.3);
+    background: rgba(239, 230, 210, 0.08);
+    color: var(--cream);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  header .account-chip:hover { background: rgba(239, 230, 210, 0.16); }
+  .account-chip-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--felt-light);
+    display: grid;
+    place-items: center;
+    font-family: 'Oswald', sans-serif;
+    font-size: 12px;
+    color: var(--gold);
+    overflow: hidden;
+    flex: none;
+  }
+
+  .account-panel + .account-panel { margin-top: 16px; }
+
+  .auth-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+  .auth-tab {
+    flex: 1;
+    padding: 9px 12px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: rgba(27,26,20,0.04);
+    color: var(--ink);
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .auth-tab.active { background: var(--gold); border-color: var(--gold); }
+
+  .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+  .field label { font-weight: 600; font-size: 13px; }
+  .field input, .field select {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    color: var(--ink);
+    width: 100%;
+  }
+  .field .hint { font-size: 12px; opacity: 0.65; }
+
+  /* Two columns where there's room, one on a phone. The app is used one-handed
+     next to a board as often as at a desk. */
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+
+  .form-message {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+  }
+  .form-message.error { display: block; background: rgba(183,48,42,0.12); color: var(--red); }
+  .form-message.ok { display: block; background: rgba(47,122,77,0.14); color: var(--green-ring); }
+
+  .account-header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .account-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--felt);
+    color: var(--gold);
+    display: grid;
+    place-items: center;
+    font-family: 'Oswald', sans-serif;
+    font-size: 22px;
+    overflow: hidden;
+    flex: none;
+  }
+  .account-name { font-family: 'Oswald', sans-serif; font-size: 22px; text-transform: uppercase; }
+  .account-sub { font-size: 13px; opacity: 0.7; }
+
+  .account-section-title {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 15px;
+    margin: 22px 0 10px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(27,26,20,0.12);
+  }
+  /* The rematch row sits under the winner banner: a button, then whatever the
+     handshake has to say, then Accept/Decline when it is this player's move.
+     Only ever one of those states is on screen at a time - see renderRematch. */
+  #online-rematch-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 10px 0 14px;
+  }
+  #online-rematch-status { font-size: 13px; opacity: 0.8; }
+  #online-rematch-choice { display: inline-flex; gap: 8px; align-items: center; }
+
+  .account-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  /* A secondary action that shouldn't compete with the submit button beside
+     it: "Forgot password?" is the escape hatch, not the thing most people are
+     here to do. Still a real <button>, because it does something rather than
+     going somewhere - a bare <a href="#"> would lie to a screen reader. */
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 4px 2px;
+    color: var(--ink);
+    opacity: 0.7;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .link-btn:hover { opacity: 1; }
+  .btn-ink {
+    background: var(--felt);
+    color: var(--cream);
+  }
+  .btn-ink:hover { filter: brightness(1.15); }
+  .btn-quiet {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid #cfc4a3;
+  }
+  .btn-quiet:hover { background: rgba(27,26,20,0.06); }
+
+  .checkbox-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+  .checkbox-row input { margin-top: 3px; flex: none; }
+  .checkbox-row label { font-size: 13px; }
+
+  /* Account sub-navigation. Scrolls sideways rather than wrapping, so adding
+     the stats and leaderboard screens later doesn't reflow the page on a
+     phone. */
+  .account-nav {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .account-nav-btn {
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(239, 230, 210, 0.3);
+    background: rgba(239, 230, 210, 0.08);
+    color: var(--cream);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .account-nav-btn.active { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+
+  .account-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .queue-note { font-size: 12px; opacity: 0.7; }
+
+  /* Match history */
+  .history-list { display: flex; flex-direction: column; }
+  .history-row {
+    display: grid;
+    grid-template-columns: 52px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 4px;
+    border-bottom: 1px solid rgba(27,26,20,0.1);
+  }
+  .history-row:last-child { border-bottom: none; }
+  /* The result is the first thing read off a row, so it is a shape and a
+     colour rather than a word to scan for. */
+  .history-result {
+    font-family: 'Oswald', sans-serif;
+    font-size: 13px;
+    text-transform: uppercase;
+    text-align: center;
+    padding: 4px 0;
+    border-radius: 6px;
+    background: rgba(27,26,20,0.08);
+  }
+  .history-result.win { background: rgba(47,122,77,0.18); color: var(--green-ring); }
+  .history-result.loss { background: rgba(183,48,42,0.12); color: var(--red); }
+  .history-opponent { font-weight: 600; }
+  .history-detail { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+  .history-score { font-family: 'Oswald', sans-serif; font-size: 20px; text-align: right; }
+  .history-empty { font-size: 14px; opacity: 0.7; padding: 8px 4px; }
+  @media (max-width: 480px) {
+    .history-row { grid-template-columns: 46px 1fr auto; gap: 8px; }
+    .history-score { font-size: 17px; }
+  }
+
+  /* Statistics.
+     Metric tiles rather than a table: the numbers are read one at a time
+     ("what's my average?"), not compared row against row. */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .stat-tile {
+    background: rgba(27,26,20,0.045);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .stat-value {
+    font-family: 'Oswald', sans-serif;
+    font-size: 26px;
+    line-height: 1.1;
+    color: var(--felt);
+  }
+  .stat-label { font-size: 12px; opacity: 0.7; margin-top: 3px; }
+  /* Definitions that are choices rather than facts (checkout %, white horses)
+     carry their definition with them - a number whose meaning is arguable
+     should say which reading it took. */
+  .stat-hint { font-size: 11px; opacity: 0.5; margin-top: 4px; font-style: italic; }
+
+  .trend-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .trend-controls label { font-size: 13px; font-weight: 600; }
+  .trend-controls select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    color: var(--ink);
+  }
+
+  .chart-block { margin-bottom: 22px; }
+  .chart-title {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .chart { position: relative; }
+  .chart svg { width: 100%; height: 200px; display: block; overflow: visible; }
+  .chart-empty { font-size: 13px; opacity: 0.6; margin: 4px 0 0; }
+
+  .chart-tip {
+    position: absolute;
+    transform: translate(-50%, -130%);
+    background: var(--felt);
+    color: var(--cream);
+    padding: 6px 9px;
+    border-radius: 7px;
+    font-size: 12px;
+    line-height: 1.35;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  }
+  .chart-tip strong { display: block; font-family: 'Oswald', sans-serif; font-size: 15px; }
+  .chart-tip span { opacity: 0.75; }
+
+  .chart-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  .chart-table th, .chart-table td {
+    text-align: left;
+    padding: 5px 6px;
+    border-bottom: 1px solid rgba(27,26,20,0.1);
+  }
+  .chart-table th { font-weight: 600; opacity: 0.7; }
+  .chart-table td:last-child, .chart-table th:last-child { text-align: right; }
+
+  .improved-note {
+    background: rgba(47,122,77,0.12);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+
+  /* Achievements. Earned ones carry the gold; locked ones are visibly muted
+     but still legible - greying something into unreadability defeats the point
+     of showing it. Never colour alone: an earned badge also gets its date, and
+     a locked one says so. */
+  .badge-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--gold);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .badge-empty { font-size: 13px; opacity: 0.65; }
+
+  .achievement-row {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 11px 4px;
+    border-bottom: 1px solid rgba(27,26,20,0.1);
+  }
+  .achievement-row:last-child { border-bottom: none; }
+  .achievement-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(27,26,20,0.09);
+    font-size: 15px;
+  }
+  .achievement-row.earned .achievement-mark { background: var(--gold); }
+  .achievement-name { font-weight: 600; }
+  .achievement-desc { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+  .achievement-when { font-size: 12px; opacity: 0.6; text-align: right; }
+  .achievement-row.locked { opacity: 0.72; }
+
+  .achievement-group {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 13px;
+    margin: 18px 0 6px;
+  }
+
+  /* Shown when a match unlocks something. Deliberately in the game panel and
+     not a modal - it appears next to the winner banner and never interrupts. */
+  .unlock-toast {
+    background: var(--gold);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    font-size: 14px;
+  }
+  .unlock-toast strong { font-family: 'Oswald', sans-serif; text-transform: uppercase; }
+
+  /* Leaderboards */
+  .board-caveat { font-size: 12px; opacity: 0.65; margin: 0 0 14px; }
+  .board-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .board-controls select {
+    flex: 1 1 150px;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    color: var(--ink);
+  }
+
+  .board-row {
+    display: grid;
+    grid-template-columns: 38px 30px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 4px;
+    border-bottom: 1px solid rgba(27,26,20,0.1);
+  }
+  .board-row:last-child { border-bottom: none; }
+  /* The viewer's own row, wherever it appears. Marked with a background AND
+     the word "You", never colour alone. */
+  .board-row.you { background: rgba(199,162,74,0.22); border-radius: 8px; }
+  .board-rank { font-family: 'Oswald', sans-serif; font-size: 16px; opacity: 0.75; }
+  .board-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .board-you-tag { font-size: 11px; opacity: 0.7; margin-left: 6px; }
+  .board-value { font-family: 'Oswald', sans-serif; font-size: 19px; }
+  .board-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--felt); color: var(--gold);
+    display: grid; place-items: center; font-size: 11px;
+    font-family: 'Oswald', sans-serif; overflow: hidden;
+  }
+  .board-gap {
+    text-align: center;
+    font-size: 12px;
+    opacity: 0.5;
+    padding: 6px 0;
+  }
+
+  /* Friends and clubs */
+  .people-list { display: flex; flex-direction: column; }
+  .person-row {
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 4px;
+    border-bottom: 1px solid rgba(27,26,20,0.1);
+  }
+  .person-row:last-child { border-bottom: none; }
+  .person-name { font-weight: 600; }
+  .person-sub { font-size: 12px; opacity: 0.65; }
+  .person-actions { display: flex; gap: 6px; }
+  .person-actions button {
+    padding: 6px 11px;
+    font-size: 12px;
+    border-radius: 7px;
+  }
+  .people-empty { font-size: 13px; opacity: 0.65; padding: 6px 4px; }
+
+  /* Lobby */
+  #lobby-panel { margin-bottom: 16px; }
+  .lobby-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  /* Rank badge. The letters are the rank - the colour only decorates it, so it
+     stays readable in print, in forced-colours mode, and to anyone who cannot
+     tell SS from S by hue. The rating number sits beside it for the same
+     reason. */
+  .rank-badge {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(27,26,20,0.08);
+    font-family: 'Oswald', sans-serif;
+  }
+  .rank-badge .rank-letters {
+    font-size: 19px;
+    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+  .rank-badge .rank-value { font-size: 13px; opacity: 0.75; }
+  .rank-badge.unranked .rank-letters { color: var(--ink); opacity: 0.45; font-size: 14px; }
+
+  .watch-panel {
+    background: rgba(15,61,46,0.08);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 14px 0;
+  }
+  .watch-board { display: flex; gap: 12px; flex-wrap: wrap; }
+  .watch-player {
+    flex: 1 1 140px;
+    background: rgba(27,26,20,0.05);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  /* The player currently throwing. Marked with a ring AND the word, never the
+     ring alone. */
+  .watch-player.throwing { outline: 2px solid var(--gold); }
+  .watch-score { font-family: 'Oswald', sans-serif; font-size: 30px; line-height: 1.1; }
+  .watch-name { font-size: 13px; font-weight: 600; }
+  .watch-turn { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .rating-pair { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .rating-block {
+    background: rgba(27,26,20,0.045);
+    border-radius: 10px;
+    padding: 12px 14px;
+    flex: 1 1 200px;
+  }
+  .rating-block .rank-badge { margin-top: 6px; }
+
+  .lobby-head-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .player-card {
+    background: rgba(27,26,20,0.05);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .player-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .player-card .stat-grid { margin-top: 12px; }
+  /* The name is a button, so it has to look like one without shouting. */
+  .person-name.clickable { cursor: pointer; text-decoration: underline dotted rgba(27,26,20,0.35); }
+
+  .looking-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lobby-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+  }
+  .lobby-controls input, .lobby-controls select {
+    flex: 1 1 160px;
+    min-width: 0;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid #cfc4a3;
+    background: #fff;
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+  }
+  .lobby-controls button { flex: 0 0 auto; }
+
+  /* A status is never colour alone - the dot is paired with its word. */
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; margin-right: 6px; flex: none;
+    background: rgba(27,26,20,0.3);
+  }
+  .status-looking { background: var(--green-ring); }
+  .status-lobby, .status-online { background: var(--gold); }
+  .status-in_match { background: var(--red); }
+
+  /* A match owns the tab. The lobby, the rooms, the chat and the create/join
+     panel are all "between matches" furniture, and leaving them under a live
+     match is what made an accepted challenge look like nothing had happened -
+     the invite-code panel was still sitting there. Restored on teardown. */
+  body.in-match #lobby-panel,
+  body.in-match #challenge-alert { display: none !important; }
+
+  /* Sits above everything, because an unanswered challenge expires and the
+     whole point is that it cannot be missed. Not a modal: it must never block
+     a match already in progress. */
+  .challenge-alert {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--gold);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  }
+  .challenge-alert .challenge-text { font-size: 15px; }
+
+  .challenge-card {
+    background: rgba(199,162,74,0.22);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .challenge-card .person-actions { flex-wrap: wrap; }
+  .challenge-text { font-size: 14px; }
+  .challenge-text strong { font-family: 'Oswald', sans-serif; text-transform: uppercase; }
+
+  .chat-log {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid rgba(27,26,20,0.12);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    background: rgba(27,26,20,0.03);
+  }
+  .chat-line { margin-bottom: 5px; word-break: break-word; }
+  .chat-line .chat-who { font-weight: 600; }
+  .chat-line.system { opacity: 0.6; font-style: italic; }
+  .chat-line.whisper .chat-who { color: var(--red); }
+  .chat-empty { opacity: 0.55; }
+
+  /* Shown only on a deployment whose branch isn't main - see version.js. Uses
+     the warning red rather than the brand gold precisely because it should not
+     look like part of the design. */
+  .env-banner {
+    background: var(--red);
+    color: #fff;
+    text-align: center;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: 0.02em;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
 </style>
 </head>
 <body>
@@ -1455,12 +2115,26 @@
         <button id="connect-btn" class="btn-primary">Connect Board</button>
         <span id="connection-dot" class="conn-dot"></span>
         <span id="connection-label">Not connected</span>
+        <!-- Hidden until accountstore confirms there is an accounts API to
+             talk to. The Android wrapper has no server behind it, so offering
+             a sign-in button there would be a dead end. -->
+        <button type="button" id="account-chip" class="account-chip hidden">
+          <span class="account-chip-avatar" id="account-chip-avatar">&#9679;</span>
+          <span id="account-chip-label">Sign in</span>
+        </button>
       </div>
     </header>
+
+    <!-- Incoming challenges. Deliberately outside #online-mode: the lobby
+         panel is inside that tab, so a challenge rendered there is invisible to
+         anyone sitting on Local Play or My Darts - they never see it, never
+         accept, and the challenger waits for nothing. -->
+    <div id="challenge-alert" class="challenge-alert hidden"></div>
 
     <div class="mode-tabs">
       <button id="tab-local" class="mode-tab active">Local Play</button>
       <button id="tab-online" class="mode-tab">Online Challenge</button>
+      <button id="tab-account" class="mode-tab hidden">My Darts</button>
     </div>
 
     <div id="local-mode">
@@ -1475,6 +2149,7 @@
             <option value="single-701">Single game &middot; 701</option>
             <option value="single-cricket">Single game &middot; Cricket</option>
             <option value="single-countup">Single game &middot; Count Up</option>
+            <option value="single-bermuda">Single game &middot; Bermuda Triangle</option>
             <option value="bo3">Best of 3 &middot; 501 / Cricket / 501</option>
             <option value="bo5">Best of 5 &middot; alternating</option>
             <option value="custom">Custom&hellip;</option>
@@ -1492,6 +2167,32 @@
         </div>
 
 
+        <!-- An automatic camera scorer on the network, as an alternative to a
+             Bluetooth board. Collapsed by default: most people have neither,
+             and the ones who do only set it up once. It feeds the same input
+             bus the Granboard does, so it works in local AND online play with
+             nothing else to configure. -->
+        <details id="scorer-panel" class="scorer-panel">
+          <summary>Automatic camera scorer (optional)</summary>
+          <p class="format-note">
+            An <strong>OpenDartboard</strong> setup on your network scores darts
+            with cameras. Enter its address and this app will read its throws
+            exactly as it reads a Bluetooth board — in local play and online.
+          </p>
+          <div class="setup-row">
+            <label for="scorer-host">Address</label>
+            <input type="text" id="scorer-host" placeholder="192.168.1.50" autocomplete="off">
+            <button type="button" id="scorer-connect" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Connect</button>
+            <button type="button" id="scorer-disconnect" class="btn-secondary hidden" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Disconnect</button>
+          </div>
+          <p class="format-note" id="scorer-status">Not connected.</p>
+          <p class="format-note">
+            The port and path are added for you. Your browser will ask once for
+            permission to reach devices on your local network — that prompt is
+            this connection, and it has to be allowed for the scorer to work.
+          </p>
+        </details>
+
         <div id="player-inputs"></div>
         <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
         <div class="setup-actions">
@@ -1507,6 +2208,10 @@
         </div>
         <div id="winner-banner" class="hidden"></div>
         <button type="button" id="next-leg-btn" class="btn-primary next-leg-btn hidden">Next leg &rarr;</button>
+        <!-- Same players, same format, no setup screen. "New game" beside it is
+             the change-the-format path: it returns to setup with the names and
+             format still filled in. -->
+        <button type="button" id="rematch-btn" class="btn-primary next-leg-btn hidden">Rematch &orarr;</button>
         <div id="player-tabs"></div>
 
         <div class="game-top">
@@ -1528,31 +2233,37 @@
 
         <div id="cricket-board" class="cricket-board hidden"></div>
 
-        <div id="manual-section">
-          <h3>Manual entry</h3>
-          <div class="entry-mode-tabs">
-            <button type="button" class="entry-mode-tab" data-mode="perdart">Per-Dart</button>
-            <button type="button" class="entry-mode-tab active" data-mode="quicktotal">Quick Total</button>
-          </div>
-          <div id="manual-perdart" class="entry-mode-panel hidden">
-            <div class="manual-row">
-              <label for="manual-ring">Ring:</label>
-              <select id="manual-ring">
-                <option value="outer">Single (outer)</option>
-                <option value="inner">Single (inner)</option>
-                <option value="triple">Triple</option>
-                <option value="double">Double</option>
-              </select>
-              <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-              <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-              <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+        <!-- Manual entry and the throw log are siblings in a two-column grid
+             rather than stacked. The keypad does not use the full width, and
+             the log underneath it meant scrolling past the pad you were about
+             to use in order to read what just happened. -->
+        <div class="entry-and-log">
+          <div id="manual-section">
+            <h3>Manual entry</h3>
+            <div class="entry-mode-tabs">
+              <button type="button" class="entry-mode-tab" data-mode="perdart">Per-Dart</button>
+              <button type="button" class="entry-mode-tab active" data-mode="quicktotal">Quick Total</button>
             </div>
-            <div id="manual-sections"></div>
+            <div id="manual-perdart" class="entry-mode-panel hidden">
+              <div class="manual-row">
+                <label for="manual-ring">Ring:</label>
+                <select id="manual-ring">
+                  <option value="outer">Single (outer)</option>
+                  <option value="inner">Single (inner)</option>
+                  <option value="triple">Triple</option>
+                  <option value="double">Double</option>
+                </select>
+                <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
+                <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
+                <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+              </div>
+              <div id="manual-sections"></div>
+            </div>
+            <div id="manual-quicktotal" class="entry-mode-panel"></div>
           </div>
-          <div id="manual-quicktotal" class="entry-mode-panel"></div>
-        </div>
 
-        <div id="throw-log"></div>
+          <div id="throw-log"></div>
+        </div>
       </div>
     </div>
 
@@ -1562,6 +2273,86 @@
       <div id="online-setup-notice" class="setup-notice hidden"></div>
 
       <!-- Signaling server config + create/join -->
+      <!-- The lobby. Hidden entirely unless signed in and connected - the
+           invite-code panel below is the whole feature without it, and is
+           still the only way to play without an account. -->
+      <div id="lobby-panel" class="panel hidden">
+        <div class="lobby-head">
+          <div>
+            <div class="account-name">Lobby</div>
+            <div class="account-sub" id="lobby-count">&nbsp;</div>
+          </div>
+          <div class="lobby-head-actions">
+            <button type="button" class="btn-primary" id="quick-match-btn">Quick Match</button>
+            <label class="looking-toggle">
+              <input type="checkbox" id="lobby-looking">
+              <span>Open to challenges</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- A player card, opened by tapping someone in the lobby. Their real
+             record, so "should I challenge this person" has an answer. -->
+        <div id="player-card" class="player-card hidden">
+          <div class="player-card-head">
+            <div class="account-name" id="player-card-name">Player</div>
+            <button type="button" class="btn-quiet" id="player-card-close">Close</button>
+          </div>
+          <div class="account-sub" id="player-card-sub">&nbsp;</div>
+          <div id="player-card-stats" class="stat-grid"></div>
+          <div class="account-actions" id="player-card-actions"></div>
+        </div>
+
+        <div id="lobby-challenges"></div>
+
+        <div class="lobby-controls">
+          <input type="search" id="lobby-filter" placeholder="Search players" autocomplete="off">
+          <select id="lobby-scope">
+            <option value="all">Everyone</option>
+            <option value="friends">Friends only</option>
+          </select>
+        </div>
+
+        <div id="lobby-players" class="people-list"></div>
+
+        <div id="watch-panel" class="watch-panel hidden">
+          <div class="account-section-head">
+            <div class="account-name" id="watch-title">Watching</div>
+            <button type="button" class="btn-quiet" id="watch-stop">Stop watching</button>
+          </div>
+          <div id="watch-board" class="watch-board"></div>
+          <p class="stat-hint" id="watch-note">
+            Live scoring only &mdash; the match itself is played directly between the two players.
+          </p>
+        </div>
+
+        <div class="account-section-title">Matches in progress</div>
+        <div id="lobby-live" class="people-list"></div>
+
+        <div class="account-section-title">Rooms</div>
+        <p class="board-caveat">
+          A room is a place to wait and chat &mdash; &ldquo;501 Practice&rdquo;,
+          &ldquo;Cricket Only&rdquo; &mdash; not a match. Anyone in one can be challenged.
+        </p>
+        <div id="lobby-rooms" class="people-list"></div>
+        <div class="lobby-controls">
+          <input type="text" id="room-name" maxlength="40" placeholder="New room name">
+          <button type="button" class="btn-ink" id="room-create-btn">Create room</button>
+        </div>
+
+        <div id="lobby-room-view" class="hidden">
+          <div class="account-section-title" id="room-title">Room</div>
+          <div id="chat-log" class="chat-log"></div>
+          <div class="lobby-controls">
+            <input type="text" id="chat-input" maxlength="300" placeholder="Say something">
+            <button type="button" class="btn-ink" id="chat-send-btn">Send</button>
+            <button type="button" class="btn-quiet" id="room-leave-btn">Leave</button>
+          </div>
+        </div>
+
+        <p class="form-message" id="lobby-message"></p>
+      </div>
+
       <div id="online-setup-panel" class="panel">
         <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
         <div class="format-block">
@@ -1573,6 +2364,7 @@
               <option value="single-701">Single game &middot; 701</option>
               <option value="single-cricket">Single game &middot; Cricket</option>
             <option value="single-countup">Single game &middot; Count Up</option>
+            <option value="single-bermuda">Single game &middot; Bermuda Triangle</option>
               <option value="bo3">Best of 3 &middot; 501 / Cricket / 501</option>
               <option value="bo5">Best of 5 &middot; alternating</option>
               <option value="custom">Custom&hellip;</option>
@@ -1661,8 +2453,13 @@
 
       <!-- Waiting for opponent -->
       <div id="online-waiting-panel" class="panel hidden">
-        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Waiting for opponent…</h3>
-        <p>Share this code with the person you're challenging:</p>
+        <!-- Wording is set by online.js, because this one panel serves three
+             different situations and only ONE of them involves sharing
+             anything: creating an invite code. A lobby match already knows who
+             both players are, and joining a code means somebody already shared
+             it with you. See showWaitingPanel(). -->
+        <h3 id="online-waiting-title" style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Waiting for opponent…</h3>
+        <p id="online-waiting-note">Share this code with the person you're challenging:</p>
         <div id="challenge-code-display"></div>
         <button id="cancel-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Cancel</button>
       </div>
@@ -1770,6 +2567,19 @@
 
         <button type="button" id="online-next-leg-btn" class="btn-primary next-leg-btn hidden">Next leg &rarr;</button>
 
+        <!-- Rematch, over the connection that is still open. Mutual by design:
+             one side offers, the other accepts, and nothing starts until it
+             does - a match the other player never agreed to would leave them
+             staring at a scoreboard that changed by itself. -->
+        <div id="online-rematch-row" class="hidden">
+          <button type="button" id="online-rematch-btn" class="btn-primary next-leg-btn">Offer rematch &orarr;</button>
+          <span id="online-rematch-status"></span>
+          <span id="online-rematch-choice" class="hidden">
+            <button type="button" id="online-rematch-accept" class="btn-primary next-leg-btn">Accept</button>
+            <button type="button" id="online-rematch-decline" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Decline</button>
+          </span>
+        </div>
+
         <div id="online-cricket-board" class="cricket-board hidden"></div>
 
         <div id="online-manual-section">
@@ -1796,11 +2606,12 @@
           <div id="online-manual-quicktotal" class="entry-mode-panel"></div>
         </div>
 
-        <div id="online-connect-row" class="actions-row">
-          <button id="online-connect-btn" class="btn-primary">Connect My Board</button>
-          <span id="online-connection-dot" class="conn-dot"></span>
-          <span id="online-connection-label">Not connected</span>
-        </div>
+        <!-- The board's connect button and status used to be repeated here.
+             There is one physical board, so there is now one connection and
+             one place that reports it: the header, which is on screen during
+             an online match too. Two buttons meant two connections, and a
+             board attached from the wrong one delivered its darts to a game
+             that wasn't running. See boardlink.js. -->
 
         <div id="online-throw-log"></div>
 
@@ -1808,6 +2619,358 @@
              one control here that throws away an in-progress match. -->
         <div class="end-match-row">
           <button type="button" id="online-end-match-btn" class="end-match-btn">End match</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== Accounts ===================== -->
+    <div id="account-mode" class="hidden">
+
+      <!-- Guest view: sign in or create an account. Both forms live here
+           together rather than on separate screens, because the commonest
+           mistake at this point is trying to sign in with an account you
+           haven't made yet, and one tap should fix that. -->
+      <div id="account-auth" class="panel account-panel">
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab active" data-auth="login">Sign in</button>
+          <button type="button" class="auth-tab" data-auth="register">Create account</button>
+        </div>
+
+        <form id="login-form" autocomplete="on">
+          <div class="field">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" name="email" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" name="password"
+                   autocomplete="current-password" required>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-primary" id="login-submit">Sign in</button>
+            <button type="button" class="link-btn" id="forgot-link">Forgot password?</button>
+          </div>
+          <p class="form-message" id="login-message"></p>
+        </form>
+
+        <!-- Asking for a link. Deliberately a separate form rather than a
+             prompt: the address may not be the one already typed above, and
+             half the point of arriving here is that you are not sure which
+             address you used. -->
+        <form id="forgot-form" class="hidden" autocomplete="on">
+          <div class="field">
+            <label for="forgot-email">Email</label>
+            <input type="email" id="forgot-email" name="email" autocomplete="username" required>
+            <span class="hint">We'll send a link that works once and lasts an hour.</span>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-primary" id="forgot-submit">Send reset link</button>
+            <button type="button" class="link-btn" id="forgot-cancel">Back to sign in</button>
+          </div>
+          <p class="form-message" id="forgot-message"></p>
+        </form>
+
+        <!-- Where the emailed link lands. Shown only by the #/reset route, and
+             the token never appears on screen - it is read from the URL. -->
+        <form id="reset-form" class="hidden" autocomplete="on">
+          <div class="field">
+            <label for="reset-password">New password</label>
+            <input type="password" id="reset-password" name="password"
+                   autocomplete="new-password" minlength="8" required>
+            <span class="hint">At least 8 characters. Length beats punctuation.</span>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-primary" id="reset-submit">Set new password</button>
+          </div>
+          <p class="form-message" id="reset-message"></p>
+        </form>
+
+        <form id="register-form" class="hidden" autocomplete="on">
+          <div class="field">
+            <label for="register-name">Display name</label>
+            <input type="text" id="register-name" name="name" maxlength="40"
+                   autocomplete="nickname" required>
+            <span class="hint">Shown on your stats and to opponents online.</span>
+          </div>
+          <div class="field">
+            <label for="register-email">Email</label>
+            <input type="email" id="register-email" name="email" autocomplete="username" required>
+          </div>
+          <div class="field">
+            <label for="register-password">Password</label>
+            <input type="password" id="register-password" name="password"
+                   autocomplete="new-password" minlength="8" required>
+            <span class="hint">At least 8 characters. Length beats punctuation.</span>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="register-format">Preferred format</label>
+              <select id="register-format">
+                <option value="">No preference</option>
+                <option value="single-301">301</option>
+                <option value="single-501" selected>501</option>
+                <option value="single-701">701</option>
+                <option value="single-cricket">Cricket</option>
+                <option value="single-countup">Count Up</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="register-outrule">Preferred checkout</label>
+              <select id="register-outrule">
+                <option value="double" selected>Double out</option>
+                <option value="siso">Single out (SISO)</option>
+                <option value="dido">Double in, double out</option>
+                <option value="master">Master out</option>
+              </select>
+            </div>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-primary" id="register-submit">Create account</button>
+          </div>
+          <p class="form-message" id="register-message"></p>
+        </form>
+      </div>
+
+      <!-- Signed-in view. Sub-navigation across the account screens; later
+           phases add the dashboard, statistics and leaderboards to it. -->
+      <div id="account-nav" class="account-nav hidden">
+        <button type="button" class="account-nav-btn active" data-view="dashboard">Dashboard</button>
+        <button type="button" class="account-nav-btn" data-view="stats">Statistics</button>
+        <button type="button" class="account-nav-btn" data-view="history">History</button>
+        <button type="button" class="account-nav-btn" data-view="achievements">Achievements</button>
+        <button type="button" class="account-nav-btn" data-view="leaderboards">Leaderboards</button>
+        <button type="button" class="account-nav-btn" data-view="friends">Friends</button>
+        <button type="button" class="account-nav-btn" data-view="profile">Profile</button>
+      </div>
+
+      <div id="account-leaderboards" class="panel account-panel hidden">
+        <div class="account-section-head">
+          <div class="account-name">Leaderboards</div>
+          <span class="queue-note" id="board-qualification"></span>
+        </div>
+
+        <!-- Said plainly and up front rather than in small print at the
+             bottom: these are self-reported scores from an app with no
+             referee, and anyone reading a board should know that before they
+             read it, not after. -->
+        <p class="board-caveat">
+          Scores are reported by each player's own app, so these are for friendly
+          comparison rather than ranking.
+        </p>
+
+        <div class="board-controls">
+          <select id="board-select"></select>
+          <select id="board-scope">
+            <option value="global">Everyone</option>
+            <option value="friends">Friends</option>
+            <option value="club">Club</option>
+          </select>
+          <select id="board-club" class="hidden"></select>
+          <select id="board-window">
+            <option value="all">All time</option>
+            <option value="month">This month</option>
+          </select>
+        </div>
+
+        <p class="form-message" id="board-optin"></p>
+        <div id="board-table"></div>
+        <p class="form-message" id="board-message"></p>
+      </div>
+
+      <div id="account-friends" class="panel account-panel hidden">
+        <div class="account-section-head">
+          <div class="account-name">Friends &amp; clubs</div>
+        </div>
+
+        <div class="field">
+          <label for="friend-search">Find a player</label>
+          <input type="search" id="friend-search" placeholder="Search by display name"
+                 autocomplete="off">
+          <span class="hint">Players are found by display name only, never by email.</span>
+        </div>
+        <div id="friend-results" class="people-list"></div>
+
+        <div class="account-section-title">Requests</div>
+        <div id="friend-requests" class="people-list"></div>
+
+        <div class="account-section-title">Your friends</div>
+        <div id="friend-list" class="people-list"></div>
+
+        <div class="account-section-title">Clubs</div>
+        <div id="club-list" class="people-list"></div>
+        <div class="field-row" style="margin-top:12px">
+          <div class="field">
+            <label for="club-name">Create a club</label>
+            <input type="text" id="club-name" maxlength="40" placeholder="The Griffin">
+          </div>
+          <div class="field">
+            <label for="club-slug">Join with a club code</label>
+            <input type="text" id="club-slug" maxlength="40" placeholder="the-griffin">
+          </div>
+        </div>
+        <div class="account-actions">
+          <button type="button" class="btn-ink" id="club-create-btn">Create</button>
+          <button type="button" class="btn-quiet" id="club-join-btn">Join</button>
+        </div>
+        <p class="form-message" id="friend-message"></p>
+      </div>
+
+      <div id="account-dashboard" class="panel account-panel hidden">
+        <div class="account-header">
+          <span class="account-avatar" id="dash-avatar">&#9679;</span>
+          <div>
+            <div class="account-name" id="dash-name">Player</div>
+            <div class="account-sub" id="dash-sub">&nbsp;</div>
+          </div>
+        </div>
+
+        <div id="dash-headline" class="stat-grid"></div>
+
+        <div class="account-section-title">Recent matches</div>
+        <div id="dash-recent" class="history-list"></div>
+
+        <div class="account-section-title">Personal bests</div>
+        <div id="dash-bests" class="stat-grid"></div>
+
+        <div class="account-section-title">Achievements</div>
+        <div id="dash-achievements" class="badge-row"></div>
+
+        <div class="account-section-title">Form</div>
+        <div id="dash-chart"></div>
+        <p class="form-message" id="dash-message"></p>
+      </div>
+
+      <div id="account-achievements" class="panel account-panel hidden">
+        <div class="account-section-head">
+          <div class="account-name">Achievements</div>
+          <span class="queue-note" id="achievement-count"></span>
+        </div>
+        <!-- Locked ones are shown too: a list of what you have done is a
+             trophy cabinet, a list of what there is to do is something to aim
+             at, and the second is the more useful of the two early on. -->
+        <div id="achievement-list"></div>
+        <p class="form-message" id="achievement-message"></p>
+      </div>
+
+      <div id="account-stats" class="panel account-panel hidden">
+        <div class="account-section-head">
+          <div class="account-name">Statistics</div>
+          <span class="queue-note" id="stats-counted"></span>
+        </div>
+
+        <!-- Career first: it is the only section that is true regardless of
+             what you play. Each game then gets its own block, rendered from
+             whatever the stats engine's registry returns - so a new game mode
+             appears here without this page being touched. -->
+        <div id="stats-sections"></div>
+
+        <div class="account-section-title">Trends</div>
+        <div class="trend-controls">
+          <label for="trend-grain">Group by</label>
+          <select id="trend-grain">
+            <option value="daily">Day</option>
+            <option value="weekly" selected>Week</option>
+            <option value="monthly">Month</option>
+          </select>
+          <button type="button" class="btn-quiet" id="trend-table-toggle">Show as table</button>
+        </div>
+        <div id="trend-charts"></div>
+        <p class="form-message" id="stats-message"></p>
+      </div>
+
+      <div id="account-history" class="panel account-panel hidden">
+        <div class="account-section-head">
+          <div class="account-name">Match history</div>
+          <span class="queue-note hidden" id="history-queue-note"></span>
+        </div>
+        <div id="history-list" class="history-list"></div>
+        <div class="account-actions" style="margin-top:14px">
+          <button type="button" class="btn-quiet hidden" id="history-more">Load more</button>
+        </div>
+        <p class="form-message" id="history-message"></p>
+      </div>
+
+      <div id="account-home" class="panel account-panel hidden">
+        <div class="account-header">
+          <span class="account-avatar" id="account-avatar">&#9679;</span>
+          <div>
+            <div class="account-name" id="account-display-name">Player</div>
+            <div class="account-sub" id="account-meta">&nbsp;</div>
+          </div>
+        </div>
+
+        <div class="account-section-title">Profile</div>
+        <form id="profile-form">
+          <div class="field">
+            <label for="profile-name">Display name</label>
+            <input type="text" id="profile-name" maxlength="40" required>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="profile-format">Preferred format</label>
+              <select id="profile-format">
+                <option value="">No preference</option>
+                <option value="single-301">301</option>
+                <option value="single-501">501</option>
+                <option value="single-701">701</option>
+                <option value="single-cricket">Cricket</option>
+                <option value="single-countup">Count Up</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="profile-outrule">Preferred checkout</label>
+              <select id="profile-outrule">
+                <option value="double">Double out</option>
+                <option value="siso">Single out (SISO)</option>
+                <option value="dido">Double in, double out</option>
+                <option value="master">Master out</option>
+              </select>
+            </div>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="profile-leaderboard">
+            <label for="profile-leaderboard">
+              Show me on leaderboards. Scores are self-reported by the app, so
+              boards are for friendly comparison rather than ranking.
+            </label>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-primary">Save profile</button>
+          </div>
+          <p class="form-message" id="profile-message"></p>
+        </form>
+
+        <div class="account-section-title">Profile picture</div>
+        <div class="account-actions">
+          <input type="file" id="avatar-input" accept="image/png,image/jpeg,image/webp,image/gif"
+                 class="hidden">
+          <button type="button" class="btn-ink" id="avatar-choose">Choose picture</button>
+          <button type="button" class="btn-quiet" id="avatar-remove">Remove</button>
+        </div>
+        <p class="form-message" id="avatar-message"></p>
+
+        <div class="account-section-title">Change password</div>
+        <form id="password-form">
+          <div class="field-row">
+            <div class="field">
+              <label for="password-current">Current password</label>
+              <input type="password" id="password-current" autocomplete="current-password" required>
+            </div>
+            <div class="field">
+              <label for="password-new">New password</label>
+              <input type="password" id="password-new" autocomplete="new-password"
+                     minlength="8" required>
+            </div>
+          </div>
+          <div class="account-actions">
+            <button type="submit" class="btn-ink">Change password</button>
+          </div>
+          <p class="form-message" id="password-message"></p>
+        </form>
+
+        <div class="account-section-title">Session</div>
+        <div class="account-actions">
+          <button type="button" class="btn-quiet" id="logout-btn">Sign out</button>
         </div>
       </div>
     </div>
@@ -1822,6 +2985,8 @@
 
   <script type="module" src="./game.js"></script>
   <script type="module" src="./online.js"></script>
+  <script type="module" src="./accountui.js"></script>
+  <script type="module" src="./lobbyui.js"></script>
   <script type="module" src="./version.js"></script>
   <script>
     // Registers the service worker so the app can be installed to the

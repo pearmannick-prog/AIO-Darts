@@ -553,11 +553,18 @@ export class PeerLink {
     this.#announceMediaState();
   }
 
-  // Generates a short challenge code and opens a room for someone to join.
-  async createChallenge() {
-    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    await this.#join(code);
-    return code;
+  // Opens a room for someone to join, generating a short challenge code unless
+  // one is supplied.
+  //
+  // The lobby supplies one: when a challenge is accepted the server mints the
+  // code and tells both players, so the two sides open and join the SAME room
+  // without either having to type anything. That is the whole handoff - from
+  // here on it is the identical peer-to-peer path an invite code has always
+  // used, which is why the lobby adds no second connection flow to maintain.
+  async createChallenge(code = null) {
+    const room = (code || Math.random().toString(36).slice(2, 8)).toUpperCase();
+    await this.#join(room);
+    return room;
   }
 
   // Joins a challenge someone else created.
@@ -749,32 +756,63 @@ export class PeerLink {
   }
 
   #wireChannel() {
-    this.#channel.addEventListener("open", () => {
+    const onOpen = () => {
       this.#setStatus("connected");
       // A player who switched their camera on while still on the "waiting for
       // opponent" screen already sent a media_state into a closed channel,
       // where it was dropped. Re-announce now that there's someone to hear it.
       this.#announceMediaState();
-    });
+    };
+
+    // The two sides come by their channel differently, and only one of them is
+    // safe to wait on an event for. The HOST creates it, long before there is a
+    // connection, so its "open" is always still to come. The GUEST is handed a
+    // channel by the `datachannel` event - and that channel can already BE open
+    // by the time this runs, in which case "open" has fired and will never fire
+    // again. The guest then never reports connected, never sends its hello, and
+    // the host waits at "Connected - starting..." for a greeting nobody sent.
+    //
+    // Nothing about the game code can fix that: the match genuinely never
+    // started. So the state is checked as well as the event, and whichever
+    // arrives first wins.
+    if (this.#channel.readyState === "open") {
+      // Asynchronously, so callers get the same ordering they would from a real
+      // event - #wireChannel is called mid-setup and a synchronous status change
+      // would re-enter the caller before it had finished wiring itself up.
+      queueMicrotask(onOpen);
+    } else {
+      this.#channel.addEventListener("open", onOpen);
+    }
     this.#channel.addEventListener("close", () => this.#setStatus("disconnected"));
     this.#channel.addEventListener("message", (event) => {
+      // ONLY the parse is guarded. Handing the game handler's exceptions to
+      // this catch as well made every bug in the handler look like a malformed
+      // message from the peer, and then hid it: a match that connected and
+      // never started reported nothing at all, on either side, because the
+      // throw was caught here and logged as somebody else's fault.
+      let msg;
       try {
-        const msg = JSON.parse(event.data);
-        // Mute/camera state is a transport concern, not a game event - it's
-        // handled here so the game controller never has to know the peer
-        // protocol carries anything other than darts.
-        if (msg.type === "media_state") {
-          this.onRemoteMediaChange?.({
-            audio: !!msg.audio,
-            video: !!msg.video,
-            video2: !!msg.video2,
-          });
-          return;
-        }
-        this.onMessage?.(msg);
+        msg = JSON.parse(event.data);
       } catch (err) {
         console.warn("Received malformed game message", err);
+        return;
       }
+
+      // Mute/camera state is a transport concern, not a game event - it's
+      // handled here so the game controller never has to know the peer
+      // protocol carries anything other than darts.
+      if (msg.type === "media_state") {
+        this.onRemoteMediaChange?.({
+          audio: !!msg.audio,
+          video: !!msg.video,
+          video2: !!msg.video2,
+        });
+        return;
+      }
+
+      // Deliberately not wrapped. An exception here is a bug in this app, and
+      // it belongs in the console with its real stack, not swallowed.
+      this.onMessage?.(msg);
     });
   }
 

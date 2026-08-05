@@ -1,0 +1,19 @@
+-- 005_clear_raw_sessions.sql
+--
+-- Session tokens are now stored as a SHA-256 hash rather than as sent (see the
+-- note in auth.js). Rows written before that change hold the raw token, and
+-- they are exactly the thing the change exists to remove - a stolen copy of the
+-- database would still hand over every one of them.
+--
+-- They are also already useless: a lookup now hashes the incoming cookie, so
+-- nothing can ever match a raw row again. Deleting them is therefore not a
+-- behaviour change, only housekeeping that happens to be the security fix.
+--
+-- No schema change. Both a raw token and its hash are 64 hex characters, so the
+-- column, the primary key and every query stay exactly as they were.
+--
+-- THE COST: everyone is signed out once, and signs in again. That is the whole
+-- migration, and it is worth saying out loud rather than letting it be a
+-- surprise - there is no way to convert a raw token into its own hash without
+-- keeping the raw one, which is what we are getting rid of.
+DELETE FROM sessions;

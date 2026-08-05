@@ -12,15 +12,37 @@
 
 const footer = document.getElementById("app-version");
 
+// A deployment that is NOT the production branch says so, loudly, at the top of
+// the page. Two near-identical sites is a genuinely easy thing to get wrong:
+// the mistakes it prevents are registering an account on the wrong one, filing
+// a bug against the wrong one, and - the expensive one - concluding a feature
+// is broken in production when you were looking at the test site, or worse,
+// that it works when you weren't.
+//
+// Driven by the branch rather than a hand-set flag, so a test deployment cannot
+// forget to identify itself.
+function showEnvironmentBanner(branch) {
+  if (!branch || branch === "main") return;
+
+  const banner = document.createElement("div");
+  banner.className = "env-banner";
+  banner.textContent = `Test deployment · ${branch} · accounts here are wiped regularly`;
+  document.body.prepend(banner);
+}
+
 fetch("./version.json")
   .then((res) => (res.ok ? res.json() : Promise.reject()))
-  .then(({ sha, builtAt }) => {
+  .then(({ sha, builtAt, branch }) => {
+    showEnvironmentBanner(branch);
+
     if (!sha || sha === "dev") {
       footer.textContent = "AIO Darts · local dev build";
       return;
     }
     const date = builtAt && builtAt !== "unknown" ? builtAt.slice(0, 10) : "";
-    footer.textContent = `AIO Darts · build ${sha.slice(0, 7)}${date ? ` · ${date}` : ""}`;
+    footer.textContent =
+      `AIO Darts · build ${sha.slice(0, 7)}${date ? ` · ${date}` : ""}` +
+      `${branch && branch !== "main" ? ` · ${branch}` : ""}`;
   })
   .catch(() => {
     // No server at all (opened straight off the filesystem).

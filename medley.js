@@ -11,6 +11,7 @@
 
 import { rulesLabel } from "./scoring.js";
 import { DEFAULT_ROUNDS } from "./countup.js";
+import { BERMUDA_ROUNDS } from "./bermuda.js";
 
 // A leg is an object rather than a bare game name, because x01 isn't one game
 // - a leg needs to carry its starting score and its in/out rules too:
@@ -26,6 +27,7 @@ export const MATCH_PRESETS = {
   "single-701": [{ game: "x01", score: 701, rules: "double" }],
   "single-cricket": [{ game: "cricket" }],
   "single-countup": [{ game: "countup", rounds: DEFAULT_ROUNDS }],
+  "single-bermuda": [{ game: "bermuda" }],
   bo3: [
     { game: "x01", score: 501, rules: "double" },
     { game: "cricket" },
@@ -43,6 +45,7 @@ export const MATCH_PRESETS = {
 export function normalizeLeg(leg) {
   if (typeof leg === "string") {
     if (leg === "cricket") return { game: "cricket", bull: "split" };
+    if (leg === "bermuda") return { game: "bermuda", bull: "split" };
     if (leg === "countup") return { game: "countup", rounds: DEFAULT_ROUNDS, bull: "split" };
     const score = Number(leg);
     return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double", bull: "split" };
@@ -53,6 +56,11 @@ export function normalizeLeg(leg) {
   // inheriting the match setting. That makes applyBullMode a no-op here
   // without either game mode needing a special case.
   if (leg.game === "cricket") return { game: "cricket", bull: "split" };
+  // Bermuda's targets include the bull explicitly and its last round IS the
+  // inner bull, so full-bull mode - which promotes the outer bull to the inner
+  // - would collapse two distinct rounds into one. Pinned to split for the
+  // same reason Cricket is.
+  if (leg.game === "bermuda") return { game: "bermuda", bull: "split" };
   const bull = leg.bull === "full" ? "full" : "split";
   if (leg.game === "countup") {
     return {
@@ -74,6 +82,7 @@ export function gameLabel(leg) {
   // Only mentioned when it isn't the default, so ordinary legs read cleanly.
   const bull = l.bull === "full" ? " · full bull" : "";
   if (l.game === "cricket") return "Cricket"; // always split bull
+  if (l.game === "bermuda") return `Bermuda Triangle · ${BERMUDA_ROUNDS} rounds`;
   if (l.game === "countup") return `Count Up · ${l.rounds} rounds${bull}`;
   // "501 · Double out" - the variant matters as much as the number, so it's
   // always shown rather than only when it's unusual.

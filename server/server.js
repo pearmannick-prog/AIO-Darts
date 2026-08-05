@@ -31,30 +31,91 @@ import { readFile, mkdir, access } from "node:fs/promises";
 import { constants as FS } from "node:fs";
 import { extname, join, resolve, sep } from "node:path";
 import { WebSocketServer } from "ws";
+import { openDatabase } from "./db.js";
+import { purgeExpiredSessions } from "./auth.js";
+import { handleApiRequest } from "./api.js";
+import { createLobby } from "./lobby.js";
+import { guardRequest, isAllowed, gateEnabled } from "./gate.js";
 
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || "./public");
 const SIGNALING_PATH = process.env.SIGNALING_PATH || "/signaling";
+// The lobby's own socket. Separate from signaling on purpose: the relay is
+// deliberately dumb and worth keeping that way, so the stateful half lives on
+// its own path rather than being mixed into the code that must not break
+// mid-match. Same server, same port, same origin - see the note at the top.
+const LOBBY_PATH = process.env.LOBBY_PATH || "/lobby";
 
-// Where anything persistent will live. Nothing is written here yet - challenge
-// rooms are deliberately in-memory - but the accounts/stat-tracking phase puts
-// a SQLite file here, and SQLite is just a file, so this stays a
-// single-container app. It's checked at startup rather than first-write so a
-// misconfigured bind mount shows up in the logs immediately instead of the
-// first time someone tries to register.
+// Where persistent data lives: the SQLite database holding accounts, match
+// history and statistics. SQLite is just a file, so this stays a
+// single-container app with no second service to run.
+//
+// IMPORTANT: on a host with an ephemeral filesystem - Render's free tier being
+// the obvious one - this directory is wiped on every deploy, which silently
+// deletes every account. Persistence is a deliberate hosting decision: attach a
+// disk and point DATA_DIR at it. See render.yaml.
 const DATA_DIR = resolve(process.env.DATA_DIR || "./data");
 
-async function checkDataDir() {
+// ACCOUNTS=off turns the accounts half of the app off DELIBERATELY, without
+// touching the database or the disk.
+//
+// This exists because "no persistent disk" and "no accounts" are not the same
+// state, and the difference is dangerous. On an ephemeral filesystem the
+// database opens perfectly well - so the app offers sign-up, takes people's
+// passwords, records their matches, and then deletes all of it on the next
+// deploy. That is strictly worse than not offering accounts at all: it loses
+// data that someone believed was saved.
+//
+// So the honest deployment of this app on a host with no disk is to say so.
+// Guests are unaffected - the front-end already hides the account tab and the
+// header chip when there is no accounts API behind them, which is the same
+// path the Android APK takes.
+//
+// Unset is the default and means "try": that keeps every existing deployment
+// behaving exactly as it did.
+const ACCOUNTS_DISABLED = /^(off|0|false|no|disabled)$/i.test(
+  (process.env.ACCOUNTS || "").trim()
+);
+
+// Whether the accounts half of the app is available. Gameplay does not depend
+// on it - local and online darts are pure browser code and a signaling relay -
+// so a database that won't open must NOT take the whole server down with it.
+//
+// The alternative, exiting at startup, is tempting because it's loud. But it
+// would mean a bad bind mount stops people playing darts, and on a platform
+// that restarts failed containers it turns into a crash loop that serves
+// nothing at all. Instead: log it loudly, keep serving the game, and have
+// /api/* say plainly that accounts are unavailable. /healthz reports it too, so
+// it is still visible to monitoring rather than only to whoever reads the logs.
+let accountsEnabled = false;
+// The lobby needs accounts (it is a list of who is around, and an anonymous
+// entry would be neither identifiable nor challengeable), so it only exists if
+// the database opened. Invite codes carry on regardless.
+let lobby = null;
+
+async function initDatabase() {
+  // Switched off on purpose. Logged as a normal line rather than a warning:
+  // the failure path below shouts about bind mounts and permissions, and an
+  // operator who chose this should not be told to go and investigate a problem
+  // they don't have.
+  if (ACCOUNTS_DISABLED) {
+    accountsEnabled = false;
+    console.log("  accounts     : disabled by ACCOUNTS=off (no database opened)");
+    return;
+  }
+
   try {
     await mkdir(DATA_DIR, { recursive: true });
     await access(DATA_DIR, FS.W_OK);
+    await openDatabase(DATA_DIR);
+    accountsEnabled = true;
     console.log(`  data dir     : ${DATA_DIR} (writable)`);
+    console.log("  accounts     : enabled");
   } catch (err) {
-    // Not fatal yet, since nothing depends on it - but say so loudly, because
-    // it WILL be fatal once accounts land.
-    console.warn(`  data dir     : ${DATA_DIR} NOT WRITABLE - ${err.code || err.message}`);
-    console.warn("                 Nothing needs it yet, but persistent data will fail.");
-    console.warn("                 Check the bind mount and its permissions.");
+    accountsEnabled = false;
+    console.warn(`  data dir     : ${DATA_DIR} UNUSABLE - ${err.code || err.message}`);
+    console.warn("  accounts     : DISABLED - sign-in, history and stats will not work.");
+    console.warn("                 Darts still works; check the bind mount and its permissions.");
   }
 }
 
@@ -82,7 +143,71 @@ async function checkDataDir() {
 //                   traffic (~0.5-1 Mbit/s each way). See the README before
 //                   enabling TURN on a metered connection.
 //                   Needs TURN_USERNAME and TURN_CREDENTIAL too.
-function buildConfig() {
+//
+//   TURN_KEY_ID + TURN_KEY_API_TOKEN
+//                 - Cloudflare Realtime TURN instead of the static pair above.
+//                   Cloudflare does NOT issue long-lived credentials: you hold
+//                   a key and an API token, and mint short-lived ones per
+//                   session. So the API token stays here, on the server, and
+//                   only the minted credential is ever sent to a browser -
+//                   which is the entire point of the design and why it cannot
+//                   be expressed as TURN_USERNAME/TURN_CREDENTIAL.
+
+// Cloudflare's minted ICE servers, cached. Refreshed before expiry rather than
+// fetched per request: /config.json is hit on every page load, and a round trip
+// to Cloudflare on each one would add latency to startup and invite rate
+// limiting for a value that is good for hours.
+const TURN_TTL_SECONDS = 86_400;      // what we ask Cloudflare for
+const TURN_REFRESH_MARGIN_MS = 3_600_000; // re-mint with an hour to spare
+let turnCache = { iceServers: null, expiresAt: 0 };
+
+async function cloudflareIceServers() {
+  const keyId = process.env.TURN_KEY_ID;
+  const token = process.env.TURN_KEY_API_TOKEN;
+  if (!keyId || !token) return null;
+
+  if (turnCache.iceServers && Date.now() < turnCache.expiresAt) {
+    return turnCache.iceServers;
+  }
+
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ttl: TURN_TTL_SECONDS }),
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    const iceServers = body?.iceServers
+      ? [].concat(body.iceServers)
+      : null;
+    if (!iceServers?.length) throw new Error("no iceServers in response");
+
+    turnCache = {
+      iceServers,
+      expiresAt: Date.now() + TURN_TTL_SECONDS * 1000 - TURN_REFRESH_MARGIN_MS,
+    };
+    return iceServers;
+  } catch (err) {
+    // Never fatal. A TURN outage must not stop the app serving darts: most
+    // players connect directly and never need a relay, and the ones who do get
+    // the same failure they would have had with no TURN configured at all.
+    // Deliberately does not clear a cached value - a stale credential that
+    // still has hours left is far better than none.
+    console.warn(`TURN credentials could not be minted: ${err.message}`);
+    return turnCache.iceServers;
+  }
+}
+
+async function buildConfig() {
   const stunUrls = (process.env.STUN_URLS || "stun:stun.l.google.com:19302")
     .split(",")
     .map((u) => u.trim())
@@ -98,10 +223,19 @@ function buildConfig() {
     });
   }
 
+  // Cloudflare's minted servers come with their own urls, username and
+  // credential, so they are appended whole rather than merged with anything.
+  // Both can be configured at once; a browser simply tries all of them.
+  const cloudflare = await cloudflareIceServers();
+  if (cloudflare) iceServers.push(...cloudflare);
+
   return {
     // Empty string means "same origin" - the front-end fills it in itself.
     signalingUrl: process.env.SIGNALING_URL || "",
     signalingPath: SIGNALING_PATH,
+    // Sent so the front-end never hard-codes it, the same way it doesn't
+    // hard-code the signaling path.
+    lobbyPath: LOBBY_PATH,
     iceServers,
   };
 }
@@ -211,6 +345,10 @@ async function serveFile(res, filePath) {
 
 const httpServer = createServer(async (req, res) => {
   try {
+    // The optional shared-password wall for test deployments. Does nothing
+    // unless SITE_PASSWORD is set, and never gates /healthz - see gate.js.
+    if (guardRequest(req, res)) return;
+
     const urlPath = req.url === "/" ? "/index.html" : req.url;
     const bare = urlPath.split("?")[0];
 
@@ -221,8 +359,34 @@ const httpServer = createServer(async (req, res) => {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
       });
-      res.end(JSON.stringify({ ok: true, rooms: rooms.size, clients: wss.clients.size }));
+      // `accounts` is reported but does NOT make ok false: the probe answers
+      // "can this serve darts?", and it can. A monitoring system that cares
+      // about accounts can watch this field specifically.
+      res.end(JSON.stringify({
+        ok: true,
+        rooms: rooms.size,
+        clients: wss.clients.size,
+        accounts: accountsEnabled,
+        lobby: lobby ? lobby.count() : null,
+      }));
       return;
+    }
+
+    // The API, before static serving - /api/* is never a file. handleApiRequest
+    // returns false for anything that isn't its business, so an unknown path
+    // still falls through to the front-end exactly as it did before.
+    if (bare.startsWith("/api/")) {
+      if (!accountsEnabled) {
+        res.writeHead(503, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        res.end(JSON.stringify({
+          error: "Accounts are unavailable on this server - the database could not be opened.",
+        }));
+        return;
+      }
+      if (await handleApiRequest(req, res)) return;
     }
 
     // Runtime config is generated per-request from env vars rather than
@@ -233,7 +397,7 @@ const httpServer = createServer(async (req, res) => {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
       });
-      res.end(JSON.stringify(buildConfig()));
+      res.end(JSON.stringify(await buildConfig()));
       return;
     }
 
@@ -278,7 +442,15 @@ const httpServer = createServer(async (req, res) => {
 // ---------------------------------------------------------------------------
 // Signaling WebSocket (same server, same port, scoped to SIGNALING_PATH)
 // ---------------------------------------------------------------------------
-const wss = new WebSocketServer({ server: httpServer, path: SIGNALING_PATH });
+// `noServer` plus the upgrade router below, rather than { server, path }.
+//
+// A WebSocketServer bound with { server, path } installs its own 'upgrade'
+// listener and destroys any upgrade whose path it does not recognise. With two
+// of them - signaling and the lobby - on one HTTP server, whichever attached
+// first hung up on the other's connections, and it did so silently: the browser
+// saw a bare WebSocket error and the server logged nothing at all. Routing
+// upgrades in one place is the documented way to share a port.
+const wss = new WebSocketServer({ noServer: true });
 const rooms = new Map(); // code -> Set<WebSocket>
 
 function send(ws, obj) {
@@ -358,6 +530,31 @@ const heartbeat = setInterval(() => {
 }, 30000);
 wss.on("close", () => clearInterval(heartbeat));
 
+// The single upgrade listener. Anything that isn't a socket we serve is
+// destroyed explicitly - the default with noServer is to leave it hanging.
+httpServer.on("upgrade", (req, socket, head) => {
+  const path = (req.url || "").split("?")[0];
+
+  // Gating pages but not sockets would leave signaling and the lobby open to
+  // anyone who skipped the front door.
+  if (!isAllowed(req)) {
+    socket.destroy();
+    return;
+  }
+
+  if (path === SIGNALING_PATH) {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    return;
+  }
+
+  if (lobby && path === LOBBY_PATH) {
+    lobby.handleUpgrade(req, socket, head);
+    return;
+  }
+
+  socket.destroy();
+});
+
 httpServer.listen(PORT, async () => {
   console.log(`AIO Darts listening on port ${PORT}`);
   console.log(`  static files : ${PUBLIC_DIR}`);
@@ -368,5 +565,31 @@ httpServer.listen(PORT, async () => {
   // anyone having to load the page - the first thing worth knowing when a
   // deploy looks like it didn't take.
   console.log(`  build        : ${sha === "dev" ? "dev (unknown commit)" : sha} (from ${source})`);
-  await checkDataDir();
+  if (gateEnabled) {
+    console.log("  site gate    : ON (SITE_PASSWORD is set - this deployment is private)");
+  }
+
+  await initDatabase();
+
+  // Mounted after the database, because it authenticates every connection
+  // against the sessions table.
+  if (accountsEnabled) {
+    lobby = createLobby();
+    console.log(`  lobby        : ${LOBBY_PATH} (same port)`);
+  } else {
+    console.log("  lobby        : disabled (needs accounts)");
+  }
+
+  // Expired sessions are already ignored when resolving a request, so this is
+  // housekeeping to stop the table growing forever rather than a security
+  // measure. Hourly is far more often than it needs to be and costs nothing.
+  if (accountsEnabled) {
+    setInterval(() => {
+      try {
+        purgeExpiredSessions();
+      } catch (err) {
+        console.warn("Session purge failed:", err.message);
+      }
+    }, 3600_000).unref();
+  }
 });

@@ -5,3 +5,18 @@ android/
 
 # Portable Node downloaded by the local Windows launcher
 node/
+
+# The accounts/statistics SQLite database, and any scratch copy of it. Local
+# data, never committed - along with the -wal/-shm files WAL mode writes beside
+# it.
+#
+# The patterns are deliberately wider than "data/". A one-off test run with
+# DATA_DIR pointed somewhere else got its database committed, because the
+# ignore rule named one exact directory and `git add -A` swept up the rest.
+data/
+data-*/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3

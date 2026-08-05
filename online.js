@@ -9,12 +9,21 @@
 // in lockstep with no need for a rollback/replay system - see the
 // architecture notes in the top-level README.
 
-import { Granboard, SegmentID, SegmentType, createSegment, applyBullMode } from "./granboard.js";
+import { SegmentID, SegmentType, createSegment, applyBullMode } from "./granboard.js";
+import { subscribeToBoard } from "./boardlink.js";
 import { resolveThrow, rulesFor } from "./scoring.js";
 import {
   createCricketPlayer, resolveCricketThrow, applyCricketResult,
   checkCricketWin, describeCricketResult,
 } from "./cricket.js";
+import {
+  createBermudaPlayer, bermudaTarget, resolveBermudaThrow, applyBermudaThrow,
+  isBermudaRoundOver, endBermudaRound, isBermudaComplete, checkBermudaWin,
+  describeBermudaResult, BERMUDA_ROUNDS,
+} from "./bermuda.js";
+import { createRecorder } from "./matchrecorder.js";
+import { recordMatch, getState as accountState } from "./accountstore.js";
+import { onMatchReady, reportMatchOver, pushMatchState } from "./lobbyclient.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
@@ -33,7 +42,6 @@ const STARTING_SCORE = 501;
 
 let PeerLink; // lazy-imported so a missing webrtc.js doesn't break local mode
 let peerLink = null;
-let myBoard = null;
 
 const online = {
   active: false,
@@ -55,14 +63,32 @@ const online = {
   me: null,
   opp: null,
   log: [],
+  // Records every dart for history and statistics. Each side keeps its own
+  // record of the match from its own point of view - there is no shared one,
+  // because there is no server in the middle of a peer-to-peer match to hold
+  // it. See matchrecorder.js.
+  recorder: null,
+  // The opponent's display name, learned from their `hello`. Until it arrives
+  // (and for a signed-out opponent, forever) they are simply "Opponent" - the
+  // scoreboard has always said that, and history says the same rather than
+  // inventing a name.
+  oppName: "Opponent",
+  // The lobby's code for this match, when it started from a challenge. Null for
+  // an invite-code match, which nobody can be watching.
+  lobbyCode: null,
+  // Which absolute seat opens. Flipped by each rematch so the same player
+  // does not always throw first; sent with the offer so both sides agree.
+  startSeat: 0,
 };
 
 // ---------- DOM ----------
 const el = {
   tabLocal: document.getElementById("tab-local"),
   tabOnline: document.getElementById("tab-online"),
+  tabAccount: document.getElementById("tab-account"),
   localMode: document.getElementById("local-mode"),
   onlineMode: document.getElementById("online-mode"),
+  accountMode: document.getElementById("account-mode"),
 
   signalingUrl: document.getElementById("signaling-url"),
   createBtn: document.getElementById("create-challenge-btn"),
@@ -73,6 +99,8 @@ const el = {
   waitingPanel: document.getElementById("online-waiting-panel"),
   gamePanel: document.getElementById("online-game-panel"),
   codeDisplay: document.getElementById("challenge-code-display"),
+  waitingTitle: document.getElementById("online-waiting-title"),
+  waitingNote: document.getElementById("online-waiting-note"),
   cancelBtn: document.getElementById("cancel-challenge-btn"),
 
   statusLabel: document.getElementById("online-status-label"),
@@ -89,9 +117,6 @@ const el = {
   turnDarts: document.getElementById("online-turn-darts"),
   winnerBanner: document.getElementById("online-winner-banner"),
 
-  connectBtn: document.getElementById("online-connect-btn"),
-  connectionDot: document.getElementById("online-connection-dot"),
-  connectionLabel: document.getElementById("online-connection-label"),
 
   videoStrip: document.getElementById("online-video-strip"),
   localVideo: document.getElementById("online-local-video"),
@@ -120,6 +145,12 @@ const el = {
   cricketBoard: document.getElementById("online-cricket-board"),
   matchBar: document.getElementById("online-match-bar"),
   nextLegBtn: document.getElementById("online-next-leg-btn"),
+  rematchRow: document.getElementById("online-rematch-row"),
+  rematchBtn: document.getElementById("online-rematch-btn"),
+  rematchStatus: document.getElementById("online-rematch-status"),
+  rematchChoice: document.getElementById("online-rematch-choice"),
+  rematchAccept: document.getElementById("online-rematch-accept"),
+  rematchDecline: document.getElementById("online-rematch-decline"),
   manualPerdart: document.getElementById("online-manual-perdart"),
   manualQuickTotal: document.getElementById("online-manual-quicktotal"),
   manualRing: document.getElementById("online-manual-ring"),
@@ -212,14 +243,87 @@ function currentSignalingUrl() {
 }
 
 // ---------- Tab switching ----------
-el.tabLocal.addEventListener("click", () => switchTab("local"));
-el.tabOnline.addEventListener("click", () => switchTab("online"));
+// Driven by a table rather than a pair of toggles, because there are now three
+// top-level modes and accountui.js adds its own behaviour to one of them.
+// Anything that wants to switch mode from elsewhere clicks the tab button
+// (accountui.js does exactly that) instead of reaching in here - which keeps
+// tab state owned by one place, the way it was when there were only two.
+const MODES = {
+  local: { tab: el.tabLocal, panel: el.localMode },
+  online: { tab: el.tabOnline, panel: el.onlineMode },
+  account: { tab: el.tabAccount, panel: el.accountMode },
+};
 
-function switchTab(which) {
-  el.tabLocal.classList.toggle("active", which === "local");
-  el.tabOnline.classList.toggle("active", which === "online");
-  el.localMode.classList.toggle("hidden", which !== "local");
-  el.onlineMode.classList.toggle("hidden", which !== "online");
+for (const [name, { tab }] of Object.entries(MODES)) {
+  // The account tab is absent from older cached HTML, and a missing element
+  // shouldn't take the whole module down before a match can start.
+  tab?.addEventListener("click", () => switchTab(name));
+}
+
+// Which mode is showing. Tracked rather than read back off the DOM so that
+// "am I leaving a match?" is answered before anything has moved.
+let currentMode = Object.entries(MODES)
+  .find(([, { tab }]) => tab?.classList.contains("active"))?.[0] || "local";
+
+// Is a local game in progress? Asked rather than inspected, so this module
+// never reaches into game.js's state or its DOM - game.js answers by filling
+// in the event it is handed. Synchronous because the answer decides whether a
+// tab click happens at all.
+function localMatchInProgress() {
+  const query = new CustomEvent("aio-query-local-match", { detail: { active: false } });
+  document.dispatchEvent(query);
+  return query.detail.active;
+}
+
+// `ask` is false for switches the player has already committed to elsewhere -
+// accepting a lobby challenge is itself the decision to leave whatever you
+// were doing, and asking again mid-handoff would be a dialog nobody asked for.
+function switchTab(which, { ask = true } = {}) {
+  if (which === currentMode) return;
+  const from = currentMode;
+
+  // LEAVING A MATCH ENDS IT. A match you have walked away from is over in every
+  // sense the other player recognises - and leaving it running in a hidden
+  // panel is what made a dead local scoreboard look like a broken online one.
+  //
+  // But it is destructive, and unlike the End Match button - which arms and
+  // needs a second tap - a tab is one click away at all times, including the
+  // account chip in the header. So it asks first.
+  //
+  // A modal, despite the End Match button deliberately avoiding one. That
+  // choice was about a control you press WHILE SCORING, where a dialog is in
+  // the way. This is navigation, where "leave without saving?" is the expected
+  // pattern - and it has to be synchronous, because the answer decides whether
+  // the tab switch happens at all.
+  const leavingOnline = from === "online" && online.active;
+  const leavingLocal = from === "local" && localMatchInProgress();
+
+  if (ask && (leavingOnline || leavingLocal)) {
+    const message = leavingOnline
+      ? "Leaving ends this match for you and your opponent. Leave anyway?"
+      : "Leaving ends this game and it won't be saved. Leave anyway?";
+    if (!window.confirm(message)) return;
+  }
+
+  currentMode = which;
+
+  // Online is torn down here rather than by an event, because teardownMatch
+  // must tell the opponent BEFORE the connection closes or there is nothing
+  // left to send it on.
+  if (leavingOnline) {
+    peerLink?.sendGameMessage({ type: "end_match" });
+    teardownMatch("You left the match.");
+  }
+
+  // Local play is game.js's to end. Announced rather than called, so the two
+  // controllers stay independent - the same reason match chrome is a body
+  // class rather than a cross-module call.
+  document.dispatchEvent(new CustomEvent("aio-mode-left", { detail: { from, to: which } }));
+
+  for (const [name, { tab, panel }] of Object.entries(MODES)) {
+    tab?.classList.toggle("active", name === which);
+    panel?.classList.toggle("hidden", name !== which);
+  }
 }
 
 // ---------- Manual entry buttons (generated once) ----------
@@ -636,17 +740,224 @@ el.createBtn.addEventListener("click", async () => {
   // the preview has no reason to keep running once a match is starting.
   stopDeviceCheck();
 
-  // Whatever ended the last match is no longer news.
-  el.setupNotice.classList.add("hidden");
-  el.setupPanel.classList.add("hidden");
-  el.waitingPanel.classList.remove("hidden");
+  // The code doesn't exist until the server mints it, so the panel opens with
+  // an empty one and fills it in below.
+  showWaitingPanel("create");
 
   try {
     const code = await peerLink.createChallenge();
     el.codeDisplay.textContent = code;
   } catch (err) {
     alert(`Couldn't create a challenge: ${err.message}`);
-    el.waitingPanel.classList.add("hidden");
+    hideWaitingPanel();
+    el.setupPanel.classList.remove("hidden");
+  }
+});
+
+// A match takes over the tab. The lobby list, the room chat and the
+// create/join panel all belong to "between matches" - leaving them on screen
+// while a match is up is what made an accepted challenge look like it had done
+// nothing, because the invite-code panel was still sitting there underneath.
+//
+// Driven by a class on <body> rather than by reaching into lobbyui.js, so the
+// two modules stay independent: online.js says "a match is on" and the styling
+// decides what that hides.
+function setMatchChrome(active) {
+  document.body.classList.toggle("in-match", Boolean(active));
+}
+
+// One panel, three situations, and only one of them is "share this".
+//
+// Every route into a match goes through the same challenge code, deliberately:
+// an accepted lobby challenge mints an ordinary invite code and hands it to
+// both sides, so there is ONE connection path rather than a lobby-shaped one
+// and an invite-shaped one. That is worth keeping - but it is an
+// implementation detail, and showing a lobby player a code with "share this
+// with the person you're challenging" invites them to do something pointless
+// for a match that is already agreed. Worse, it reads as though the match has
+// not started, when in fact both sides are already connecting.
+//
+// So the mechanism stays and the wording adapts:
+//   create - the only case where a human needs the code. Show it, say share it.
+//   join   - they already have the code; showing it back confirms they typed
+//            the right one, but nobody is sharing anything.
+//   lobby  - both players are known. The code is noise; name the opponent
+//            instead, which is the thing the player actually cares about.
+function showWaitingPanel(mode, { code = "", opponent = "" } = {}) {
+  const lobby = mode === "lobby";
+
+  el.waitingTitle.textContent = lobby ? "Starting match…" : "Waiting for opponent…";
+
+  if (lobby) {
+    // textContent, never innerHTML - a display name is attacker-controlled and
+    // this is exactly the sink that made lobbyui.js a stored XSS once already.
+    el.waitingNote.textContent = opponent
+      ? `Connecting to ${opponent}…`
+      : "Connecting…";
+  } else if (mode === "join") {
+    el.waitingNote.textContent = "Joining challenge:";
+  } else {
+    el.waitingNote.textContent = "Share this code with the person you're challenging:";
+  }
+
+  el.codeDisplay.textContent = lobby ? "" : code;
+  el.codeDisplay.classList.toggle("hidden", lobby);
+
+  waitingMode = mode;
+  waitingOpponent = opponent;
+
+  el.setupNotice.classList.add("hidden");
+  el.setupPanel.classList.add("hidden");
+  el.waitingPanel.classList.remove("hidden");
+  setMatchChrome(true);
+}
+
+// Which situation the waiting panel is currently showing, and who for. Kept
+// because the connection status arrives LATER, from the peer link, and has to
+// be phrased differently depending on how the match was started.
+let waitingMode = null;
+let waitingOpponent = "";
+
+function hideWaitingPanel() {
+  waitingMode = null;
+  waitingOpponent = "";
+  // The class, not this function. Calling itself here recursed until the stack
+  // blew, which killed startOnlineGame half way through: the match had already
+  // begun, but the panel hiding it never ran and the game panel was never
+  // shown, so both players sat on "Connected - starting..." watching a match
+  // that had in fact started perfectly.
+  el.waitingPanel.classList.add("hidden");
+}
+
+// Reports which STAGE the connection has reached, on the panel the player is
+// actually looking at.
+//
+// The stage messages used to go to #online-status-label, which lives inside the
+// game panel - hidden until the match starts. So they were written on every
+// status change and never once seen during the wait they describe, which is the
+// only time they mean anything. Waiting looked identical whether the signaling
+// socket was still opening or had been open for twenty seconds with nobody on
+// the other end.
+//
+// Create is deliberately left alone: there the instruction to share the code is
+// the useful text, and "waiting for opponent" is not news - it is the entire
+// expected state, possibly for several minutes.
+function updateWaitingNote(status) {
+  if (!waitingMode || waitingMode === "create") return;
+  const who = waitingOpponent || "the other player";
+
+  switch (status) {
+    case "connecting-to-server":
+      el.waitingNote.textContent = "Connecting to the signaling server…";
+      break;
+    case "joining":
+      el.waitingNote.textContent = "Joining the match…";
+      break;
+    case "waiting-for-opponent":
+      el.waitingNote.textContent = waitingMode === "lobby"
+        ? `Waiting for ${who} to connect…`
+        : "Waiting for the host…";
+      break;
+    case "connected":
+      el.waitingNote.textContent = "Connected - starting…";
+      break;
+    default:
+      break;
+  }
+}
+
+// A match that never connects used to sit on "Waiting for opponent..." forever,
+// with no way to tell whether the other side had failed, gone, or never
+// arrived. That is the worst possible failure mode: indistinguishable from
+// working, and it wastes the other player's time too.
+//
+// So the wait is bounded - but only where BOTH players are known to be present
+// already, which is the lobby handoff and joining a code someone sent you. It
+// deliberately does NOT run on Create Challenge: there the whole point is to
+// wait while you send the code to a friend, and timing that out after half a
+// minute would break the feature rather than diagnose it.
+//
+// TWO clocks, because "we never reached the server" and "the server was fine
+// and nobody came" are different failures with different fixes, and one timer
+// covering both blames whichever it was told to.
+//
+// The first version armed a single 25s clock on the click. That is wrong on a
+// host that sleeps: the free tier spins down after about fifteen minutes, so
+// the WebSocket upgrade can take most of that budget on its own, and a match
+// that was about to connect got killed and reported as the opponent's fault.
+//
+// So the signaling phase gets its own, longer budget, and reaching the server
+// RESTARTS the clock for the peer phase. Time spent waking a container is no
+// longer charged to the player who is patiently waiting.
+const SIGNALING_TIMEOUT_MS = 45_000;
+const PEER_TIMEOUT_MS = 25_000;
+let connectTimer = null;
+
+function startConnectWatchdog(phase = "signaling") {
+  clearTimeout(connectTimer);
+  const signaling = phase === "signaling";
+
+  connectTimer = setTimeout(() => {
+    // `online.active` is set the moment the two sides exchange
+    // hello/match_config, so its absence is exactly "we never paired".
+    if (online.active) return;
+
+    // Hand the tab back so the player can try again rather than being stranded
+    // on a code that will never be used. The diagnosis goes in teardown's
+    // notice, not the status line - teardownMatch hides the waiting panel the
+    // status line lives on, so anything written there is never read.
+    teardownMatch(
+      signaling
+        ? `Couldn't reach the signaling server (${currentSignalingUrl()}). ` +
+          "It may be starting up, or blocked by a network in between - try again."
+        : "Reached the server, but the other player never joined. They may have " +
+          "closed the app, or their connection couldn't be established."
+    );
+  }, signaling ? SIGNALING_TIMEOUT_MS : PEER_TIMEOUT_MS);
+}
+
+function stopConnectWatchdog() {
+  clearTimeout(connectTimer);
+  connectTimer = null;
+}
+
+// ---------- Starting from the lobby ----------
+// A challenge was accepted, and the server has minted a code and told both
+// sides which end of it they are. From here this is EXACTLY the invite-code
+// path: the host opens the room, the guest joins it, and the existing
+// hello/match_config handshake does the rest. The lobby is out of the way.
+//
+// The one thing carried over is the opponent's name, which the lobby already
+// knows - so the saved match names them even if the peer's hello is late.
+onMatchReady(async ({ code, role, opponent }) => {
+  await ensurePeerLinkLoaded();
+  rememberSignalingOverride();
+  peerLink = new PeerLink(currentSignalingUrl(), iceServers);
+  wirePeerLink();
+  resetAv();
+  stopDeviceCheck();
+
+  if (opponent?.displayName) setOpponentName(opponent.displayName);
+  online.lobbyCode = code;
+
+  // Make sure the tab the match is about to appear on is the one being looked
+  // at - a challenge can be accepted from anywhere in the app. No confirm:
+  // accepting the challenge was the decision, and a local game left running
+  // is ended by the switch exactly as if the tab had been clicked by hand.
+  switchTab("online", { ask: false });
+
+  // No code on screen: both players are already known to each other, and the
+  // code is only the room they are about to meet in.
+  showWaitingPanel("lobby", { opponent: opponent?.displayName || online.oppName });
+  startConnectWatchdog();
+
+  try {
+    if (role === "host") await peerLink.createChallenge(code);
+    else await peerLink.joinChallenge(code);
+  } catch (err) {
+    stopConnectWatchdog();
+    alert(`Couldn't start that match: ${err.message}`);
+    hideWaitingPanel();
     el.setupPanel.classList.remove("hidden");
   }
 });
@@ -666,17 +977,17 @@ el.joinBtn.addEventListener("click", async () => {
   // the preview has no reason to keep running once a match is starting.
   stopDeviceCheck();
 
-  // Whatever ended the last match is no longer news.
-  el.setupNotice.classList.add("hidden");
-  el.setupPanel.classList.add("hidden");
-  el.waitingPanel.classList.remove("hidden");
-  el.codeDisplay.textContent = code.toUpperCase();
+  showWaitingPanel("join", { code: code.toUpperCase() });
+  // A code you were given is a code whose host is already sitting in the room,
+  // so this side has no legitimate reason to wait indefinitely.
+  startConnectWatchdog();
 
   try {
     await peerLink.joinChallenge(code);
   } catch (err) {
+    stopConnectWatchdog();
     alert(`Couldn't join that challenge: ${err.message}`);
-    el.waitingPanel.classList.add("hidden");
+    hideWaitingPanel();
     el.setupPanel.classList.remove("hidden");
   }
 });
@@ -685,8 +996,21 @@ el.cancelBtn.addEventListener("click", () => {
   peerLink?.close();
   peerLink = null;
   resetAv();
-  el.waitingPanel.classList.add("hidden");
+  // Cancelling leaves the waiting panel without going through teardownMatch, so
+  // the watchdog has to be disarmed here too - otherwise it fires later and
+  // drops a "couldn't connect" notice on someone who already walked away.
+  stopConnectWatchdog();
+  stopHello();
+  // A cancelled LOBBY match has to be reported, or the server keeps showing you
+  // as playing and nobody can challenge you again. Harmless on the invite-code
+  // path, where there is no lobbyCode and the server was never told anything.
+  if (online.lobbyCode) {
+    online.lobbyCode = null;
+    reportMatchOver();
+  }
+  hideWaitingPanel();
   el.setupPanel.classList.remove("hidden");
+  setMatchChrome(false);
 });
 
 // ---------- Ending a match ----------
@@ -734,15 +1058,32 @@ function teardownMatch(message) {
   online.gameOver = false;
   online.legOver = false;
   online.match = null;
+  // An abandoned match is not saved. finishOnlineLeg has already saved and
+  // cleared this if the match ran to its end, so anything still here is a
+  // match someone walked out of - and half a match would drag every average
+  // down with darts that were never a real attempt at a finish.
+  online.recorder = null;
+  online.oppName = "Opponent";
+  online.lobbyCode = null;
+  online.startSeat = 0;
+  resetRematch();
+  stopConnectWatchdog();
+  stopHello();
+
+  // The lobby cannot see the darts, so it only knows a match is over because
+  // it is told. Purely a hint - a disconnect resolves the same state anyway.
+  reportMatchOver();
 
   resetAv();
 
+  el.rematchRow?.classList.add("hidden");
   el.gamePanel.classList.add("hidden");
-  el.waitingPanel.classList.add("hidden");
+  hideWaitingPanel();
   el.winnerBanner.classList.add("hidden");
   el.setupPanel.classList.remove("hidden");
   el.setupNotice.textContent = message;
   el.setupNotice.classList.remove("hidden");
+  setMatchChrome(false);
 }
 
 async function ensurePeerLinkLoaded() {
@@ -794,6 +1135,16 @@ function wirePeerLink() {
 
   peerLink.onStatusChange = (status) => {
     el.statusLabel.textContent = statusText(status);
+    updateWaitingNote(status);
+
+    // Reaching the server ends the signaling phase and starts the peer one, so
+    // a slow container wake-up isn't charged against the opponent's clock.
+    // Create is excluded on purpose: waiting there is the feature, and the code
+    // may sit unshared for minutes.
+    if ((status === "waiting-for-opponent" || status === "joining")
+        && waitingMode && waitingMode !== "create" && !online.active) {
+      startConnectWatchdog("peer");
+    }
 
     if (status === "connected" && !online.active) {
       // The guest announces itself and the host replies with the format.
@@ -801,7 +1152,11 @@ function wirePeerLink() {
       // channel was open when the config was sent - the host only sends
       // once it has heard from the guest.
       if (peerLink.role === "guest") {
-        peerLink.sendGameMessage({ type: "hello" });
+        // The name rides along with the greeting that was already being sent,
+        // so learning who you are playing costs no extra round trip. It is
+        // optional in both directions: a signed-out player simply doesn't have
+        // one, and the match plays identically without it.
+        sendHelloUntilStarted();
       }
     }
     if (status === "disconnected" || status === "room-full") {
@@ -815,8 +1170,11 @@ function wirePeerLink() {
     if (msg.type === "hello") {
       // Only the host answers this, and only once.
       if (peerLink.role !== "host" || online.active) return;
+      setOpponentName(msg.name);
       const legs = selectedOnlineLegs();
-      peerLink.sendGameMessage({ type: "match_config", legs });
+      // The host's own name goes back with the config, so both sides end up
+      // knowing each other without a message of their own.
+      peerLink.sendGameMessage({ type: "match_config", legs, name: myDisplayName() });
       startOnlineGame("host", legs);
       renderOnline();
       return;
@@ -824,6 +1182,7 @@ function wirePeerLink() {
 
     if (msg.type === "match_config") {
       if (online.active) return;
+      setOpponentName(msg.name);
       startOnlineGame("guest", msg.legs);
       renderOnline();
       return;
@@ -831,6 +1190,40 @@ function wirePeerLink() {
 
     if (msg.type === "end_match") {
       teardownMatch("Your opponent ended the match.");
+      return;
+    }
+
+    // ---- Rematch ----
+    // The only handshake in the protocol besides the opening one, and it is a
+    // handshake for the same reason: BOTH sides have to agree before either
+    // starts, or one player's scoreboard changes underneath them for a match
+    // they never accepted.
+    //
+    // The offer carries the legs rather than assuming the last ones, which
+    // costs nothing now and is what will let "rematch, but Cricket this time"
+    // be a picker rather than a protocol change.
+    if (msg.type === "rematch_offer") {
+      if (!online.gameOver) return;
+      rematch.incoming = normalizeLegList(msg.legs);
+      rematch.startSeat = Number(msg.startSeat) === 1 ? 1 : 0;
+      renderRematch();
+      return;
+    }
+
+    if (msg.type === "rematch_accept") {
+      // Only meaningful to the side that offered, and only once.
+      if (!rematch.offered) return;
+      const legs = rematch.offered;
+      const startSeat = rematch.startSeat;
+      resetRematch();
+      beginRematch(legs, startSeat);
+      return;
+    }
+
+    if (msg.type === "rematch_decline") {
+      resetRematch();
+      rematch.notice = "Opponent declined the rematch.";
+      renderRematch();
       return;
     }
 
@@ -854,10 +1247,137 @@ function wirePeerLink() {
   };
 }
 
+// The whole handshake hangs off ONE message. The guest says hello, the host
+// answers with the format, and both start. If that hello is lost - or is sent
+// into a channel the other side isn't listening on yet - neither player sees an
+// error: they both sit on "Connected - starting..." indefinitely, which is the
+// exact failure this is here to stop.
+//
+// Repeating it is safe by construction. The host ignores a hello once it is
+// already active, so a duplicate is a no-op, and if it was never heard the
+// first time then a second copy is precisely what is needed. Bounded, because
+// past a few seconds the problem is not a lost message and retrying forever
+// would just hide it from the watchdog.
+const HELLO_RETRIES = 4;
+const HELLO_RETRY_MS = 1500;
+let helloTimer = null;
+
+function sendHelloUntilStarted(attempt = 0) {
+  clearTimeout(helloTimer);
+  if (online.active || !peerLink) return;
+
+  peerLink.sendGameMessage({ type: "hello", name: myDisplayName() });
+
+  if (attempt < HELLO_RETRIES) {
+    helloTimer = setTimeout(() => sendHelloUntilStarted(attempt + 1), HELLO_RETRY_MS);
+  }
+}
+
+function stopHello() {
+  clearTimeout(helloTimer);
+  helloTimer = null;
+}
+
+// ---------- Rematch ----------
+// Same opponent, same connection, no signaling and no lobby round trip: when a
+// match ends both sides are still connected, so a rematch is a handshake rather
+// than a reconnection. That is the whole speed of it.
+//
+// MUTUAL, ALWAYS. One side offers and nothing happens until the other accepts.
+// A one-sided rematch would restart the scoreboard of somebody who had already
+// walked away, and they would come back to a match in progress they never
+// agreed to.
+const rematch = {
+  offered: null,   // legs THIS side proposed, waiting on an answer
+  incoming: null,  // legs the opponent proposed, waiting on ours
+  startSeat: 0,    // who throws first, decided by the offerer so both agree
+  notice: "",      // a declined offer, or one that outlived its match
+};
+
+function resetRematch() {
+  rematch.offered = null;
+  rematch.incoming = null;
+  rematch.notice = "";
+}
+
+// Legs arriving from the peer are normalised the same way match_config's are -
+// they crossed a wire, so they are input rather than data.
+function normalizeLegList(legs) {
+  return Array.isArray(legs) && legs.length ? legs.map(normalizeLeg) : null;
+}
+
+el.rematchBtn?.addEventListener("click", () => {
+  if (!online.gameOver || rematch.offered) return;
+
+  const legs = online.match?.legs;
+  if (!legs?.length) return;
+
+  // Who opens alternates every rematch. Decided HERE and sent, rather than
+  // computed on both sides from a counter each maintains alone - two counters
+  // that must agree are two counters that can disagree.
+  rematch.startSeat = online.startSeat === 0 ? 1 : 0;
+  rematch.offered = legs;
+  rematch.notice = "";
+  peerLink?.sendGameMessage({ type: "rematch_offer", legs, startSeat: rematch.startSeat });
+  renderRematch();
+});
+
+el.rematchAccept?.addEventListener("click", () => {
+  if (!rematch.incoming) return;
+  const legs = rematch.incoming;
+  const startSeat = rematch.startSeat;
+  peerLink?.sendGameMessage({ type: "rematch_accept" });
+  resetRematch();
+  beginRematch(legs, startSeat);
+});
+
+el.rematchDecline?.addEventListener("click", () => {
+  if (!rematch.incoming) return;
+  peerLink?.sendGameMessage({ type: "rematch_decline" });
+  resetRematch();
+  rematch.notice = "Rematch declined.";
+  renderRematch();
+});
+
+// Starts the agreed match on this side. Both sides run this from the same two
+// values, which is the determinism guarantee doing its usual work - neither is
+// told the resulting state.
+function beginRematch(legs, startSeat) {
+  online.startSeat = startSeat;
+  online.recorder = null; // the finished match was saved and cleared already
+  startOnlineGame(online.role, legs);
+  renderOnline();
+  renderRematch();
+}
+
+function renderRematch() {
+  if (!el.rematchRow) return;
+
+  // Only once the whole match is decided, and only while still connected.
+  const available = Boolean(online.active && online.gameOver && online.match?.over);
+  el.rematchRow.classList.toggle("hidden", !available);
+  if (!available) return;
+
+  const waiting = Boolean(rematch.offered);
+  const asked = Boolean(rematch.incoming);
+
+  el.rematchBtn.classList.toggle("hidden", waiting || asked);
+  el.rematchBtn.disabled = waiting;
+  el.rematchChoice.classList.toggle("hidden", !asked);
+
+  el.rematchStatus.textContent =
+    asked ? `${online.oppName} wants a rematch — same format.`
+    : waiting ? "Waiting for your opponent to accept…"
+    : rematch.notice;
+}
+
 function statusText(status) {
   switch (status) {
     case "connecting-to-server": return "Connecting to signaling server…";
-    case "waiting-for-opponent": return "Waiting for opponent to join…";
+    // Naming the server here is what makes a mismatch diagnosable: two players
+    // waiting on DIFFERENT signaling servers both see "waiting", and nothing
+    // else on screen distinguishes that from simply being early.
+    case "waiting-for-opponent": return `Waiting for opponent… (via ${currentSignalingUrl()})`;
     case "joining": return "Joining challenge…";
     case "connected": return "Connected - good luck!";
     case "disconnected": return "Disconnected.";
@@ -884,9 +1404,32 @@ function showNotice(message) {
 // ---------- Game start ----------
 // Builds one player's state for a leg. x01 and Cricket keep completely
 // different shapes, which is why this is a function rather than a literal.
+// ---------- Who is playing ----------
+// The scoreboard deliberately keeps saying "You" and "Opponent" - that is
+// unambiguous mid-match in a way that two similar names are not. These are for
+// the saved record, where "beat Opponent" would be useless a month later.
+function myDisplayName() {
+  return accountState().user?.displayName || null;
+}
+
+// The recorder stores absolute seats, the game logic thinks in "me"/"opp".
+function seatOf(side) {
+  return side === "me" ? online.myIndex : online.oppIndex;
+}
+
+function setOpponentName(name) {
+  const clean = String(name || "").trim().slice(0, 40);
+  if (!clean) return;
+  online.oppName = clean;
+  // The recorder may already exist by the time this arrives on the host side,
+  // so the name is applied to it as well as remembered.
+  online.recorder?.setPlayerName(online.oppIndex, clean);
+}
+
 function buildOnlinePlayer(name, legConfig) {
   if (legConfig.game === "cricket") return createCricketPlayer(name);
   if (legConfig.game === "countup") return createCountUpPlayer(name);
+  if (legConfig.game === "bermuda") return createBermudaPlayer(name);
   const rules = rulesFor(legConfig.rules);
   return {
     name,
@@ -906,9 +1449,18 @@ function startOnlineGame(role, legs) {
   online.match = createMatch(legs, 2);
   online.log = [];
 
+  // Seats are absolute and identical on both sides - host 0, guest 1 - so the
+  // two recordings of the same match agree about who did what.
+  const players = [];
+  players[online.myIndex] = { displayName: myDisplayName() || "Me", isSelf: true };
+  players[online.oppIndex] = { displayName: online.oppName, isSelf: false };
+  online.recorder = createRecorder({ mode: "online", format: legs, players });
+
+  stopConnectWatchdog();
+  stopHello();
   startOnlineLeg();
 
-  el.waitingPanel.classList.add("hidden");
+  hideWaitingPanel();
   el.gamePanel.classList.remove("hidden");
   el.winnerBanner.classList.add("hidden");
   renderOnline();
@@ -928,12 +1480,27 @@ function startOnlineLeg() {
 
   // Throw alternates each leg, and both sides compute it from the same
   // absolute index so they never disagree about whose turn it is.
-  const starter = startingPlayerForLeg(online.match.currentLeg, 2);
+  // Offset by whichever seat opens this match, so a rematch alternates the
+  // first throw as well as the legs within it. Both sides hold the same
+  // startSeat - it came with the offer - so they agree without being told.
+  const starter = startingPlayerForLeg(online.match.currentLeg + online.startSeat, 2);
   online.activeSide = starter === online.myIndex ? "me" : "opp";
 
   online.gameOver = false;
   online.legOver = false;
   online.iWon = null;
+
+  online.recorder?.startLeg({
+    legIndex: online.match.currentLeg,
+    game: leg.game,
+    x01Start: leg.game === "x01" ? leg.score : null,
+    rules: leg.game === "x01" ? (leg.rules || "double") : null,
+    bull: leg.bull || null,
+    // Bermuda's round count is fixed by its target list rather than chosen, but
+    // it is still recorded so a stored match describes itself without the
+    // reader having to know the rules module.
+    rounds: leg.game === "bermuda" ? BERMUDA_ROUNDS : (leg.rounds ?? null),
+  });
 }
 
 // A leg has been won. Both sides run this independently off the same inputs,
@@ -948,44 +1515,42 @@ function finishOnlineLeg(side) {
     : (side === "me" ? online.myIndex : online.oppIndex);
   recordLegWin(online.match, winnerIndex);
   online.legOver = !online.match.over;
+
+  online.recorder?.endLeg(winnerIndex);
+  broadcastMatchState();
+
+  if (online.match.over && online.recorder) {
+    const document = online.recorder.endMatch({
+      winnerSeat: online.match.winnerIndex ?? null,
+      drawn: Boolean(online.match.drawn),
+    });
+    recordMatch(document);
+    online.recorder = null;
+  }
 }
 
 // ---------- My physical board ----------
-el.connectBtn.addEventListener("click", async () => {
-  if (!navigator.bluetooth) {
-    if (!window.isSecureContext) {
-      alert(
-        "Web Bluetooth needs a secure context - it's blocked because this page is loaded over plain HTTP. " +
-        "This works on http://localhost, but NOT on a plain http://<ip-address> address like this one, even on your own network. " +
-        "Put the site behind HTTPS (e.g. a reverse proxy with a TLS cert) to fix this - see the README."
-      );
-    } else {
-      alert("This browser doesn't support Web Bluetooth. Use Chrome or Edge on desktop.");
+// There is no connect button here any more. The board is connected once, from
+// the header, and boardlink.js hands the darts to whichever mode is playing -
+// so a board attached during a local game is still attached when a challenge
+// starts, and the other way round. Reconnecting between modes was busywork
+// caused by there being two connections; now there is one.
+//
+// Registered ABOVE game.js's subscriber, so a live online match takes the dart.
+// The two controllers never have to know about each other: this one simply
+// says whether it is playing, and the answer decides.
+subscribeToBoard({
+  priority: 10,
+  wants: () => online.active && !online.gameOver,
+  onHit: (segment) => {
+    if (segment.id === SegmentID.RESET_BUTTON) {
+      // The board's physical button - ends the turn now, without waiting for
+      // three darts to register.
+      onLocalEndTurn();
+      return;
     }
-    return;
-  }
-  try {
-    el.connectionLabel.textContent = "Connecting…";
-    myBoard = await Granboard.connect();
-    el.connectionDot.classList.add("connected");
-    el.connectionLabel.textContent = `Connected: ${myBoard.deviceName}`;
-
-    myBoard.segmentHitCallback = (segment) => {
-      if (segment.id === SegmentID.RESET_BUTTON) {
-        onLocalEndTurn();
-        return;
-      }
-      onLocalHit(segment);
-    };
-    myBoard.disconnectCallback = () => {
-      el.connectionDot.classList.remove("connected");
-      el.connectionLabel.textContent = "Disconnected";
-    };
-  } catch (err) {
-    console.error(err);
-    el.connectionLabel.textContent = "Connection failed";
-    alert(`Couldn't connect: ${err.message}`);
-  }
+    onLocalHit(segment);
+  },
 });
 
 // ---------- Camera & mic ----------
@@ -1476,12 +2041,16 @@ function applyQuickTotalThrow(side, totalValue) {
   // A turn total says nothing about WHICH numbers were hit, so it has no
   // meaning in cricket. The UI hides it there; this guards the message path.
   if (online.gameType === "cricket") return;
+  // Same for Bermuda: every round has its own target and missing one halves
+  // the score, so a bare total cannot express what happened.
+  if (online.gameType === "bermuda") return;
   if (online.activeSide !== side) {
     console.warn(`Ignored an out-of-turn '${side}' turn total.`);
     return;
   }
 
   const s = online[side];
+  const remainingBefore = s.remaining;
   const segment = {
     value: totalValue,
     type: SegmentType.Double, // exact-0 entries assume a valid finish
@@ -1505,6 +2074,14 @@ function applyQuickTotalThrow(side, totalValue) {
     label: segment.longName,
     remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
     bust: isBust,
+  });
+
+  online.recorder?.quickTotal(seatOf(side), {
+    total: totalValue,
+    remainingBefore,
+    remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
+    bust: isBust,
+    isCheckout: isWin,
   });
 
   if (isBust) {
@@ -1539,9 +2116,11 @@ function applyThrow(side, rawSegment) {
 
   if (online.gameType === "cricket") return applyCricketThrowOnline(side, segment);
   if (online.gameType === "countup") return applyCountUpThrowOnline(side, segment);
+  if (online.gameType === "bermuda") return applyBermudaThrowOnline(side, segment);
 
   const s = online[side];
   const rules = rulesFor(online.legConfig?.rules);
+  const remainingBefore = s.remaining;
   const { after, isBust, isWin, opened, ignored } = resolveThrow(s.remaining, segment, {
     inRule: rules.in,
     outRule: rules.out,
@@ -1561,6 +2140,14 @@ function applyThrow(side, rawSegment) {
     label: ignored ? `${segment.longName} - not in yet` : segment.longName,
     remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
     bust: isBust,
+  });
+
+  online.recorder?.dart(seatOf(side), segment, {
+    remainingBefore,
+    remainingAfter: isBust ? s.startOfTurn : Math.max(after, 0),
+    bust: isBust,
+    ignored,
+    scored: ignored || isBust ? 0 : segment.value,
   });
 
   if (isBust) {
@@ -1596,12 +2183,70 @@ function applyCountUpThrowOnline(side, segment) {
     bust: false,
   });
 
+  online.recorder?.dart(seatOf(side), segment, {
+    scored: result.points,
+    extra: { points: result.points, total: player.total },
+  });
+
   if (player.dartsThisTurn.length >= 3) {
     player.roundsPlayed += 1;
     const rounds = online.legConfig?.rounds ?? DEFAULT_ROUNDS;
     const players = [online.me, online.opp];
     if (isLegComplete(players, rounds)) {
       const winner = checkCountUpWin(players, rounds);
+      finishOnlineLeg(winner === null ? null : (winner === 0 ? "me" : "opp"));
+    } else {
+      endTurn(side);
+    }
+  }
+
+  renderOnline();
+}
+
+// Bermuda Triangle. Each player is independent - there is no interaction
+// between the two, unlike Cricket - so this is the simplest of the online
+// paths: apply the dart, and when the third one lands, close the round.
+//
+// The halving happens inside endBermudaRound on BOTH sides from the same
+// inputs, which is the whole reason the rules live in a pure module. Neither
+// browser tells the other what someone's score became.
+function applyBermudaThrowOnline(side, segment) {
+  const player = online[side];
+  const target = bermudaTarget(player.round);
+  const result = resolveBermudaThrow(segment, target);
+  applyBermudaThrow(player, result);
+
+  if (side === "me") moveMarkerTo(el.dartboardMarker, segment);
+
+  player.dartsThisTurn.push(segment);
+  online.log.unshift({
+    side,
+    label: describeBermudaResult(segment, result, target),
+    remainingAfter: player.total,
+    bust: false,
+  });
+
+  online.recorder?.dart(seatOf(side), segment, {
+    scored: result.points,
+    extra: { target: target?.label ?? null, hit: result.hit, points: result.points },
+  });
+
+  if (isBermudaRoundOver(player)) {
+    const round = endBermudaRound(player);
+    if (round.missed && round.lost > 0) {
+      online.log.unshift({
+        side,
+        label: `Missed ${round.target?.label ?? "the target"} - score halved`,
+        remainingAfter: player.total,
+        bust: true,
+      });
+    }
+
+    const players = [online.me, online.opp];
+    if (isBermudaComplete(players)) {
+      // checkBermudaWin returns null on a tie, which finishOnlineLeg passes
+      // through to medley.js as a leg credited to nobody.
+      const winner = checkBermudaWin(players);
       finishOnlineLeg(winner === null ? null : (winner === 0 ? "me" : "opp"));
     } else {
       endTurn(side);
@@ -1632,6 +2277,17 @@ function applyCricketThrowOnline(side, segment) {
     bust: false,
   });
 
+  online.recorder?.dart(seatOf(side), segment, {
+    scored: result.points,
+    extra: {
+      target: result.target,
+      marks: result.marks,
+      marksApplied: result.marksApplied,
+      points: result.points,
+      justClosed: result.justClosed,
+    },
+  });
+
   if (checkCricketWin(players, 0)) {
     finishOnlineLeg(side);
   } else if (player.dartsThisTurn.length >= 3) {
@@ -1641,18 +2297,52 @@ function applyCricketThrowOnline(side, segment) {
   renderOnline();
 }
 
+// A scoreboard snapshot for anyone watching. Sent at the END of a visit rather
+// than per dart: a spectator wants the scoreline, and one object a visit is a
+// few hundred bytes where relaying every dart would put the server inside the
+// match.
+//
+// Only the HOST sends. Both sides hold identical state - that is the whole
+// determinism guarantee - so a second copy would be pure duplication, and
+// picking one avoids two writers racing over the same snapshot.
+function broadcastMatchState() {
+  if (!online.lobbyCode || online.role !== "host") return;
+
+  const score = (p) =>
+    online.gameType === "cricket" ? p.points
+    : (online.gameType === "countup" || online.gameType === "bermuda") ? p.total
+    : p.remaining;
+
+  pushMatchState(online.lobbyCode, {
+    game: online.gameType,
+    // Absolute seats, so a watcher reads the same order as the players do.
+    scores: { [online.myIndex]: score(online.me), [online.oppIndex]: score(online.opp) },
+    legsWon: online.match?.legsWon ?? [],
+    activeSeat: online.activeSide === "me" ? online.myIndex : online.oppIndex,
+    over: Boolean(online.gameOver),
+    at: Date.now(),
+  });
+}
+
 function endTurn(side) {
   const s = online[side];
+  online.recorder?.endTurn();
   s.dartsThisTurn = [];
   // Cricket has no bust, so there's no start-of-turn value to revert to.
-  if (online.gameType !== "cricket" && online.gameType !== "countup") s.startOfTurn = s.remaining;
+  // Only x01 has a start-of-turn score to revert a bust to.
+  if (online.gameType !== "cricket" && online.gameType !== "countup"
+      && online.gameType !== "bermuda") {
+    s.startOfTurn = s.remaining;
+  }
   online.activeSide = side === "me" ? "opp" : "me";
+  broadcastMatchState();
 }
 
 // ---------- Render ----------
 function renderOnline() {
   const cricket = online.gameType === "cricket";
   const countup = online.gameType === "countup";
+  const bermuda = online.gameType === "bermuda";
 
   // Cricket shows marks; x01 shows a remaining score. Only one at a time.
   el.cricketBoard?.classList.toggle("hidden", !cricket);
@@ -1668,7 +2358,7 @@ function renderOnline() {
       online.activeSide === "me" ? 0 : 1);
     el.meScore.textContent = online.me.points;
     el.oppScore.textContent = online.opp.points;
-  } else if (countup) {
+  } else if (countup || bermuda) {
     el.meScore.textContent = online.me.total;
     el.oppScore.textContent = online.opp.total;
   } else {
@@ -1699,7 +2389,9 @@ function renderOnline() {
   const showBig = av.immersive && !cricket && !online.gameOver;
   el.bigScore.classList.toggle("hidden", !showBig);
   if (showBig) {
-    el.bigScore.textContent = myTurn ? online.me.remaining : online.opp.remaining;
+    const thrower = myTurn ? online.me : online.opp;
+    // Bermuda and Count Up count up; x01 counts down.
+    el.bigScore.textContent = (countup || bermuda) ? thrower.total : thrower.remaining;
   }
 
   renderOnlineMatchBar();
@@ -1709,6 +2401,16 @@ function renderOnline() {
     el.turnLabel.textContent = online.iWon === null
       ? "Leg drawn."
       : online.iWon ? "You win the leg! 🎯" : "Opponent takes the leg.";
+  } else if (bermuda) {
+    // The current target is the whole state of a Bermuda turn - without it on
+    // screen there is nothing to aim at. Shown for whoever is throwing, since
+    // the two players are on their own rounds and can be on different targets.
+    const p = online.activeSide === "me" ? online.me : online.opp;
+    const who = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+    const target = bermudaTarget(p.round);
+    el.turnLabel.textContent =
+      `${who} · round ${Math.min(p.round + 1, BERMUDA_ROUNDS)} of ${BERMUDA_ROUNDS}` +
+      ` · throw at ${target?.label ?? "-"}`;
   } else if (countup) {
     // Rounds left and the running average are the numbers that matter in a
     // practice game.
@@ -1740,6 +2442,7 @@ function renderOnline() {
 
   el.winnerBanner.classList.toggle("hidden", !online.gameOver);
   if (online.gameOver) el.winnerBanner.textContent = onlineBannerText();
+  renderRematch();
 
   // Manual entry stays clickable at all times - a hard CSS block here was
   // indistinguishable from a bug if the visual state ever fell out of sync

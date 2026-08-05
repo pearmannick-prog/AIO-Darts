@@ -1,0 +1,57 @@
+# litestream.yml - continuous replication of the accounts database to R2.
+#
+# This file is a TEMPLATE. Every value comes from the environment, so nothing
+# secret is ever written down here or baked into the image - the same rule the
+# TURN and email keys follow.
+#
+# Litestream expands ${VAR} itself, so there is no entrypoint substitution step
+# and no risk of a half-rendered config.
+#
+# WHY THIS EXISTS. The database is one file, and everywhere cheap enough to host
+# an MVP has an ephemeral filesystem. Replicating it means the host stops being
+# a commitment: a desktop, an Oracle VM and a $7 Render disk all become the same
+# thing, and moving between them is restore-and-repoint rather than a migration.
+# The backup strategy and the migration strategy are one mechanism.
+
+# Snapshots, which are what makes this a backup rather than only a replica.
+#
+# Continuous replication protects against losing the MACHINE. It does not
+# protect against losing the DATA, because it replicates a mistake just as
+# faithfully as anything else - a bad DELETE is on the replica within ten
+# seconds and the good copy is gone.
+#
+# A full snapshot every 24h is Litestream's default and already happened. What
+# did not was keeping them: retention also defaults to 24h, so yesterday's
+# snapshot was deleted before it was a day old, and anything noticed later than
+# that was unrecoverable. Thirty days is the actual protection.
+#
+# THE COST IS STORAGE, and it scales with the database. Thirty daily snapshots
+# of a 5MB database is 150MB against R2's 10GB free tier - irrelevant. Thirty
+# of a 400MB database (roughly ten thousand matches) would be 12GB, which is
+# not. Revisit this number if the bucket ever approaches the free tier; the
+# window is a judgement about how long a mistake can go unnoticed, not a
+# constant.
+snapshot:
+  interval: 24h
+  retention: 720h
+
+dbs:
+  - path: ${DATA_DIR}/aio-darts.db
+    replicas:
+      - type: s3
+        bucket: ${R2_BUCKET}
+        # A prefix inside the bucket, so the same bucket can hold more than one
+        # deployment's data without them colliding. Override per environment -
+        # production and the test build must NOT share this.
+        path: ${R2_PATH}
+        endpoint: ${R2_ENDPOINT}
+        # R2 has no regions, but the S3 client requires one. "auto" is what
+        # Cloudflare's own documentation uses.
+        region: auto
+        access-key-id: ${R2_ACCESS_KEY_ID}
+        secret-access-key: ${R2_SECRET_ACCESS_KEY}
+        # Default is 1s, which would be about 2.6M Class A operations a month -
+        # comfortably past R2's 1M free allowance for a database that receives a
+        # write burst only when somebody finishes a match. Ten seconds keeps it
+        # around 260k and costs, at worst, ten seconds of darts in a crash.
+        sync-interval: 10s

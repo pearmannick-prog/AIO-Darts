@@ -73,12 +73,16 @@ what the above does.
    switch on. An x01 leg carries its own **starting score** (301, 501 or 701)
    and its own **rules**:
 
-   | Rules | In | Out |
-   | --- | --- | --- |
-   | Double out (standard) | any dart scores | must finish on a double |
-   | SISO (single in, single out) | any dart scores | anything finishes, including a single |
-   | DIDO (double in, double out) | nothing scores until you hit a double | must finish on a double |
-   | Master out | any dart scores | a double **or** a triple finishes |
+   The in and out rules are picked independently, so every combination is
+   available - "Open in / Master out" is a real selection, not a curiosity.
+
+   | | Open | Double | Master |
+   | --- | --- | --- | --- |
+   | **In** | any dart scores | nothing scores until a double | a double, triple **or** bull opens you |
+   | **Out** | anything finishes, including a single | must finish on a double | a double, triple **or** bull finishes |
+
+   The familiar names are just points on that grid: **SISO** is open/open,
+   **DIDO** is double/double, **Master out** is open/master.
 
    Two details that catch people out. Under **double in**, darts thrown before
    you open still count as darts - they just score nothing, and the throw log
@@ -94,6 +98,40 @@ what the above does.
    keeps paying out points on numbers you've closed (with no opponent there's
    nobody to close them out against, so nothing goes dead). A solo medley
    plays every leg rather than ending after the first.
+
+   **Computer players.** Every seat has a dropdown next to the name box, set to
+   "Human" by default. Change it and that seat is played by the computer, at
+   one of seven strengths named for the rank it plays to:
+
+   | Level | Rank | Three-dart average |
+   | --- | --- | --- |
+   | Beginner | C | ~35 |
+   | Casual | CC | ~51 |
+   | Club player | B | ~63 |
+   | Strong club | BB | ~75 |
+   | County | A | ~89 |
+   | Elite | AA | ~103 |
+   | Professional | S | ~116 |
+
+   Those averages are measured, not claimed - the levels are pegged to the same
+   rating table the app scores you against ([Rating and ranks](#rating-and-ranks)),
+   so "beat a B player" means the same thing whoever is throwing.
+
+   The computer isn't a table of outcomes or a "70% chance to hit the treble".
+   It aims at a point on the board and its dart lands there plus a random
+   error, which is then read back off the board as whatever segment it hit.
+   That one number - how wide the scatter is, in millimetres - is the entire
+   difference between the beginner and the professional, and it produces the
+   *right* misses for free: aim at treble 20, miss sideways, hit the 1 or the
+   5, exactly as a person does. It plays every game mode, aiming at the round's
+   actual target in Bermuda rather than blindly at the 20.
+
+   Any seat can be a computer, so you can watch two of them play, and mixed
+   games work in a medley. A match with a computer in it is recorded as
+   **practice**: the darts count towards your statistics, because they're real
+   darts you threw at a real board, but the result stays off the win-based
+   leaderboards - farming a beginner for a hundred wins shouldn't put anyone
+   top of a board.
 
    With more than one leg, a bar shows which leg is in play and the running
    leg tally, and a **Next leg** button appears once a leg is won. Scores
@@ -139,6 +177,21 @@ what the above does.
    everything **and** being level or ahead on points - closing out while
    behind doesn't end the game. Quick Total entry is hidden in Cricket, since
    a turn total says nothing about which numbers were hit.
+
+   **Bermuda Triangle** is thirteen rounds with a different target each time,
+   in a fixed order: 12, 13, 14, Any Double, 15, 16, 17, Any Triple, 18, 19,
+   20, Any Bull, Double Bull. Any segment of the current number scores its own
+   value, so a triple 12 is worth 36; on the Double and Triple rounds, any
+   double or any triple anywhere on the board counts.
+
+   The catch is what makes the game: **miss the target with all three darts
+   and your score is cut in half.** That punishes a good player far more than
+   a bad one - somebody on 400 loses 200 for one bad round - so a steady
+   player who never misses will beat a big scorer who misses twice. The app
+   says so out loud in the throw log when it happens, because a score that
+   silently halves reads as a bug. The current target is always in the turn
+   label. Quick Total is disabled here, since a bare total can't express which
+   target you were on or whether you missed it.
 2. *If you have a Granboard*, click **Connect Board** - a browser popup will
    ask you to pick it from a list of nearby Bluetooth devices. Select it and
    click "Pair"/"Connect". This step is entirely optional: the clickable
@@ -164,6 +217,53 @@ what the above does.
    bounces out or misses the board and you don't want to wait for 3 registered
    hits before it's the next player's turn. It doesn't undo anything; only a
    bust reverts score.
+
+## Automatic camera scoring (OpenDartboard)
+
+A camera scorer watches your board and reports every dart, so a steel-tip board
+scores itself. AIO Darts can read one, in **local and online play alike** - it
+feeds the same input path a Bluetooth board does, so nothing else changes.
+
+**This app does not include the scorer, and deliberately doesn't.**
+[OpenDartboard](https://github.com/OpenDartboard/OpenDartboard) is separate
+GPL-3.0 software that runs on a Raspberry Pi next to your board, because the
+vision has to happen where the cameras are - it cannot run in a browser, and the
+browser cannot reach cameras plugged into a Pi across the room. AIO Darts is a
+client of it, the same way it is a client of a Granboard. You install theirs,
+point this at it, and the two stay independent.
+
+### What you need
+
+- A Raspberry Pi (a Zero 2 W is enough) with cameras aimed at your board
+- OpenDartboard installed on it - follow **their** documentation, not this file;
+  they ship a `.deb` and know their own hardware
+- The Pi and the device running AIO Darts on the same network
+
+### Pointing AIO Darts at it
+
+1. Find the Pi's address on your network, e.g. `192.168.1.50`.
+2. In **Local Play**, open **Automatic camera scorer (optional)**.
+3. Type the address and press **Connect**. The port and path are added for you;
+   a full `ws://host:port/path` also works if yours differs.
+4. **Allow the permission prompt.** Your browser asks once, per site, before a
+   page may reach devices on your local network. That prompt *is* this
+   connection - blocking it means the scorer cannot work.
+
+The header then reads `Connected: OpenDartboard`, and throws score themselves.
+The address is remembered, so this is a one-time setup.
+
+Pulling the darts out ends your visit, the same as a Granboard's button -
+OpenDartboard reports the board going clean and this reads it as "visit over".
+
+### When it doesn't work
+
+| What you see | Usually means |
+| --- | --- |
+| "Couldn't connect" straight away | Wrong address, or the Pi is off. Check you can reach it from the same device. |
+| "Lost the connection — reconnecting in Ns" | It was working and went away: a reboot, or wifi. It reconnects on its own; nothing to do. |
+| No prompt and no connection | The local-network permission was blocked earlier. Re-allow it in the padlock menu → site settings. |
+| Everything scores as a 20 | Not this app. OpenDartboard falls back to the 20 wedge when its orientation calibration is missing - recalibrate on their side. |
+| Bulls score 25 when they should be 50 | Report it. The two scorers disagree about the word "BULL" and this app keeps a vocabulary per source; a mismatch means one needs correcting. |
 
 ## Online 1v1 challenges
 
@@ -287,8 +387,14 @@ Bluetooth requires it.
   relays the traffic instead - see [Adding a TURN relay](#adding-a-turn-relay).
 - **No anti-cheat** - each side reports its own hits; a modified client could
   lie. Fine for playing with people you trust, not tamper-proof.
-- **No matchmaking/accounts** - invite-code only for now. A public
-  lobby/ranked queue needs persistent accounts and a real backend.
+- **Nothing proves a match happened.** Accounts, statistics and leaderboards
+  all rest on what the two clients report, and the app has no referee - see
+  [Leaderboards are for fun, not for ranking](#leaderboards-are-for-fun-not-for-ranking).
+  Appearing on a board is opt-in for exactly that reason.
+- **Invite codes are still the only way to play someone outside your lobby** -
+  and the fallback when the lobby is down. That's deliberate, not a gap: the
+  lobby only mints an ordinary challenge code and hands it to both sides, so
+  there's no second code path to keep working.
 - Challenge codes are **in-memory and ephemeral** - restarting the server
   drops any in-progress ones. That's by design; a code only needs to live for
   the few seconds it takes two players to connect.
@@ -298,16 +404,29 @@ Bluetooth requires it.
 
 ## Architecture
 
-One Node process (`server/server.js`) does two jobs on a single port:
+One Node process (`server/server.js`) does four jobs on a single port:
 
 - serves the static front-end (`index.html` and the `*.js` files)
 - serves the signaling WebSocket at `/signaling`
+- serves the lobby WebSocket at `/lobby`
+- answers the accounts and statistics API under `/api/*`
 
-That merge is deliberate. Because the socket lives on the same origin as the
+That merge is deliberate. Because the sockets live on the same origin as the
 page, deploying needs **no second subdomain, no extra DNS record, no separate
 TLS certificate, no path-rewriting rules, and no signaling URL for anyone to
 type**. A reverse proxy just forwards the site as it would any static site,
 with WebSocket upgrades enabled.
+
+The two WebSockets share one `upgrade` listener that routes by path, which is
+load-bearing rather than tidy: a `WebSocketServer` built with `{server, path}`
+installs its own listener and *destroys* any upgrade whose path it doesn't
+recognise, so two of them on one HTTP server means whichever attached first
+silently hangs up on the other's connections.
+
+Only the lobby holds state. Signaling relays offer/answer/ICE between the two
+sockets in a room and then drops out, and an accepted lobby challenge mints an
+ordinary invite code and gets out of the way - so the server never sees a dart,
+and a lobby outage can't interrupt a match already in progress.
 
 Scoring stays in sync between peers without any rollback/replay machinery:
 both browsers run the identical deterministic `resolveThrow` logic from
@@ -315,6 +434,120 @@ both browsers run the identical deterministic `resolveThrow` logic from
 locally and forwards them to the peer, which applies them to its model of "the
 opponent" using the same rules. WebRTC DataChannels guarantee ordered
 delivery, so both sides stay in lockstep.
+
+## The online lobby
+
+Signed in, the Online Challenge tab gains a **lobby**: everyone else who is
+online, their status, and a Challenge button. Send one and they get a card with
+Accept and Decline; unanswered challenges expire. **Quick Match** puts you in a
+queue and pairs you with whoever has waited longest - deliberately not
+skill-based, because a queue that holds out for a good match is one nobody comes
+out of.
+
+**Rooms** are places to wait and chat - "501 Practice", "Cricket Only" - not
+matches. Anyone in one can be challenged. There is room chat and private
+whispers, and you can **block** someone, which is silent and stops them
+challenging you, whispering to you, seeing you in the lobby, or being paired
+with you by Quick Match.
+
+Tapping a player opens their card: their real record, so "am I in for a game
+here?" has an answer before you commit.
+
+**Invite codes still work exactly as before, and are not going away.** They are
+the only way to play without an account, the way to play someone who isn't in
+your lobby, and the fallback if the lobby is unavailable. Accepting a challenge
+simply creates one of those codes behind the scenes and hands it to both
+players - so the match itself runs over the identical peer-to-peer connection it
+always has, and the lobby drops out of the picture entirely. If the lobby went
+down mid-match, your match would carry on.
+
+## Rating and ranks
+
+Play enough and you get a **rating from 1 to 20** and a rank from C up to GM,
+using the familiar table: your x01 three-dart average ("01 PPR") and your
+Cricket marks per round ("CR MPR") each map to a rating, and the two are
+averaged.
+
+You will see **two** of them, and they are the same table read twice:
+
+- **80% stats** cover the pure scoring phase - x01 visits begun with 100 or more
+  left, Cricket rounds before the bull was closed. This is what the rank table
+  is built around, and what the badge shows.
+- **100% stats** cover the whole game, including setup shots and darts thrown at
+  a double that missed.
+
+The thresholds are identical; only the darts feeding the average differ. That is
+why the same player can be an M on their 80% stats and a B on their 100% - not
+two systems, one system measuring two different things. Below ten legs you are
+simply **unranked**, because an average over one leg is noise.
+
+## Accounts, statistics and leaderboards
+
+Entirely optional. **You never need an account to play** - local and online
+darts work exactly as they always have without one, and the Android build,
+which has no server behind it, is unaffected. Sign-in only appears when the app
+can see an accounts API.
+
+What an account adds:
+
+- **Match history** - every finished match, with the format, opponent, darts
+  thrown and result.
+- **Statistics by game** - X01 gets three-dart and first-9 averages, checkout %,
+  180s/140+/100+, highest checkout and doubles; Cricket gets marks per round,
+  white horses, hat tricks, points scored and points prevented; Count Up gets
+  round averages. Career totals, trends over time and a "most improved" figure
+  sit on top.
+- **Achievements**, a **dashboard** with personal bests and current form, and
+  **leaderboards** - global, friends-only, or per club, all-time or this month.
+
+### Every dart is stored
+
+The app records each individual dart - the segment, what it scored, the score
+before and after, whether it busted - not a summary at the end. Statistics are
+computed from that. It means a new metric can be added later and applied to
+matches you have already played, instead of starting from zero on the day it
+ships, and it is why a corrected formula reprices your whole history rather than
+only affecting new games.
+
+### Playing as a guest
+
+Finished matches are stored **on your device first** and uploaded afterwards, so:
+
+- Matches played offline are not lost - they upload when you are next online.
+- Statistics work with no account at all, computed in the browser from the
+  matches on that device.
+- If you later create an account, the matches you played as a guest are uploaded
+  and become yours. Nothing is lost by not signing up first.
+
+### Leaderboards are for fun, not for ranking
+
+Scores are computed by each player's own app and uploaded. This is a
+peer-to-peer app with no referee, so there is no way to prove a match happened -
+these boards are for comparing yourself with friends, not for anything that
+matters. Appearing on them is opt-in, under Profile.
+
+Averages have qualifications (300 darts for a three-dart average, 50 rounds for
+MPR, and so on) shown next to each board, because otherwise the top of every
+board is whoever has thrown nine lucky darts.
+
+### Where the data lives
+
+A single SQLite file in `DATA_DIR` (`./data` locally, `/app/data` in the
+container). SQLite is just a file, so the app stays one container with nothing
+extra to run, and backing it up is copying it.
+
+> **This directory must be persistent.** On a host with an ephemeral filesystem -
+> Render's free tier being the obvious one - it is wiped on every deploy, which
+> silently deletes every account. The darts keep working; the accounts do not.
+> See the note in `render.yaml`, and the volume in `docker-compose.yml`.
+>
+> If the database cannot be opened the server does not fall over: it logs the
+> problem, reports `"accounts": false` on `/healthz`, and carries on serving
+> darts.
+
+Passwords are hashed with scrypt. Sessions are random opaque tokens in the
+database, delivered as an HttpOnly cookie - so signing out actually revokes
+them, and a server restart does not log everyone out.
 
 ## Installing as a desktop app
 
@@ -370,6 +603,69 @@ docker build -t aiodarts .
 docker run -p 8887:8080 -v /mnt/user/appdata/aiodarts:/data aiodarts
 ```
 
+### Backups, and moving between hosts
+
+The database is one file, and the cheap places to run an MVP all have ephemeral
+filesystems. **Litestream** replicates that file to Cloudflare R2 continuously
+and restores it on boot, which makes the host a preference rather than a
+commitment: a desktop, a free VM and a paid disk all become the same thing, and
+moving between them is restore-and-repoint rather than a migration.
+
+Set five variables and it turns on; leave them unset and the container starts
+exactly as it did before, with no replication and no complaints.
+
+```
+R2_BUCKET=aio-darts-backup
+R2_PATH=prod          # a prefix inside the bucket - prod and dev MUST differ
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=...  # an R2 API token scoped to that bucket only
+R2_SECRET_ACCESS_KEY=...
+```
+
+On boot the entrypoint restores **only** if there is no local database and the
+replica is non-empty, so an existing file is never overwritten by an older copy
+and a first-ever start against an empty bucket is not an error. The app then
+runs as a child of `litestream replicate -exec`, which is what makes shutdown
+correct: Litestream sees the process exit and flushes the final WAL segment
+instead of racing it.
+
+`sync-interval` is **10s**, not Litestream's 1s default. At 1s this would be
+roughly 2.6M Class A operations a month against R2's 1M free allowance, for a
+database that only takes a write burst when somebody finishes a match. The cost
+of the slower interval is at most ten seconds of darts in a hard crash.
+
+**Continuous replication is not the same as a backup.** It protects against
+losing the machine, not against losing the data: a bad `DELETE` is on the
+replica within ten seconds, and the good copy is gone.
+
+Snapshots are what close that gap, and they are configured in `litestream.yml`
+rather than run as a separate job:
+
+```yaml
+snapshot:
+  interval: 24h
+  retention: 720h   # 30 days
+```
+
+A full snapshot every 24h is Litestream's default. Keeping them is not -
+retention also defaults to 24h, so yesterday's snapshot is deleted before it is
+a day old. Thirty days is the actual protection, and it gives point-in-time
+restore anywhere in that window (`litestream restore -timestamp ...`).
+
+The cost is storage, and it scales with the database: thirty snapshots of a 5MB
+file is 150MB against a 10GB free tier and irrelevant; thirty of a 400MB file
+would be 12GB and is not. Revisit the number if the bucket approaches the free
+tier - the window is a judgement about how long a mistake can go unnoticed.
+
+**Test a restore occasionally**, because an untested backup is a hypothesis. On
+a host with an ephemeral disk you get one free with every deploy.
+
+To move hosts: bring the new one up with the same five variables and no local
+database, let it restore, verify `/healthz` reports `accounts:true`, stop the
+old one, restore once more to pick up the last few seconds, then repoint DNS.
+Matches in progress are unaffected either way - they are peer-to-peer and do
+not touch the server.
+
 ### Persistent data
 
 The compose file bind-mounts a data directory to `/data` in the container.
@@ -424,9 +720,58 @@ Set them in `docker-compose.yml` under the `darts` service.
 | `PORT` | `8080` | Port inside the container. |
 | `STUN_URLS` | Google's public STUN | Comma-separated STUN servers. |
 | `TURN_URL` | *(unset)* | TURN relay address - see below. |
-| `TURN_USERNAME` / `TURN_CREDENTIAL` | *(unset)* | TURN credentials. |
+| `TURN_USERNAME` / `TURN_CREDENTIAL` | *(unset)* | TURN credentials, for a relay that issues static ones. |
+| `TURN_KEY_ID` / `TURN_KEY_API_TOKEN` | *(unset)* | Cloudflare Realtime TURN. See below. |
+
+**Cloudflare Realtime TURN** doesn't issue static credentials, so it can't use
+the `TURN_USERNAME`/`TURN_CREDENTIAL` pair: you hold a key and an API token, and
+the server mints short-lived credentials per session. Create a TURN app in the
+Cloudflare dashboard, then set `TURN_KEY_ID` and `TURN_KEY_API_TOKEN`. **The API
+token stays on the server** - only the minted credential is ever sent to a
+browser, which is the whole point of the design. Credentials are cached and
+re-minted an hour before they expire, so `/config.json` doesn't call Cloudflare
+on every page load. If minting fails the app logs it and carries on with
+whatever STUN is configured: players who could connect directly still can.
+
+Free tier is 1,000 GB, which for scoring alone is unreachable - a dart is a few
+bytes. Camera and mic are what consume it, and only for the minority of matches
+that actually need relaying.
 | `SIGNALING_PATH` | `/signaling` | Path the WebSocket is served on. |
 | `SIGNALING_URL` | *(unset)* | Only to point players at a *different* signaling server. Leave unset for same-origin. |
+| `ACCOUNTS` | *(unset - accounts on)* | Set to `off` to run guests-only without opening a database. See below. |
+| `R2_BUCKET` / `R2_PATH` / `R2_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | *(unset)* | Continuous backup of the database to Cloudflare R2. See below. |
+| `EMAIL_API_KEY` | *(unset)* | Resend API key, for password reset mail. Unset = log the link instead. |
+| `EMAIL_FROM` | *(unset)* | From address, e.g. `AIO Darts <noreply@aiodarts.com>`. Must be a domain verified with the provider. |
+| `PUBLIC_URL` | *(unset)* | The site's own address, used to build reset links. |
+
+**Password reset works with no email provider at all.** With `EMAIL_API_KEY`,
+`EMAIL_FROM` or `PUBLIC_URL` missing, the server does not fail - it writes the
+reset link to its log:
+
+```
+  password reset for someone@example.com
+    https://aiodarts.com/#/reset?token=a1b2c3...
+```
+
+That is the intended path for a self-hosted deployment: the operator reads the
+link out of the log and hands it over, with no API key, no DNS records and no
+account with a mail provider. It also means the whole flow can be tested
+without sending anything. Setting the three variables switches it to real mail
+with no other change; the API key stays on the server exactly like the TURN
+one.
+
+Links work **once** and expire after **an hour**, asking again invalidates any
+earlier link, and completing a reset signs out every other session - a reset is
+what you do when you think someone else is in your account.
+
+**`ACCOUNTS=off` is the honest setting for a host with no persistent disk.** An
+ephemeral filesystem doesn't stop the database opening - it lets people sign up,
+records their matches, and then deletes all of it on the next deploy, which is
+worse than not offering accounts at all. Setting this skips the database
+entirely: `/healthz` reports `accounts:false`, `/api/*` answers 503, the lobby
+doesn't start, and the front-end hides the account tab exactly as it does in the
+Android APK. Darts is unaffected - local play, invite-code online play and
+on-device statistics all work.
 
 ### Adding a TURN relay
 
@@ -529,12 +874,31 @@ use requires a separate agreement with the licensor.
 
 *Last reviewed: 30 July 2026.*
 
-- Persistent stats across sessions (accounts + SQLite, staying single-container)
-- Matchmaking and a lobby beyond invite codes
+- The remaining Cricket variants (Cut-Throat, Wildcard, Low Ball, Hammer, the
+  /200 spread limit) and the rest of the Arachnid "Other Games"
+- Teams, and with them the Freeze Rule - which is a partners rule, so teams are
+  the prerequisite rather than a flag
 - Native Windows (C#/.NET) version
 - Webcam-based hit detection for standard steel-tip boards
 
 Done since the last review:
+
+- ✅ **The online lobby** (3 August 2026) - live presence, challenges, Quick
+  Match, rooms, chat and blocking. Gameplay stays peer-to-peer: an accepted
+  challenge mints an ordinary invite code and hands it to both sides, so the
+  match runs over the connection that always existed. Invite codes stay.
+- ✅ **Rating and ranks** (3 August 2026) - the 1-20 scale and C-to-GM ranks,
+  reported against both the 80% (scoring phase) and 100% (whole game) averages.
+- ✅ **Bermuda Triangle** (3 August 2026) - thirteen rounds, and the halving
+  that makes the game, playable locally and online with its own statistics.
+
+- ✅ **Accounts, statistics, achievements and leaderboards** (2 August 2026) -
+  optional accounts backed by a single SQLite file, with every dart recorded and
+  all statistics derived from that. Statistics are modular by game, so a future
+  game mode brings its own metrics, achievements and boards without a schema
+  change. Guests keep working throughout: matches are stored on-device first,
+  statistics are computed in the browser with no account, and anything played as
+  a guest is claimed when you sign up.
 
 - ✅ **Pre-match camera & mic check** (30 July 2026) - preview, level meter, and
   camera/mic pickers on the setup screen, so devices can be tested and chosen

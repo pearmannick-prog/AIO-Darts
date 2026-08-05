@@ -1,0 +1,17 @@
+# Shell scripts must have LF endings in the WORKING TREE, not just in the repo.
+#
+# This is developed on Windows, where git's autocrlf hands you CRLF on checkout.
+# That is harmless for everything here except a script that gets copied into a
+# Linux container: the shebang becomes "#!/bin/sh\r", the kernel looks for an
+# interpreter literally called "sh\r", and the container dies with
+#
+#   exec /app/docker-entrypoint.sh: no such file or directory
+#
+# which points at the file rather than at its line endings and is a genuinely
+# horrible half hour. CI never hit it because Linux runners check out LF, so it
+# would only ever have broken a local `docker compose build`.
+*.sh text eol=lf
+
+# Same reasoning, less severely: these are read inside the container.
+Dockerfile text eol=lf
+litestream.yml text eol=lf

@@ -13,10 +13,39 @@ services:
       # - TURN_USERNAME=aiodarts # Username for the TURN server above
       # - TURN_CREDENTIAL=change-me # Password for the TURN server above
       # - SIGNALING_URL=wss://example.com/signaling # Only to point players at a DIFFERENT signaling server; leave unset for same-origin
+      # - ACCOUNTS=off # Run guests-only, without opening a database at all. Set this when there is NO persistent disk: an ephemeral one lets accounts be created and then silently deletes them, which is worse than not offering them.
+      # Continuous replication of the database to Cloudflare R2. Unset = off, and
+      # the container starts exactly as it did before Litestream existed.
+      # This is also the migration path: restore on a new host and repoint DNS.
+      # - R2_BUCKET=aio-darts-backup
+      # - R2_PATH=prod # A prefix inside the bucket. Production and the test build MUST differ, or they overwrite each other.
+      # - R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+      # - R2_ACCESS_KEY_ID=... # An R2 API token scoped to this bucket only.
+      # - R2_SECRET_ACCESS_KEY=...
     volumes:
-      - /mnt/user/appdata/aiodarts:/data # Persistent data (SQLite once accounts land); empty for now
+      - /mnt/user/appdata/aiodarts:/data # Persistent data - the accounts and statistics SQLite database. Losing this volume deletes every account.
     ports:
       - 8887:8080 # host:container - the reverse proxy points at 8887
+
+    # Hardening. The image already runs as uid 1000 rather than root (see the
+    # Dockerfile); these are the container-side half, and they matter because
+    # the likeliest host for this is somebody's own desktop or NAS rather than
+    # a disposable cloud VM.
+    #
+    # read_only makes the whole filesystem immutable EXCEPT the volume above -
+    # which is safe because DATA_DIR is the only path this app ever writes to.
+    # If that ever stops being true, this is what will catch it.
+    read_only: true
+    tmpfs:
+      - /tmp # Node wants a scratch directory; kept in RAM and discarded on stop.
+    cap_drop:
+      - ALL # The app binds a high port and reads files. It needs no capabilities.
+    security_opt:
+      - no-new-privileges:true # A process here can never gain more rights than it started with.
+    # The bind mount above is owned by the HOST, so uid 1000 must be able to
+    # write it: sudo chown -R 1000:1000 /mnt/user/appdata/aiodarts
+    # Alternatively, uncomment and set this to whoever does own it.
+    # user: "99:100" # unRAID's nobody:users, for example
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
