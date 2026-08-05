@@ -11,7 +11,30 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* ---------------------------------------------------------------------
+     DESIGN TOKENS
+
+     Two layers, and the split is the whole point. The eight SEED colours are
+     the brand. Everything below them is a ROLE - "the border on a panel",
+     "a raised surface over the chrome" - expressed in terms of a seed.
+     Rules elsewhere in this file may only refer to roles.
+
+     That is what makes a theme a small data object rather than a rewrite: a
+     theme overrides seeds and a handful of roles, and every screen follows.
+     Add a new hard-coded colour to a rule further down and it will be the one
+     thing that doesn't change when someone picks a dark theme.
+
+     Note the app is ALREADY half dark. The page chrome is felt green with
+     cream text; the panels sitting on it are paper with ink text. So there
+     are two overlay scales, not one: --chrome-* lightens (cream over dark),
+     --panel-* darkens (ink over light).
+
+     Deliberately NOT tokenised: rgba(0,0,0,...) shadows and scrims. They are
+     depth rather than colour, they read correctly over any palette, and
+     giving them theme knobs would be thirty more values for no gain.
+     --------------------------------------------------------------------- */
   :root {
+    /* ---- Seeds ---- */
     --felt: #0F3D2E;
     --felt-light: #16513D;
     --cream: #EFE6D2;
@@ -20,6 +43,85 @@
     --green-ring: #2F7A4D;
     --gold: #C7A24A;
     --paper: #F7F3E8;
+
+    /* ---- Chrome: the page itself, which is dark ---- */
+    --chrome-bg: var(--felt);
+    --chrome-bg-hi: var(--felt-light);
+    --on-chrome: var(--cream);
+    --on-chrome-soft: rgba(239,230,210,0.85);
+    --on-chrome-dim: rgba(239,230,210,0.75);
+    --on-chrome-muted: rgba(239,230,210,0.65);
+    --chrome-raise-1: rgba(239,230,210,0.08);
+    --chrome-raise-2: rgba(239,230,210,0.12);
+    --chrome-raise-3: rgba(239,230,210,0.2);
+    --chrome-raise-hover: rgba(239,230,210,0.16);
+    --chrome-border: rgba(239,230,210,0.3);
+    --chrome-border-soft: rgba(239,230,210,0.18);
+    --chrome-border-hi: rgba(239,230,210,0.4);
+
+    /* ---- Panels: the cards on top of it, which are light ---- */
+    /* Panels are cream, not paper. --paper is the lighter tone used for a few
+       insets and for text on the felt; keeping them distinct matters because a
+       dark theme has to move them independently. */
+    --panel-bg: var(--cream);
+    --panel-bg-alt: var(--paper);
+    --on-panel: var(--ink);
+    --chart-series: var(--felt);
+    /* The brand dark used as a FILL on a light panel - a solid button, a badge,
+       the active manual-entry key. Distinct from --chrome-bg even though both
+       are felt today, because a dark theme has to darken the page while making
+       these fills LIGHTER to stay visible. */
+    --fill-strong: var(--felt);
+    --on-fill-strong: var(--cream);
+    --on-panel-muted: #9c9377;
+    --on-panel-dim: rgba(27,26,20,0.55);
+    --on-panel-faint: rgba(27,26,20,0.35);
+    --panel-raise-1: rgba(27,26,20,0.04);
+    --panel-raise-2: rgba(27,26,20,0.06);
+    --panel-raise-3: rgba(27,26,20,0.08);
+    --panel-raise-4: rgba(27,26,20,0.12);
+    --panel-raise-5: rgba(27,26,20,0.25);
+    --panel-raise-6: rgba(27,26,20,0.3);
+    --panel-hairline: rgba(27,26,20,0.1);
+    --panel-rule: rgba(27,26,20,0.15);
+    --panel-border: #cfc4a3;
+    --field-bg: #fff;
+    --field-ghost: rgba(255,255,255,0.35);
+    --on-solid: #fff;
+    --dot-idle: #7a7a6a;
+
+    /* ---- The video/immersive world, which is near-black ---- */
+    --video-bg: #12110c;
+    --video-bg-deep: #0c0b07;
+    --video-bg-hover: #1d1b13;
+    --video-border: rgba(12,11,7,0.85);
+    --video-raise: rgba(12,11,7,0.5);
+    --video-raise-hi: rgba(12,11,7,0.55);
+    --overlay-backdrop: rgba(11,32,24,0.72);
+
+    /* ---- Meaning, not decoration ---- */
+    --accent: var(--gold);
+    --accent-wash: rgba(199,162,74,0.22);
+    --danger: var(--red);
+    --danger-wash: rgba(183,48,42,0.12);
+    --danger-solid: rgba(183,48,42,0.85);
+    --positive: var(--green-ring);
+    --positive-wash: rgba(47,122,77,0.15);
+    --felt-wash: rgba(15,61,46,0.08);
+
+    /* ---- The dartboard itself ----
+       Read by the CSS rules below rather than baked into dartboard.js's SVG
+       as fill attributes, so changing a theme - or switching to the
+       colourblind-safe palette - repaints the board with no re-render. */
+    --board-light: var(--cream);
+    --board-dark: var(--ink);
+    --board-red: var(--red);
+    --board-green: var(--green-ring);
+    --board-wire: #0d0c09;
+    --board-ring: #111;
+    --board-surround: var(--felt);
+    --board-number: var(--cream);
+    --board-marker: var(--paper);
   }
 
   * { box-sizing: border-box; }
@@ -27,9 +129,9 @@
   body {
     margin: 0;
     font-family: 'Inter', sans-serif;
-    background: var(--felt);
-    background-image: radial-gradient(circle at 50% -10%, var(--felt-light), var(--felt) 60%);
-    color: var(--cream);
+    background: var(--chrome-bg);
+    background-image: radial-gradient(circle at 50% -10%, var(--chrome-bg-hi), var(--chrome-bg) 60%);
+    color: var(--on-chrome);
     min-height: 100vh;
   }
 
@@ -59,7 +161,7 @@
   #support-link a {
     font-size: 11px;
     letter-spacing: 0.03em;
-    color: var(--cream);
+    color: var(--on-chrome);
     opacity: 0.45;
     text-decoration: none;
   }
@@ -85,18 +187,18 @@
     height: 40px;
     border-radius: 50%;
     background: conic-gradient(
-      var(--cream) 0deg 18deg, var(--red) 18deg 36deg,
-      var(--cream) 36deg 54deg, var(--green-ring) 54deg 72deg,
-      var(--cream) 72deg 90deg, var(--red) 90deg 108deg,
-      var(--cream) 108deg 126deg, var(--green-ring) 126deg 144deg,
-      var(--cream) 144deg 162deg, var(--red) 162deg 180deg,
-      var(--cream) 180deg 198deg, var(--green-ring) 198deg 216deg,
-      var(--cream) 216deg 234deg, var(--red) 234deg 252deg,
-      var(--cream) 252deg 270deg, var(--green-ring) 270deg 288deg,
-      var(--cream) 288deg 306deg, var(--red) 306deg 324deg,
-      var(--cream) 324deg 342deg, var(--green-ring) 342deg 360deg
+      var(--board-light) 0deg 18deg, var(--board-red) 18deg 36deg,
+      var(--board-light) 36deg 54deg, var(--board-green) 54deg 72deg,
+      var(--board-light) 72deg 90deg, var(--board-red) 90deg 108deg,
+      var(--board-light) 108deg 126deg, var(--board-green) 126deg 144deg,
+      var(--board-light) 144deg 162deg, var(--board-red) 162deg 180deg,
+      var(--board-light) 180deg 198deg, var(--board-green) 198deg 216deg,
+      var(--board-light) 216deg 234deg, var(--board-red) 234deg 252deg,
+      var(--board-light) 252deg 270deg, var(--board-green) 270deg 288deg,
+      var(--board-light) 288deg 306deg, var(--board-red) 306deg 324deg,
+      var(--board-light) 324deg 342deg, var(--board-green) 342deg 360deg
     );
-    box-shadow: 0 0 0 3px var(--ink) inset;
+    box-shadow: 0 0 0 3px var(--board-dark) inset;
     flex-shrink: 0;
   }
 
@@ -119,13 +221,13 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #7a7a6a;
+    background: var(--dot-idle);
     display: inline-block;
   }
 
   .conn-dot.connected {
-    background: var(--green-ring);
-    box-shadow: 0 0 8px var(--green-ring);
+    background: var(--positive);
+    box-shadow: 0 0 8px var(--positive);
   }
 
   #connection-label {
@@ -136,9 +238,9 @@
   /* Mode tabs */
   .mode-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
   .mode-tab {
-    background: rgba(239,230,210,0.1);
-    color: var(--cream);
-    border: 1px solid rgba(239,230,210,0.3);
+    background: var(--chrome-raise-1);
+    color: var(--on-chrome);
+    border: 1px solid var(--chrome-border);
     padding: 10px 18px;
     border-radius: 8px 8px 0 0;
     font-family: 'Oswald', sans-serif;
@@ -147,9 +249,9 @@
     font-size: 14px;
   }
   .mode-tab.active {
-    background: var(--cream);
-    color: var(--ink);
-    border-color: var(--cream);
+    background: var(--panel-bg);
+    color: var(--on-panel);
+    border-color: var(--on-chrome);
   }
 
   /* Online mode */
@@ -158,8 +260,8 @@
     font-size: 15px;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
     width: 100%;
     max-width: 320px;
   }
@@ -167,7 +269,7 @@
   .signaling-settings {
     margin-top: 20px;
     padding-top: 14px;
-    border-top: 1px solid rgba(27,26,20,0.12);
+    border-top: 1px solid var(--panel-raise-4);
   }
   .signaling-settings summary {
     cursor: pointer;
@@ -186,7 +288,7 @@
     font-size: 40px;
     font-weight: 700;
     letter-spacing: 0.08em;
-    background: rgba(27,26,20,0.06);
+    background: var(--panel-raise-2);
     border-radius: 10px;
     padding: 16px;
     text-align: center;
@@ -199,14 +301,14 @@
     gap: 16px;
   }
   .online-score-box {
-    background: rgba(27,26,20,0.05);
+    background: var(--panel-raise-2);
     border-radius: 12px;
     padding: 16px;
     text-align: center;
   }
   .online-score-box.active-turn {
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
   }
   .online-score-label { font-size: 13px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.04em; }
   .online-score-value { font-family: 'Oswald', sans-serif; font-size: 56px; font-weight: 700; line-height: 1.1; }
@@ -231,7 +333,7 @@
   .video-tile {
     position: relative;
     aspect-ratio: 4 / 3;
-    background: #12110c;
+    background: var(--video-bg);
     border-radius: 10px;
     overflow: hidden;
   }
@@ -259,7 +361,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--cream);
+    color: var(--on-chrome);
     background: rgba(0,0,0,0.5);
     padding: 2px 7px;
     border-radius: 5px;
@@ -273,25 +375,25 @@
     padding: 10px;
     text-align: center;
     font-size: 13px;
-    color: rgba(239,230,210,0.65);
-    background: #12110c;
+    color: var(--on-chrome-muted);
+    background: var(--video-bg);
   }
   .video-tile-placeholder.hidden { display: none; }
   /* Only the autoplay-blocked state is actually clickable, so only that state
      advertises itself as clickable. */
   .video-tile-placeholder.tappable {
     cursor: pointer;
-    color: var(--cream);
+    color: var(--on-chrome);
     font-weight: 600;
   }
-  .video-tile-placeholder.tappable:hover { background: #1d1b13; }
+  .video-tile-placeholder.tappable:hover { background: var(--video-bg-hover); }
 
   /* Kept away from the scoring controls, and never gold or cream like the
      buttons you press every turn - this is the one that ends things. */
   .end-match-row {
     margin-top: 18px;
     padding-top: 14px;
-    border-top: 1px solid rgba(27,26,20,0.15);
+    border-top: 1px solid var(--panel-rule);
     display: flex;
     justify-content: flex-end;
   }
@@ -299,14 +401,14 @@
     font-size: 13px;
     padding: 8px 14px;
     background: transparent;
-    color: var(--red);
-    border: 1px solid var(--red);
+    color: var(--danger);
+    border: 1px solid var(--danger);
   }
-  .end-match-btn:hover { background: rgba(183,48,42,0.08); }
+  .end-match-btn:hover { background: var(--danger-wash); }
   /* Armed = one more tap actually does it, so it stops looking optional. */
   .end-match-btn.armed {
-    background: var(--red);
-    color: var(--cream);
+    background: var(--danger);
+    color: var(--on-chrome);
   }
 
   /* Device check (setup panel) */
@@ -315,10 +417,10 @@
      looked like different kinds of thing purely because one carried its own
      border and the other had none. */
   #settings-body > details {
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     border-radius: 10px;
     padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.35);
+    background: var(--field-ghost);
   }
   #settings-body > details > summary {
     cursor: pointer;
@@ -333,7 +435,7 @@
     width: 100%;
     max-width: 320px;
     aspect-ratio: 4 / 3;
-    background: #12110c;
+    background: var(--video-bg);
     border-radius: 10px;
     overflow: hidden;
     margin-bottom: 10px;
@@ -364,37 +466,37 @@
     min-width: 0;
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
     font-family: 'Inter', sans-serif;
     font-size: 14px;
   }
   .mic-meter {
     flex: 1 1 160px;
     height: 10px;
-    background: rgba(27,26,20,0.12);
+    background: var(--panel-raise-4);
     border-radius: 5px;
     overflow: hidden;
   }
   .mic-meter-fill {
     height: 100%;
     width: 0%;
-    background: var(--green-ring);
+    background: var(--positive);
     /* Rises instantly, falls smoothly - a meter that decays as fast as speech
        does just flickers and tells you nothing. */
     transition: width 0.08s linear;
   }
   .device-check-error {
     font-size: 13px;
-    color: var(--red);
+    color: var(--danger);
     font-weight: 600;
     margin: 4px 0 0;
   }
   .device-check-error.hidden { display: none; }
 
   .setup-notice {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-panel);
     border-radius: 10px;
     padding: 10px 14px;
     margin-bottom: 14px;
@@ -426,20 +528,20 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: rgba(239,230,210,0.85);
+    color: var(--on-chrome-soft);
   }
   .tile-score-value {
     font-family: 'Oswald', sans-serif;
     font-weight: 700;
     font-size: 34px;
     line-height: 1;
-    color: var(--cream);
+    color: var(--on-chrome);
     text-shadow: 0 2px 8px rgba(0,0,0,0.7);
   }
   /* Whose turn it is has to be readable at a glance from the oche, so it's a
      ring around the whole tile rather than a subtle colour change. */
-  .video-tile.active-turn { box-shadow: 0 0 0 3px var(--gold) inset; }
-  .video-tile.active-turn .tile-score-value { color: var(--gold); }
+  .video-tile.active-turn { box-shadow: 0 0 0 3px var(--accent) inset; }
+  .video-tile.active-turn .tile-score-value { color: var(--accent); }
 
   /* ---- Immersive layout ----------------------------------------------
      The stage is the top band of the panel: full-bleed video with the scoring
@@ -505,7 +607,7 @@
     position: absolute;
     top: 0; left: 0; right: 0;
     height: var(--stage-h);
-    background: #0c0b07;
+    background: var(--video-bg-deep);
     z-index: 0;
   }
   /* Which feed is big and which is the thumbnail is decided by JS putting
@@ -571,7 +673,7 @@
     width: 50%;
     left: 50%;
     /* A seam, so two similarly-lit rooms don't read as one wide picture. */
-    border-left: 1px solid rgba(12,11,7,0.85);
+    border-left: 1px solid var(--video-border);
   }
   .immersive #online-video-strip { position: static; display: block; margin: 0; }
   .immersive .video-tile.as-stage .tile-score { display: none; }
@@ -614,9 +716,9 @@
   .immersive #online-match-bar {
     top: 14px; left: auto; right: 14px;
     transform: none;
-    background: rgba(12,11,7,0.5);
-    color: var(--cream);
-    border: 1px solid rgba(239,230,210,0.2);
+    background: var(--video-raise);
+    color: var(--on-chrome);
+    border: 1px solid var(--chrome-raise-3);
     white-space: nowrap;
   }
 
@@ -648,7 +750,7 @@
     font-weight: 700;
     font-size: clamp(64px, 13vw, 132px);
     line-height: 1;
-    color: var(--gold);
+    color: var(--accent);
     /* Heavier than a cream figure needed. Gold has less contrast against a
        bright room than cream does, and this sits on arbitrary video. */
     text-shadow: 0 4px 10px rgba(0,0,0,0.9), 0 6px 26px rgba(0,0,0,0.75);
@@ -661,7 +763,7 @@
     margin: 0;
     font-size: 13px;
     text-align: right;
-    color: rgba(239,230,210,0.92);
+    color: var(--on-chrome-soft);
     text-shadow: 0 2px 8px rgba(0,0,0,0.8);
   }
 
@@ -715,13 +817,13 @@
   }
   .immersive .online-score-box { background: none; padding: 0; }
   .immersive .online-score-box.active-turn { background: none; }
-  .immersive .online-score-label { color: rgba(239,230,210,0.75); }
+  .immersive .online-score-label { color: var(--on-chrome-dim); }
   .immersive .online-score-value {
-    color: var(--cream);
+    color: var(--on-chrome);
     font-size: 40px;
     text-shadow: 0 3px 12px rgba(0,0,0,0.8);
   }
-  .immersive .online-score-box.active-turn .online-score-value { color: var(--gold); }
+  .immersive .online-score-box.active-turn .online-score-value { color: var(--accent); }
 
   /* The three darts of this turn run across the top centre, above the big
      number - a status strip along the top edge, the way an arcade cabinet
@@ -750,9 +852,9 @@
     transform: none;
   }
   .immersive .dart-slot {
-    background: rgba(12,11,7,0.5);
-    border-color: rgba(239,230,210,0.4);
-    color: var(--cream);
+    background: var(--video-raise);
+    border-color: var(--chrome-border-hi);
+    color: var(--on-chrome);
   }
 
   /* Cricket's mark pad IS the display, so it sits on the stage. */
@@ -762,19 +864,19 @@
     width: min(400px, 62%);
     max-height: calc(var(--stage-h) - 150px);
     overflow-y: auto;
-    background: rgba(12,11,7,0.55);
-    border: 1px solid rgba(239,230,210,0.18);
+    background: var(--video-raise-hi);
+    border: 1px solid var(--chrome-border-soft);
     border-radius: 12px;
-    color: var(--cream);
+    color: var(--on-chrome);
   }
-  .immersive .ck-row { border-bottom-color: rgba(239,230,210,0.16); }
+  .immersive .ck-row { border-bottom-color: var(--chrome-border-soft); }
   /* The pad's own name/points header says exactly what the score bar under it
      says. On the stage that's two copies of the same numbers a few inches
      apart, and dropping it buys back the height that was forcing the pad to
      scroll. */
   .immersive .ck-header { display: none; }
-  .immersive .ck-name, .immersive .ck-points { color: var(--cream); }
-  .immersive .ck-mark { color: var(--cream); }
+  .immersive .ck-name, .immersive .ck-points { color: var(--on-chrome); }
+  .immersive .ck-mark { color: var(--on-chrome); }
 
   /* --- below the stage: ordinary cream surface, ordinary controls --- */
   .immersive #online-status-label,
@@ -841,18 +943,18 @@
   .av-btn {
     font-size: 13px;
     padding: 8px 12px;
-    background: rgba(27,26,20,0.06);
-    color: var(--ink);
-    border: 1px solid #cfc4a3;
+    background: var(--panel-raise-2);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
   }
-  .av-btn:hover { background: rgba(27,26,20,0.12); }
+  .av-btn:hover { background: var(--panel-raise-4); }
   /* Muted / camera-off is shown in red rather than as a pressed state, because
      "am I currently muted" has to be answerable at a glance from across a
      room, mid-throw. */
   .av-btn.off {
-    background: var(--red);
-    border-color: var(--red);
-    color: var(--cream);
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--on-chrome);
   }
 
   /* Two tiles side by side on a phone are too small to see a dart land in.
@@ -864,7 +966,7 @@
   #online-manual-section {
     margin-top: 10px;
     padding-top: 16px;
-    border-top: 1px solid rgba(27,26,20,0.15);
+    border-top: 1px solid var(--panel-rule);
   }
   #online-manual-section h3 {
     font-family: 'Oswald', sans-serif;
@@ -896,21 +998,21 @@
   button:active { transform: translateY(1px); }
 
   .btn-primary {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-panel);
   }
   .btn-primary:hover { filter: brightness(1.08); }
 
   .btn-secondary {
-    background: rgba(239, 230, 210, 0.12);
-    color: var(--cream);
-    border: 1px solid rgba(239, 230, 210, 0.35);
+    background: var(--chrome-raise-2);
+    color: var(--on-chrome);
+    border: 1px solid var(--chrome-border);
   }
-  .btn-secondary:hover { background: rgba(239, 230, 210, 0.2); }
+  .btn-secondary:hover { background: var(--chrome-raise-3); }
 
   .panel {
-    background: var(--cream);
-    color: var(--ink);
+    background: var(--panel-bg);
+    color: var(--on-panel);
     border-radius: 16px;
     padding: 24px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.25);
@@ -928,9 +1030,9 @@
     font-size: 13px;
     padding: 9px 8px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
   }
   @media (max-width: 560px) { .player-kind { max-width: 120px; font-size: 12px; } }
 
@@ -941,21 +1043,21 @@
     font-size: 15px;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
   }
   .player-remove {
     background: none;
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     border-radius: 8px;
-    color: var(--paper);
+    color: var(--panel-bg-alt);
     opacity: 0.55;
     cursor: pointer;
     font-size: 18px;
     line-height: 1;
     padding: 9px 13px;
   }
-  .player-remove:hover { opacity: 1; color: var(--gold); }
+  .player-remove:hover { opacity: 1; color: var(--accent); }
   /* Two players is the minimum for a match, so there's nothing to remove. */
   #player-inputs.at-minimum .player-remove { visibility: hidden; }
   .setup-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
@@ -985,12 +1087,12 @@
     flex-direction: column;
     padding: 8px 14px;
     border-radius: 10px;
-    background: rgba(27,26,20,0.06);
+    background: var(--panel-raise-2);
     min-width: 90px;
   }
   .player-tab.active {
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
   }
   .player-tab-name { font-size: 12px; opacity: 0.8; }
   .player-tab-score { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 600; }
@@ -1009,19 +1111,19 @@
     width: 64px;
     height: 48px;
     border-radius: 8px;
-    border: 2px dashed #cfc4a3;
+    border: 2px dashed var(--panel-border);
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: 'Oswald', sans-serif;
     font-size: 18px;
-    color: #9c9377;
+    color: var(--on-panel-muted);
   }
   .dart-slot.filled {
     border-style: solid;
-    border-color: var(--felt);
-    background: rgba(15,61,46,0.06);
-    color: var(--ink);
+    border-color: var(--fill-strong);
+    background: var(--felt-wash);
+    color: var(--on-panel);
   }
 
   .actions-row { display: flex; gap: 10px; margin-bottom: 8px; }
@@ -1029,8 +1131,8 @@
   #winner-banner {
     font-family: 'Oswald', sans-serif;
     font-size: 20px;
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-panel);
     padding: 10px 16px;
     border-radius: 8px;
     margin-bottom: 16px;
@@ -1063,6 +1165,20 @@
   .dartboard-segment:hover {
     filter: brightness(1.35);
   }
+  /* The board's own colours. dartboard.js emits these as CLASSES rather than
+     fill="#B7302A" attributes, for one reason: a presentation attribute cannot
+     read a custom property, so a themed board would have to be re-rendered on
+     every change. As CSS it just repaints - which is also the hook the
+     colourblind-safe palette needs, since red/green is the worst possible
+     pairing and it is the board's own scheme. */
+  .db-light { fill: var(--board-light); }
+  .db-dark { fill: var(--board-dark); }
+  .db-red { fill: var(--board-red); }
+  .db-green { fill: var(--board-green); }
+  .db-wire { stroke: var(--board-wire); }
+  .db-surround { fill: var(--board-surround); }
+  .db-ring { fill: var(--board-ring); }
+  .db-number { fill: var(--board-number); }
   /* ---- Cricket (DartConnect-style board) ---- */
   /* Targets run down the centre with D/T either side; each player's marks sit
      in a flanking column, so two players read as a familiar left-vs-right
@@ -1070,10 +1186,10 @@
      a click on the dartboard would, so all three inputs share one code path. */
   .cricket-board {
     margin: 14px 0;
-    border: 1px solid rgba(27,26,20,0.15);
+    border: 1px solid var(--panel-rule);
     border-radius: 10px;
     overflow: hidden;
-    background: rgba(27,26,20,0.03);
+    background: var(--panel-raise-1);
     font-variant-numeric: tabular-nums;
     user-select: none;
   }
@@ -1083,7 +1199,7 @@
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    border-bottom: 1px solid rgba(27,26,20,0.08);
+    border-bottom: 1px solid var(--panel-raise-3);
   }
   .ck-row:last-child { border-bottom: none; }
 
@@ -1096,7 +1212,7 @@
   }
 
   .ck-header {
-    background: rgba(27,26,20,0.07);
+    background: var(--panel-raise-2);
     padding: 8px 0;
   }
   .ck-col { text-align: center; padding: 0 6px; min-width: 0; }
@@ -1110,7 +1226,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .ck-col.active .ck-name { opacity: 1; color: var(--red); }
+  .ck-col.active .ck-name { opacity: 1; color: var(--danger); }
   .ck-points { font-size: 26px; font-weight: 700; line-height: 1.1; }
 
   /* Marks are chalked the way they are on a real board: / then X then a
@@ -1125,7 +1241,7 @@
     align-items: center;
     justify-content: center;
   }
-  .ck-mark.closed { color: var(--red); }
+  .ck-mark.closed { color: var(--danger); }
 
   .ck-controls {
     display: flex;
@@ -1149,35 +1265,35 @@
     min-width: 62px;
     padding: 8px 0;
     font-size: 22px;
-    background: var(--red);
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-solid);
   }
   .ck-mod {
     min-width: 34px;
     padding: 8px 0;
     font-size: 14px;
-    background: rgba(183,48,42,0.85);
-    color: #fff;
+    background: var(--danger-solid);
+    color: var(--on-solid);
   }
   .ck-mod.ck-disabled, .ck-mod:disabled {
-    background: rgba(27,26,20,0.12);
-    color: rgba(27,26,20,0.35);
+    background: var(--panel-raise-4);
+    color: var(--on-panel-faint);
     cursor: not-allowed;
   }
 
   .ck-miss {
     padding: 7px 22px;
     font-size: 14px;
-    background: rgba(27,26,20,0.08);
-    color: var(--ink);
-    border-color: #cfc4a3;
+    background: var(--panel-raise-3);
+    color: var(--on-panel);
+    border-color: var(--panel-border);
   }
-  .ck-footer { background: rgba(27,26,20,0.04); padding: 6px 0; }
+  .ck-footer { background: var(--panel-raise-1); padding: 6px 0; }
 
   /* A number every player has closed is dead - nothing more can be scored on
      it, so the whole row including its buttons drops back. */
   .ck-row.dead { opacity: 0.38; }
-  .ck-row.dead .ck-num, .ck-row.dead .ck-mod { background: rgba(27,26,20,0.25); }
+  .ck-row.dead .ck-num, .ck-row.dead .ck-mod { background: var(--panel-raise-5); }
 
   @media (max-width: 420px) {
     .ck-num { min-width: 52px; font-size: 19px; }
@@ -1209,7 +1325,7 @@
     .leg-row {
       gap: 6px;
       padding-bottom: 8px;
-      border-bottom: 1px solid rgba(27,26,20,0.08);
+      border-bottom: 1px solid var(--panel-raise-3);
     }
     .leg-row .leg-label { flex: 1 0 100%; min-width: 0; }
     .leg-row .leg-game { flex: 1 1 90px; }
@@ -1229,28 +1345,28 @@
     flex: 1;
     padding: 7px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: rgba(27,26,20,0.04);
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
   }
   .leg-remove {
     background: none;
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     border-radius: 6px;
-    color: var(--ink);
+    color: var(--on-panel);
     opacity: 0.6;
     cursor: pointer;
     padding: 6px 10px;
     line-height: 1;
   }
-  .leg-remove:hover { opacity: 1; color: var(--red); }
+  .leg-remove:hover { opacity: 1; color: var(--danger); }
   /* A single leg is just a normal game - nothing to remove. */
   .medley-legs.single .leg-remove { visibility: hidden; }
 
   .add-leg-btn {
-    background: rgba(27,26,20,0.08);
-    color: var(--ink);
-    border: 1px solid #cfc4a3;
+    background: var(--panel-raise-3);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
     margin-bottom: 14px;
   }
 
@@ -1263,7 +1379,7 @@
     padding: 8px 12px;
     margin-bottom: 12px;
     border-radius: 8px;
-    background: rgba(27,26,20,0.07);
+    background: var(--panel-raise-2);
     font-size: 13px;
   }
   .match-bar.hidden { display: none; }
@@ -1290,9 +1406,9 @@
   .setup-row select {
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: rgba(27,26,20,0.04);
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
   }
 
   /* Quick Total is a 501 concept - a turn total tells you nothing about
@@ -1316,8 +1432,8 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: var(--red);
-    border: 2px solid var(--paper);
+    background: var(--danger);
+    border: 2px solid var(--board-marker);
     transform: translate(-50%, -50%);
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
     transition: left 0.15s ease, top 0.15s ease;
@@ -1341,7 +1457,7 @@
     align-items: start;
     margin-top: 24px;
     padding-top: 20px;
-    border-top: 1px solid rgba(27,26,20,0.15);
+    border-top: 1px solid var(--panel-rule);
   }
   @media (max-width: 640px) {
     .entry-and-log { grid-template-columns: 1fr; gap: 0; }
@@ -1361,21 +1477,21 @@
   .manual-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   #manual-sections { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 12px; }
   .manual-section-btn {
-    background: #fff;
-    border: 1px solid #cfc4a3;
-    color: var(--ink);
+    background: var(--field-bg);
+    border: 1px solid var(--panel-border);
+    color: var(--on-panel);
     padding: 8px 0;
     border-radius: 6px;
     font-weight: 600;
   }
-  .manual-section-btn:hover { background: var(--felt); color: var(--cream); }
+  .manual-section-btn:hover { background: var(--fill-strong); color: var(--on-fill-strong); }
 
   /* Manual entry mode sub-tabs (Per-Dart vs Quick Total) */
   .entry-mode-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
   .entry-mode-tab {
-    background: #fff;
-    border: 1px solid #cfc4a3;
-    color: var(--ink);
+    background: var(--field-bg);
+    border: 1px solid var(--panel-border);
+    color: var(--on-panel);
     padding: 8px 16px;
     border-radius: 6px;
     font-family: 'Oswald', sans-serif;
@@ -1384,9 +1500,9 @@
     font-size: 13px;
   }
   .entry-mode-tab.active {
-    background: var(--felt);
-    color: var(--cream);
-    border-color: var(--felt);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
+    border-color: var(--fill-strong);
   }
 
   /* Quick-total (DartConnect-style) keypad */
@@ -1398,7 +1514,7 @@
     font-size: 40px;
     font-weight: 700;
     text-align: center;
-    background: rgba(27,26,20,0.06);
+    background: var(--panel-raise-2);
     border-radius: 8px;
     padding: 10px;
     margin-bottom: 10px;
@@ -1410,8 +1526,8 @@
     margin-bottom: 10px;
   }
   .quick-shortcut-btn {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-panel);
     border: none;
     border-radius: 6px;
     padding: 10px 0;
@@ -1426,9 +1542,9 @@
     margin-bottom: 10px;
   }
   .quick-digit-btn, .quick-back-btn, .quick-enter-btn {
-    background: #fff;
-    border: 1px solid #cfc4a3;
-    color: var(--ink);
+    background: var(--field-bg);
+    border: 1px solid var(--panel-border);
+    color: var(--on-panel);
     border-radius: 6px;
     padding: 14px 0;
     font-family: 'Oswald', sans-serif;
@@ -1436,12 +1552,12 @@
     font-weight: 600;
   }
   .quick-digit-btn.quick-zero { grid-column: span 1; }
-  .quick-back-btn { background: rgba(183,48,42,0.12); }
-  .quick-enter-btn { background: rgba(47,122,77,0.15); }
+  .quick-back-btn { background: var(--danger-wash); }
+  .quick-enter-btn { background: var(--positive-wash); }
   .quick-miss-btn {
     width: 100%;
-    background: var(--red);
-    color: var(--cream);
+    background: var(--danger);
+    color: var(--on-chrome);
     border: none;
     border-radius: 6px;
     padding: 12px 0;
@@ -1452,7 +1568,7 @@
   select#manual-ring {
     padding: 8px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     font-family: 'Inter', sans-serif;
   }
 
@@ -1477,9 +1593,9 @@
     grid-template-columns: 1fr 1.4fr 0.8fr;
     gap: 8px;
     padding: 6px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.08);
+    border-bottom: 1px solid var(--panel-raise-3);
   }
-  .log-row.bust { color: var(--red); font-weight: 600; }
+  .log-row.bust { color: var(--danger); font-weight: 600; }
 
   /* ---------------------------------------------------------------------
      Accounts
@@ -1495,25 +1611,25 @@
     gap: 8px;
     padding: 5px 10px 5px 6px;
     border-radius: 999px;
-    border: 1px solid rgba(239, 230, 210, 0.3);
-    background: rgba(239, 230, 210, 0.08);
-    color: var(--cream);
+    border: 1px solid var(--chrome-border);
+    background: var(--chrome-raise-1);
+    color: var(--on-chrome);
     font-family: 'Inter', sans-serif;
     font-size: 13px;
     cursor: pointer;
   }
-  header .account-chip:hover { background: rgba(239, 230, 210, 0.16); }
+  header .account-chip:hover { background: var(--chrome-raise-hover); }
   .account-chip-avatar {
     width: 24px;
     height: 24px;
     border-radius: 50%;
     object-fit: cover;
-    background: var(--felt-light);
+    background: var(--chrome-bg-hi);
     display: grid;
     place-items: center;
     font-family: 'Oswald', sans-serif;
     font-size: 12px;
-    color: var(--gold);
+    color: var(--accent);
     overflow: hidden;
     flex: none;
   }
@@ -1525,15 +1641,15 @@
     flex: 1;
     padding: 9px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: rgba(27,26,20,0.04);
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
     font-family: 'Oswald', sans-serif;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     cursor: pointer;
   }
-  .auth-tab.active { background: var(--gold); border-color: var(--gold); }
+  .auth-tab.active { background: var(--accent); border-color: var(--accent); }
 
   .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
   .field label { font-weight: 600; font-size: 13px; }
@@ -1542,9 +1658,9 @@
     font-size: 15px;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
     width: 100%;
   }
   .field .hint { font-size: 12px; opacity: 0.65; }
@@ -1561,8 +1677,8 @@
     font-size: 13px;
     display: none;
   }
-  .form-message.error { display: block; background: rgba(183,48,42,0.12); color: var(--red); }
-  .form-message.ok { display: block; background: rgba(47,122,77,0.14); color: var(--green-ring); }
+  .form-message.error { display: block; background: var(--danger-wash); color: var(--danger); }
+  .form-message.ok { display: block; background: var(--positive-wash); color: var(--positive); }
 
   .account-header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
   .account-avatar {
@@ -1570,8 +1686,8 @@
     height: 56px;
     border-radius: 50%;
     object-fit: cover;
-    background: var(--felt);
-    color: var(--gold);
+    background: var(--fill-strong);
+    color: var(--accent);
     display: grid;
     place-items: center;
     font-family: 'Oswald', sans-serif;
@@ -1589,7 +1705,7 @@
     font-size: 15px;
     margin: 22px 0 10px;
     padding-top: 16px;
-    border-top: 1px solid rgba(27,26,20,0.12);
+    border-top: 1px solid var(--panel-raise-4);
   }
   /* The rematch row sits under the winner banner: a button, then whatever the
      handshake has to say, then Accept/Decline when it is this player's move.
@@ -1615,9 +1731,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(239, 230, 210, 0.08);
-    border: 1px solid rgba(239, 230, 210, 0.3);
-    color: var(--cream);
+    background: var(--chrome-raise-1);
+    border: 1px solid var(--chrome-border);
+    color: var(--on-chrome);
     border-radius: 999px;
     width: 34px;
     height: 34px;
@@ -1630,12 +1746,12 @@
     cursor: pointer;
   }
   .settings-btn > span { display: block; transform: translateY(0.5px); }
-  .settings-btn:hover { background: rgba(239, 230, 210, 0.16); }
+  .settings-btn:hover { background: var(--chrome-raise-hover); }
 
   .settings-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(11, 32, 24, 0.72);
+    background: var(--overlay-backdrop);
     z-index: 60; /* above the immersive video stage */
     display: flex;
     align-items: flex-start;
@@ -1644,8 +1760,8 @@
     overflow-y: auto;
   }
   .settings-sheet {
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--panel-bg-alt);
+    color: var(--on-panel);
     border-radius: 14px;
     width: min(560px, 100%);
     padding: 18px 20px 22px;
@@ -1668,7 +1784,7 @@
     border: none;
     font-size: 26px;
     line-height: 1;
-    color: var(--ink);
+    color: var(--on-panel);
     opacity: 0.6;
     cursor: pointer;
     padding: 0 4px;
@@ -1687,7 +1803,7 @@
     background: none;
     border: none;
     padding: 4px 2px;
-    color: var(--ink);
+    color: var(--on-panel);
     opacity: 0.7;
     font-family: 'Inter', sans-serif;
     font-size: 13px;
@@ -1696,16 +1812,25 @@
   }
   .link-btn:hover { opacity: 1; }
   .btn-ink {
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
   }
   .btn-ink:hover { filter: brightness(1.15); }
   .btn-quiet {
     background: transparent;
-    color: var(--ink);
-    border: 1px solid #cfc4a3;
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
   }
-  .btn-quiet:hover { background: rgba(27,26,20,0.06); }
+  .btn-quiet:hover { background: var(--panel-raise-2); }
+  /* The secondary button as it appears ON a light panel rather than on the
+     dark page. This was fourteen copies of the same inline style attribute,
+     which is exactly the kind of thing no theme can ever reach. Must stay
+     after .btn-secondary to win on source order. */
+  .btn-soft {
+    background: var(--panel-raise-3);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
+  }
 
   .checkbox-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
   .checkbox-row input { margin-top: 3px; flex: none; }
@@ -1724,15 +1849,15 @@
   .account-nav-btn {
     padding: 7px 14px;
     border-radius: 999px;
-    border: 1px solid rgba(239, 230, 210, 0.3);
-    background: rgba(239, 230, 210, 0.08);
-    color: var(--cream);
+    border: 1px solid var(--chrome-border);
+    background: var(--chrome-raise-1);
+    color: var(--on-chrome);
     font-family: 'Inter', sans-serif;
     font-size: 13px;
     white-space: nowrap;
     cursor: pointer;
   }
-  .account-nav-btn.active { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+  .account-nav-btn.active { background: var(--accent); border-color: var(--accent); color: var(--on-panel); }
 
   .account-section-head {
     display: flex;
@@ -1752,7 +1877,7 @@
     gap: 12px;
     align-items: center;
     padding: 12px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .history-row:last-child { border-bottom: none; }
   /* The result is the first thing read off a row, so it is a shape and a
@@ -1764,10 +1889,10 @@
     text-align: center;
     padding: 4px 0;
     border-radius: 6px;
-    background: rgba(27,26,20,0.08);
+    background: var(--panel-raise-3);
   }
-  .history-result.win { background: rgba(47,122,77,0.18); color: var(--green-ring); }
-  .history-result.loss { background: rgba(183,48,42,0.12); color: var(--red); }
+  .history-result.win { background: var(--positive-wash); color: var(--positive); }
+  .history-result.loss { background: var(--danger-wash); color: var(--danger); }
   .history-opponent { font-weight: 600; }
   .history-detail { font-size: 12px; opacity: 0.7; margin-top: 2px; }
   .history-score { font-family: 'Oswald', sans-serif; font-size: 20px; text-align: right; }
@@ -1787,7 +1912,7 @@
     margin-bottom: 4px;
   }
   .stat-tile {
-    background: rgba(27,26,20,0.045);
+    background: var(--panel-raise-1);
     border-radius: 10px;
     padding: 12px 14px;
   }
@@ -1795,7 +1920,7 @@
     font-family: 'Oswald', sans-serif;
     font-size: 26px;
     line-height: 1.1;
-    color: var(--felt);
+    color: var(--fill-strong);
   }
   .stat-label { font-size: 12px; opacity: 0.7; margin-top: 3px; }
   /* Definitions that are choices rather than facts (checkout %, white horses)
@@ -1814,9 +1939,9 @@
   .trend-controls select {
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
   }
 
   .chart-block { margin-bottom: 22px; }
@@ -1829,13 +1954,23 @@
   }
   .chart { position: relative; }
   .chart svg { width: 100%; height: 200px; display: block; overflow: visible; }
+  /* The marks themselves. charts.js emits these class names instead of fill
+     and stroke attributes, for the same reason dartboard.js does: an SVG
+     presentation attribute cannot read a custom property, so a themed chart
+     would otherwise have to be redrawn rather than repainted. Single-series
+     by design - see the long note at the top of charts.js. */
+  .chart-grid { stroke: var(--panel-raise-4); }
+  .chart-label { fill: var(--on-panel-dim); }
+  .chart-series-stroke { stroke: var(--chart-series); }
+  .chart-series-fill { fill: var(--chart-series); }
+  .chart-series-dot { fill: var(--chart-series); stroke: var(--panel-bg); }
   .chart-empty { font-size: 13px; opacity: 0.6; margin: 4px 0 0; }
 
   .chart-tip {
     position: absolute;
     transform: translate(-50%, -130%);
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
     padding: 6px 9px;
     border-radius: 7px;
     font-size: 12px;
@@ -1851,13 +1986,13 @@
   .chart-table th, .chart-table td {
     text-align: left;
     padding: 5px 6px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .chart-table th { font-weight: 600; opacity: 0.7; }
   .chart-table td:last-child, .chart-table th:last-child { text-align: right; }
 
   .improved-note {
-    background: rgba(47,122,77,0.12);
+    background: var(--positive-wash);
     border-radius: 10px;
     padding: 12px 14px;
     font-size: 13px;
@@ -1875,8 +2010,8 @@
     gap: 8px;
     padding: 8px 12px;
     border-radius: 999px;
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-panel);
     font-size: 13px;
     font-weight: 600;
   }
@@ -1888,7 +2023,7 @@
     gap: 12px;
     align-items: center;
     padding: 11px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .achievement-row:last-child { border-bottom: none; }
   .achievement-mark {
@@ -1897,10 +2032,10 @@
     border-radius: 50%;
     display: grid;
     place-items: center;
-    background: rgba(27,26,20,0.09);
+    background: var(--panel-raise-3);
     font-size: 15px;
   }
-  .achievement-row.earned .achievement-mark { background: var(--gold); }
+  .achievement-row.earned .achievement-mark { background: var(--accent); }
   .achievement-name { font-weight: 600; }
   .achievement-desc { font-size: 12px; opacity: 0.7; margin-top: 2px; }
   .achievement-when { font-size: 12px; opacity: 0.6; text-align: right; }
@@ -1917,8 +2052,8 @@
   /* Shown when a match unlocks something. Deliberately in the game panel and
      not a modal - it appears next to the winner banner and never interrupts. */
   .unlock-toast {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-panel);
     border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 14px;
@@ -1939,9 +2074,9 @@
     min-width: 0;
     padding: 8px 10px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
   }
 
   .board-row {
@@ -1950,19 +2085,19 @@
     gap: 10px;
     align-items: center;
     padding: 9px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .board-row:last-child { border-bottom: none; }
   /* The viewer's own row, wherever it appears. Marked with a background AND
      the word "You", never colour alone. */
-  .board-row.you { background: rgba(199,162,74,0.22); border-radius: 8px; }
+  .board-row.you { background: var(--accent-wash); border-radius: 8px; }
   .board-rank { font-family: 'Oswald', sans-serif; font-size: 16px; opacity: 0.75; }
   .board-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
   .board-you-tag { font-size: 11px; opacity: 0.7; margin-left: 6px; }
   .board-value { font-family: 'Oswald', sans-serif; font-size: 19px; }
   .board-avatar {
     width: 28px; height: 28px; border-radius: 50%;
-    background: var(--felt); color: var(--gold);
+    background: var(--fill-strong); color: var(--accent);
     display: grid; place-items: center; font-size: 11px;
     font-family: 'Oswald', sans-serif; overflow: hidden;
   }
@@ -1981,7 +2116,7 @@
     gap: 10px;
     align-items: center;
     padding: 9px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .person-row:last-child { border-bottom: none; }
   .person-name { font-weight: 600; }
@@ -2014,7 +2149,7 @@
     gap: 7px;
     padding: 4px 10px;
     border-radius: 8px;
-    background: rgba(27,26,20,0.08);
+    background: var(--panel-raise-3);
     font-family: 'Oswald', sans-serif;
   }
   .rank-badge .rank-letters {
@@ -2023,10 +2158,10 @@
     line-height: 1;
   }
   .rank-badge .rank-value { font-size: 13px; opacity: 0.75; }
-  .rank-badge.unranked .rank-letters { color: var(--ink); opacity: 0.45; font-size: 14px; }
+  .rank-badge.unranked .rank-letters { color: var(--on-panel); opacity: 0.45; font-size: 14px; }
 
   .watch-panel {
-    background: rgba(15,61,46,0.08);
+    background: var(--felt-wash);
     border-radius: 12px;
     padding: 14px 16px;
     margin: 14px 0;
@@ -2034,20 +2169,20 @@
   .watch-board { display: flex; gap: 12px; flex-wrap: wrap; }
   .watch-player {
     flex: 1 1 140px;
-    background: rgba(27,26,20,0.05);
+    background: var(--panel-raise-2);
     border-radius: 10px;
     padding: 10px 12px;
   }
   /* The player currently throwing. Marked with a ring AND the word, never the
      ring alone. */
-  .watch-player.throwing { outline: 2px solid var(--gold); }
+  .watch-player.throwing { outline: 2px solid var(--accent); }
   .watch-score { font-family: 'Oswald', sans-serif; font-size: 30px; line-height: 1.1; }
   .watch-name { font-size: 13px; font-weight: 600; }
   .watch-turn { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.04em; }
 
   .rating-pair { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .rating-block {
-    background: rgba(27,26,20,0.045);
+    background: var(--panel-raise-1);
     border-radius: 10px;
     padding: 12px 14px;
     flex: 1 1 200px;
@@ -2056,7 +2191,7 @@
 
   .lobby-head-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .player-card {
-    background: rgba(27,26,20,0.05);
+    background: var(--panel-raise-2);
     border-radius: 12px;
     padding: 14px 16px;
     margin-bottom: 14px;
@@ -2069,7 +2204,7 @@
   }
   .player-card .stat-grid { margin-top: 12px; }
   /* The name is a button, so it has to look like one without shouting. */
-  .person-name.clickable { cursor: pointer; text-decoration: underline dotted rgba(27,26,20,0.35); }
+  .person-name.clickable { cursor: pointer; text-decoration: underline dotted var(--on-panel-faint); }
 
   .looking-toggle {
     display: inline-flex;
@@ -2090,9 +2225,9 @@
     min-width: 0;
     padding: 9px 11px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
     font-family: 'Inter', sans-serif;
     font-size: 14px;
   }
@@ -2102,11 +2237,11 @@
   .status-dot {
     width: 8px; height: 8px; border-radius: 50%;
     display: inline-block; margin-right: 6px; flex: none;
-    background: rgba(27,26,20,0.3);
+    background: var(--panel-raise-6);
   }
-  .status-looking { background: var(--green-ring); }
-  .status-lobby, .status-online { background: var(--gold); }
-  .status-in_match { background: var(--red); }
+  .status-looking { background: var(--positive); }
+  .status-lobby, .status-online { background: var(--accent); }
+  .status-in_match { background: var(--danger); }
 
   /* A match owns the tab. The lobby, the rooms, the chat and the create/join
      panel are all "between matches" furniture, and leaving them under a live
@@ -2122,8 +2257,8 @@
     position: sticky;
     top: 0;
     z-index: 40;
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-panel);
     border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 14px;
@@ -2137,7 +2272,7 @@
   .challenge-alert .challenge-text { font-size: 15px; }
 
   .challenge-card {
-    background: rgba(199,162,74,0.22);
+    background: var(--accent-wash);
     border-radius: 10px;
     padding: 12px 14px;
     margin-bottom: 10px;
@@ -2154,24 +2289,24 @@
   .chat-log {
     max-height: 220px;
     overflow-y: auto;
-    border: 1px solid rgba(27,26,20,0.12);
+    border: 1px solid var(--panel-raise-4);
     border-radius: 10px;
     padding: 10px 12px;
     font-size: 13px;
-    background: rgba(27,26,20,0.03);
+    background: var(--panel-raise-1);
   }
   .chat-line { margin-bottom: 5px; word-break: break-word; }
   .chat-line .chat-who { font-weight: 600; }
   .chat-line.system { opacity: 0.6; font-style: italic; }
-  .chat-line.whisper .chat-who { color: var(--red); }
+  .chat-line.whisper .chat-who { color: var(--danger); }
   .chat-empty { opacity: 0.55; }
 
   /* Shown only on a deployment whose branch isn't main - see version.js. Uses
      the warning red rather than the brand gold precisely because it should not
      look like part of the design. */
   .env-banner {
-    background: var(--red);
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-solid);
     text-align: center;
     padding: 7px 12px;
     font-size: 12px;
@@ -2274,8 +2409,8 @@
                     <div class="setup-row">
                       <label for="scorer-host">Address</label>
                       <input type="text" id="scorer-host" placeholder="192.168.1.50" autocomplete="off">
-                      <button type="button" id="scorer-connect" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Connect</button>
-                      <button type="button" id="scorer-disconnect" class="btn-secondary hidden" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Disconnect</button>
+                      <button type="button" id="scorer-connect" class="btn-secondary btn-soft">Connect</button>
+                      <button type="button" id="scorer-disconnect" class="btn-secondary btn-soft hidden">Disconnect</button>
                     </div>
                     <p class="format-note" id="scorer-status">Not connected.</p>
                     <p class="format-note">
@@ -2336,7 +2471,7 @@
              nothing else to configure. -->
 
         <div id="player-inputs"></div>
-        <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
+        <button id="add-player-btn" class="btn-secondary btn-soft">+ Add player</button>
         <div class="setup-actions">
           <button id="start-game-btn" class="btn-primary">Start Game</button>
         </div>
@@ -2362,8 +2497,8 @@
             <div id="turn-label">Player 1's turn</div>
             <div id="turn-darts"></div>
             <div class="actions-row">
-              <button id="undo-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Undo last dart</button>
-              <button id="new-game-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">New game</button>
+              <button id="undo-btn" class="btn-secondary btn-soft">Undo last dart</button>
+              <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
             </div>
           </div>
 
@@ -2395,9 +2530,9 @@
                   <option value="triple">Triple</option>
                   <option value="double">Double</option>
                 </select>
-                <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-                <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-                <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+                <button id="manual-bull" class="btn-secondary btn-soft">Bull (25)</button>
+                <button id="manual-dblbull" class="btn-secondary btn-soft">Double Bull (50)</button>
+                <button id="manual-miss" class="btn-secondary btn-soft">Miss (0)</button>
               </div>
               <div id="manual-sections"></div>
             </div>
@@ -2539,7 +2674,7 @@
         </div>
         <div class="setup-actions">
           <input id="join-code-input" type="text" placeholder="Enter challenge code" style="text-transform:uppercase;">
-          <button id="join-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Join Challenge</button>
+          <button id="join-challenge-btn" class="btn-secondary btn-soft">Join Challenge</button>
         </div>
 
         <details class="signaling-settings">
@@ -2565,7 +2700,7 @@
         <h3 id="online-waiting-title" style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Waiting for opponent…</h3>
         <p id="online-waiting-note">Share this code with the person you're challenging:</p>
         <div id="challenge-code-display"></div>
-        <button id="cancel-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Cancel</button>
+        <button id="cancel-challenge-btn" class="btn-secondary btn-soft">Cancel</button>
       </div>
 
       <!-- Online game -->
@@ -2680,7 +2815,7 @@
           <span id="online-rematch-status"></span>
           <span id="online-rematch-choice" class="hidden">
             <button type="button" id="online-rematch-accept" class="btn-primary next-leg-btn">Accept</button>
-            <button type="button" id="online-rematch-decline" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Decline</button>
+            <button type="button" id="online-rematch-decline" class="btn-secondary btn-soft">Decline</button>
           </span>
         </div>
 
@@ -2701,9 +2836,9 @@
                 <option value="triple">Triple</option>
                 <option value="double">Double</option>
               </select>
-              <button id="online-manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-              <button id="online-manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-              <button id="online-manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+              <button id="online-manual-bull" class="btn-secondary btn-soft">Bull (25)</button>
+              <button id="online-manual-dblbull" class="btn-secondary btn-soft">Double Bull (50)</button>
+              <button id="online-manual-miss" class="btn-secondary btn-soft">Miss (0)</button>
             </div>
             <div id="online-manual-sections"></div>
           </div>
