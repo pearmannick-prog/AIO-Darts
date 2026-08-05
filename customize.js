@@ -193,6 +193,22 @@ function wireBoardViewButtons() {
   return refresh;
 }
 
+function landingSection() {
+  const wrap = field("Opens on");
+  wrap.appendChild(segmented(
+    [
+      { value: "local", label: "Local" },
+      { value: "online", label: "Online" },
+      { value: "account", label: "My Darts" },
+      { value: "last", label: "Last used" },
+    ],
+    getPref("landing"),
+    (value) => setPref("landing", value)
+  ));
+  wrap.appendChild(el("div", "cz-hint", "Takes effect next time you open the app."));
+  return wrap;
+}
+
 function accentSection() {
   const wrap = field("Accent");
   const row = el("div", "cz-swatches");
@@ -341,6 +357,7 @@ function render() {
   mount.appendChild(modeSection());
   mount.appendChild(boardViewSection());
   mount.appendChild(accentSection());
+  mount.appendChild(landingSection());
   mount.appendChild(resetRow());
 }
 

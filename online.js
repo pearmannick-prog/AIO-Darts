@@ -24,6 +24,7 @@ import {
 import { createRecorder } from "./matchrecorder.js";
 import { recordMatch, getState as accountState } from "./accountstore.js";
 import { onMatchReady, reportMatchOver, pushMatchState } from "./lobbyclient.js";
+import { getPref, setPref } from "./prefs.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
@@ -327,7 +328,61 @@ function switchTab(which, { ask = true } = {}) {
     tab?.classList.toggle("active", name === which);
     panel?.classList.toggle("hidden", name !== which);
   }
+
+  // Remembered for the "where I left off" landing option. Written on every
+  // switch rather than on unload: there is no reliable unload on mobile, where
+  // the app is most often closed by being swiped away.
+  setPref("lastTab", which);
 }
+
+// ---------- Where the app opens ----------
+//
+// A player who only ever plays local darts currently walks past a lobby they
+// never use, every single launch; someone who mostly reads their statistics
+// wants My Darts. One setting, felt every time the app opens.
+//
+// Two traps, both load-bearing:
+//
+//   ask:false - switchTab asks before leaving a match in progress. On boot
+//               there cannot be one, and a confirm dialog during startup would
+//               be baffling.
+//   the account tab does not exist yet - it stays hidden until accountui.js has
+//               confirmed there is an accounts API behind it, which is a round
+//               trip away. Landing on it has to WAIT for that, and give up
+//               gracefully when the answer is no: on the Android build, or with
+//               ACCOUNTS=off, that tab never appears at all and the preference
+//               must not strand anyone on a blank screen.
+function applyLandingPreference() {
+  const choice = getPref("landing");
+  const target = choice === "last" ? getPref("lastTab") : choice;
+  if (!target || target === "local") return; // already where we start
+
+  if (target !== "account") {
+    switchTab(target, { ask: false });
+    return;
+  }
+
+  const tab = el.tabAccount;
+  if (!tab) return;
+  if (!tab.classList.contains("hidden")) {
+    switchTab("account", { ask: false });
+    return;
+  }
+
+  // Wait for the accounts check, but not forever, and never once the player
+  // has started doing something - landing is a preference about the FIRST
+  // moment, not a licence to move them later.
+  const observer = new MutationObserver(() => {
+    if (tab.classList.contains("hidden")) return;
+    observer.disconnect();
+    clearTimeout(giveUp);
+    if (currentMode === "local") switchTab("account", { ask: false });
+  });
+  observer.observe(tab, { attributes: true, attributeFilter: ["class"] });
+  const giveUp = setTimeout(() => observer.disconnect(), 5000);
+}
+
+applyLandingPreference();
 
 // ---------- Manual entry buttons (generated once) ----------
 function manualSegmentFromRing(section, ringType) {
