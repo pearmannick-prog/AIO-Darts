@@ -164,6 +164,9 @@ const el = {
   setupNotice: document.getElementById("online-setup-notice"),
 
   checkPanel: document.querySelector(".device-check"),
+  settingsBtn: document.getElementById("settings-btn"),
+  settingsOverlay: document.getElementById("settings-overlay"),
+  settingsClose: document.getElementById("settings-close"),
   checkPreview: document.querySelector(".device-preview"),
   checkVideo: document.getElementById("device-preview-video"),
   checkPlaceholder: document.getElementById("device-preview-placeholder"),
@@ -1277,6 +1280,46 @@ function stopHello() {
   clearTimeout(helloTimer);
   helloTimer = null;
 }
+
+// ---------- Settings ----------
+// An overlay, not a tab. Switching tabs ends a match, and the two things in
+// here - "does my camera work" and "where is my scorer" - are exactly what
+// someone reaches for mid-match. A tab would have needed an exemption from a
+// rule that is better kept absolute.
+//
+// It lives in online.js because the device check does, so closing the sheet can
+// release the camera with a direct call rather than an event. game.js's scorer
+// panel needs nothing on close: a connected scorer should STAY connected, since
+// closing a settings sheet is not a request to unplug your hardware.
+function openSettings() {
+  el.settingsOverlay?.classList.remove("hidden");
+}
+
+function closeSettings() {
+  el.settingsOverlay?.classList.add("hidden");
+  // THE IMPORTANT LINE. The device check holds a live camera and mic; closing
+  // the sheet over it without releasing them leaves the webcam light on with
+  // nothing on screen explaining why, which is the moment people stop trusting
+  // an app with a camera.
+  stopDeviceCheck();
+}
+
+el.settingsBtn?.addEventListener("click", openSettings);
+el.settingsClose?.addEventListener("click", closeSettings);
+
+// Clicking the backdrop closes it; clicking inside the sheet must not.
+el.settingsOverlay?.addEventListener("click", (event) => {
+  if (event.target === el.settingsOverlay) closeSettings();
+});
+
+// Escape closes it, which is what every dialog on the web does and what people
+// try first. Ignored when the sheet is already shut so it cannot swallow the
+// key from anything else.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (el.settingsOverlay?.classList.contains("hidden")) return;
+  closeSettings();
+});
 
 // ---------- Rematch ----------
 // Same opponent, same connection, no signaling and no lobby round trip: when a

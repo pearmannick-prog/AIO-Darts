@@ -106,7 +106,6 @@ const el = {
   scorerDisconnect: document.getElementById("scorer-disconnect"),
   scorerStatus: document.getElementById("scorer-status"),
   cricketBoard: document.getElementById("cricket-board"),
-  scoreBlock: document.getElementById("score-block"),
   winnerBanner: document.getElementById("winner-banner"),
   // Scoped to #local-mode: there are now two boards on the page (local and
   // online), and an unscoped ".dartboard" would silently match whichever

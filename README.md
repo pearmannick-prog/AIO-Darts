@@ -242,7 +242,8 @@ point this at it, and the two stay independent.
 ### Pointing AIO Darts at it
 
 1. Find the Pi's address on your network, e.g. `192.168.1.50`.
-2. In **Local Play**, open **Automatic camera scorer (optional)**.
+2. Open **Settings** (the gear in the header) and expand **Automatic camera
+   scorer**.
 3. Type the address and press **Connect**. The port and path are added for you;
    a full `ws://host:port/path` also works if yours differs.
 4. **Allow the permission prompt.** Your browser asks once, per site, before a
@@ -311,19 +312,24 @@ same reason.
 
 ### Checking your camera and mic first
 
-The setup screen has a collapsed **🎥 Camera & mic check** section. Open it and
-press *Start check* to see your camera and watch a live level meter move when
-you speak - without creating a challenge or making an opponent wait while you
-work out why nobody can hear you.
+**Settings** (the gear in the header) has a **🎥 Camera & mic check** section.
+Open it and press *Start check* to see your camera and watch a live level meter
+move when you speak - without creating a challenge or making an opponent wait
+while you work out why nobody can hear you.
+
+Settings is an overlay rather than a tab, deliberately: leaving a tab ends a
+match, and wanting to check a camera *during* one is the normal case. It's also
+reachable as a guest, which the account screens are not.
 
 If you have more than one camera or more than one microphone, a picker appears
 for each. Whatever you choose is remembered and reused when you turn the camera
 on in a match, so you set your devices up once rather than every game. The
 pickers only appear when there's actually a choice to make.
 
-The check releases the camera and mic as soon as you create or join a challenge
-(and when you collapse the section), so it never holds a device the match then
-needs - which matters on Android, where a camera can only be open once.
+The check releases the camera and mic as soon as you create or join a challenge,
+when you collapse the section, and when you close Settings - so it never holds a
+device the match then needs, and never leaves a webcam light on behind a closed
+panel. That matters on Android, where a camera can only be open once.
 
 Remembered devices are stored per browser. If one is later unplugged, the check
 works out which preference died, forgets just that one, and falls back - your
