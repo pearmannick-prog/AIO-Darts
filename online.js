@@ -1043,6 +1043,30 @@ el.endMatchBtn.addEventListener("click", () => {
   teardownMatch("You ended the match.");
 });
 
+// How long an opponent may be missing before the match is called off.
+//
+// A judgement, not a constant with a right answer. ICE blips are usually over
+// in two or three seconds; a phone changing wifi for mobile data can take ten.
+// Past about fifteen the connection has almost never come back, and by then
+// both players have walked to the board and back wondering what is happening -
+// so this is long enough to survive a handover and short enough that nobody is
+// left staring at a frozen scoreboard.
+const PEER_LOST_GRACE_MS = 15000;
+let peerLostTimer = null;
+
+function startPeerLostGrace() {
+  if (peerLostTimer) return; // already counting; a second drop is the same drop
+  peerLostTimer = setTimeout(() => {
+    peerLostTimer = null;
+    if (online.active) teardownMatch("Opponent disconnected. The match has ended.");
+  }, PEER_LOST_GRACE_MS);
+}
+
+function stopPeerLostGrace() {
+  clearTimeout(peerLostTimer);
+  peerLostTimer = null;
+}
+
 function disarmEndMatch() {
   clearTimeout(endArmTimeout);
   el.endMatchBtn.dataset.armed = "0";
@@ -1052,6 +1076,9 @@ function disarmEndMatch() {
 
 function teardownMatch(message) {
   disarmEndMatch();
+  // Before anything else: closing the peer link below fires the status handler
+  // again, and a timer left running would tear down whatever comes next.
+  stopPeerLostGrace();
   // close() stops the local camera and mic tracks as well as the connection -
   // see the comment at the top of webrtc.js's close().
   peerLink?.close();
@@ -1162,9 +1189,39 @@ function wirePeerLink() {
         sendHelloUntilStarted();
       }
     }
+    // A blip. Say so, and start counting - but do NOT end the match, because
+    // ICE reports this for a wifi handover that is usually over in seconds.
+    if (status === "peer-lost" && online.active) {
+      startPeerLostGrace();
+    }
+
+    if (status === "peer-recovered") {
+      stopPeerLostGrace();
+      if (online.active) el.statusLabel.textContent = "Opponent is back.";
+    }
+
+    // Terminal. THE MATCH IS OVER, AND SAYING SO IS THE WHOLE FIX.
+    //
+    // This used to set a label and nothing else, which left the game panel up,
+    // online.active true, and - because teardownMatch is what sends
+    // reportMatchOver - the lobby showing the player as still playing forever.
+    // The match was dead and every part of the app except the label believed it
+    // was live, so they could not be challenged again until they toggled
+    // "looking for a game" by hand.
+    //
+    // online.active guards re-entry: teardownMatch closes the peer link, whose
+    // channel-close fires this handler again a moment later.
     if (status === "disconnected" || status === "room-full") {
+      stopPeerLostGrace();
       if (online.active) {
-        el.statusLabel.textContent = "Opponent disconnected.";
+        // Both sides stay connected after a match ends, so that a rematch is a
+        // handshake rather than a reconnection - which means "they left" and
+        // "they left mid-leg" are different events and deserve different words.
+        // A finished match is already saved; an abandoned one was never going
+        // to be.
+        teardownMatch(online.gameOver
+          ? "Opponent left after the match ended."
+          : "Opponent disconnected. The match has ended.");
       }
     }
   };
@@ -1423,6 +1480,8 @@ function statusText(status) {
     case "waiting-for-opponent": return `Waiting for opponent… (via ${currentSignalingUrl()})`;
     case "joining": return "Joining challenge…";
     case "connected": return "Connected - good luck!";
+    case "peer-lost": return "Opponent's connection dropped - waiting…";
+    case "peer-recovered": return "Opponent is back.";
     case "disconnected": return "Disconnected.";
     case "room-full": return "That challenge code is already in use.";
     default: return "";

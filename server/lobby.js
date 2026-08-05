@@ -428,7 +428,22 @@ export function createLobby() {
     socket.on("close", () => {
       const { wasLast, entry } = presence.detach(userId, socket);
       // Another tab or device is still connected - they have not left.
-      if (!wasLast) return;
+      //
+      // But a match has NOT survived, even though the person has. Presence is
+      // per player while a match is per device: the scoreboard, the peer
+      // connection and the darts were all on the socket that just went, and
+      // nothing migrates them to the phone in their pocket. Returning here
+      // without this left the player marked in_match forever - unchallengeable,
+      // with spectators watching a scoreboard that would never move again -
+      // because the only other thing that clears that status is a match_over
+      // the departed tab is no longer around to send.
+      if (!wasLast) {
+        if (entry?.status === STATUS.IN_MATCH) {
+          presence.update(userId, { status: STATUS.LOBBY });
+        }
+        endLiveMatchesFor(userId);
+        return;
+      }
 
       // Anything they had outstanding goes with them, so nobody is left
       // looking at a challenge from someone who has gone.

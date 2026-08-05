@@ -113,6 +113,9 @@ export class PeerLink {
   // pictures need two <video> elements, and one stream carrying both would
   // paint whichever track happened to arrive first.
   #remoteStream2 = null;
+  // Whether the connection is currently in an ICE blip, so that a recovery can
+  // be reported as one rather than as a fresh connection.
+  #peerLost = false;
 
   onMessage = null; // (gameMessage: object) => void
   onStatusChange = null; // (status: string) => void
@@ -631,10 +634,39 @@ export class PeerLink {
       this.onRemoteStream?.(this.#remoteStream, 0);
     });
 
+    // TRANSIENT AND TERMINAL ARE NOT THE SAME THING, and collapsing them into
+    // one status is what left players stuck in a match that had already ended.
+    //
+    //   "disconnected" - a blip. ICE reports it for a wifi handover, a phone
+    //                    changing cell, a few seconds of lost packets, and it
+    //                    recovers on its own most of the time. Tearing a match
+    //                    down here would end matches that were about to carry
+    //                    on.
+    //   "failed"       - terminal. ICE has given up. It does not come back
+    //                    without an ICE restart, and this design deliberately
+    //                    has no renegotiation path (see the note at the top of
+    //                    this file), so there is nothing to wait for.
+    //   "closed"       - terminal, and usually us: close() was called.
+    //
+    // The caller decides what to do about the blip; all this owes it is the
+    // difference. "connected" is re-announced after a blip so a recovery can
+    // cancel whatever the caller started - without it a match that healed would
+    // still be torn down by the caller's timer.
     this.#pc.addEventListener("connectionstatechange", () => {
       const s = this.#pc.connectionState;
-      if (s === "failed" || s === "closed") this.#setStatus("disconnected");
-      if (s === "disconnected") this.#setStatus("disconnected");
+      if (s === "failed" || s === "closed") {
+        this.#peerLost = false;
+        this.#setStatus("disconnected");
+      } else if (s === "disconnected") {
+        this.#peerLost = true;
+        this.#setStatus("peer-lost");
+      } else if (s === "connected" && this.#peerLost) {
+        // Only after a loss. A plain "connected" here would race the data
+        // channel's own open event, and the caller treats that one as the
+        // start of the match.
+        this.#peerLost = false;
+        this.#setStatus("peer-recovered");
+      }
     });
 
     this.#ws.addEventListener("message", (event) => this.#handleSignal(JSON.parse(event.data)));
