@@ -13,7 +13,25 @@
 // The app is a few hundred KB of static files, so the cost of going to the
 // network every load is negligible.
 
-const CACHE = "aio-darts-v1";
+// BUMP THIS WHENEVER MODULES CHANGE SHAPE - a new export, a renamed file, a
+// split module. The activate handler deletes every cache whose name is not this
+// one, so the name is the only thing that clears stale entries.
+//
+// It stayed at v1 through the entire accounts branch, and that broke the first
+// load for everyone who had visited before: the old worker served a cached
+// scoring.js from before highestCheckout existed, while the new stats modules
+// were fetched fresh and imported it. The mixture failed with
+//
+//   SyntaxError: The requested module '../scoring.js' does not provide an
+//   export named 'highestCheckout'
+//
+// which aborted accountui.js and left the account chip hidden - so the symptom
+// was "accounts don't work", three files away from the cause.
+//
+// Network-first does NOT protect against this on its own. It governs what
+// happens once the new worker is in control; until then the OLD worker is
+// serving, and a returning visitor gets whatever it has.
+const CACHE = "aio-darts-v2";
 
 // Cached up front so a first-run install works offline immediately, rather
 // than only after the player has happened to load each file once.

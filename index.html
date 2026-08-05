@@ -2996,6 +2996,29 @@
     // isn't installable. (Web Bluetooth needs that same secure context, so
     // anywhere the board works, this works too.)
     if ("serviceWorker" in navigator) {
+      // A NEW worker taking over means the modules this page already imported
+      // may have come from the old one's cache. Reload once so the whole page
+      // is built from a single consistent set of files.
+      //
+      // Without this, the first visit after a deploy could mix a freshly
+      // fetched module with a stale dependency, which fails as
+      // "does not provide an export named ..." - an error naming a file that
+      // is perfectly fine, three steps from the actual cause.
+      //
+      // Guarded against looping: controllerchange fires on the FIRST worker
+      // taking control too, and a reload for that would be a reload on every
+      // first-ever visit.
+      let reloading = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (reloading || !navigator.serviceWorker.controller) return;
+        // sessionStorage rather than a variable: the reload discards the
+        // variable, and this must not be able to bounce.
+        if (sessionStorage.getItem("aiodarts-sw-reloaded")) return;
+        sessionStorage.setItem("aiodarts-sw-reloaded", "1");
+        reloading = true;
+        location.reload();
+      });
+
       window.addEventListener("load", () => {
         // Relative path on purpose - the app is served from the domain root
         // in Docker but from /AIO-Darts/ on GitHub Pages, and a leading
