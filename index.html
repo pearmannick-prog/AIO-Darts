@@ -2740,6 +2740,34 @@
   [data-boardview="room"] .panel:not(.immersive) .match-bar { font-size: 15px; }
   [data-boardview="across"] .panel:not(.immersive) .match-bar { font-size: 18px; }
 
+  /* LANDSCAPE ON A PHONE is the hardest case this mode has: roughly 390px of
+     height for a player row, a turn label, three dart slots and a score that is
+     supposed to be enormous. Sized off vh everywhere else, all of those shrink
+     together and none of them shrinks enough, so the score is what gives - it
+     is still by far the biggest thing on screen at 30vh, and it is the only
+     element with room to lose. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    .oche-mode { padding: 1.5vh 3vw; }
+    .oche-mode #big-score,
+    .oche-mode #online-big-score { font-size: clamp(60px, 30vh, 190px); }
+    .oche-mode .player-tab-score,
+    .oche-mode .online-score-value { font-size: clamp(22px, 11vh, 54px); }
+    .oche-mode .player-tab-name,
+    .oche-mode .online-score-label { font-size: clamp(10px, 4vh, 18px); }
+    .oche-mode #turn-label,
+    .oche-mode #online-turn-label { font-size: clamp(12px, 5vh, 22px); margin-bottom: 0.8vh; }
+    .oche-mode .dart-slot {
+      width: clamp(44px, 9vw, 96px);
+      height: clamp(28px, 11vh, 56px);
+      font-size: clamp(14px, 6vh, 28px);
+    }
+    .oche-mode #player-tabs,
+    .oche-mode .online-scoreboard { margin-bottom: 1vh; }
+    /* Half the screen for a keypad leaves nothing above it to score into. */
+    .oche-mode.oche-entry-open .entry-and-log,
+    .oche-mode.oche-entry-open #online-manual-section { height: 72vh; }
+  }
+
   @media (max-width: 640px) {
     /* A phone propped under the board is the commonest "across the room"
        setup there is, and it is also the narrowest screen. The steps have to
@@ -2780,14 +2808,33 @@
      applies. Kept as one rule so a refused request looks the same. */
   .oche-mode:fullscreen { padding: 3vh 4vw; }
 
-  /* Browser furniture and everything that is not the score. */
+  /* Browser furniture and everything that is not the score.
+     #online-status-label is an ID carrying an inline style, not a class - a
+     .online-status-label rule here matched nothing and left "Connected - good
+     luck!" sitting above the scoreboard. */
   .oche-mode .actions-row,
   .oche-mode .entry-and-log,
+  .oche-mode #online-manual-section,
   .oche-mode .dartboard-wrap,
   .oche-mode #online-video-strip,
   .oche-mode #online-av-row,
   .oche-mode .setup-notice,
-  .oche-mode .online-status-label { display: none; }
+  .oche-mode #online-status-label { display: none; }
+
+  /* THE IMMERSIVE STAGE RESERVATION MUST GO.
+     #online-game-panel.immersive reserves the whole camera band with
+     padding-top: var(--stage-h) - between 460 and 620px - and paints it solid
+     with ::before. Hiding the video strip does not reclaim either, so oche view
+     opened over a match with cameras on had half the screen as a black bar and
+     the score pushed off the bottom.
+     It needs the ID to win: .oche-mode.immersive is 0,2,0 and loses to 1,1,0
+     however far down the file it sits. */
+  #online-game-panel.oche-mode {
+    padding: 2.5vh 3vw;
+    --stage-h: 0px;
+  }
+  #online-game-panel.oche-mode:fullscreen { padding: 3vh 4vw; }
+  .oche-mode.immersive::before { display: none; }
 
   /* The immersive video stage positions the score absolutely inside a camera
      band. In here there is no camera band, so those have to come back to the
@@ -2804,7 +2851,6 @@
     transform: none;
     max-height: none;
   }
-  .oche-mode.immersive { padding-top: 2.5vh; }
 
   .oche-mode .match-bar {
     font-size: clamp(14px, 2vh, 22px);
@@ -2814,12 +2860,17 @@
 
   /* Player tabs become the top row of an arcade board: one column each, side
      by side, the live one lit. */
+  /* Capped and centred. Left to fill the width, the two names sit in opposite
+     corners of a 27" monitor with a hundred empty centimetres between them and
+     read as two unrelated scoreboards rather than one match. */
   .oche-mode #player-tabs,
   .oche-mode .online-scoreboard {
     display: flex;
     gap: 2vw;
-    margin-bottom: 2vh;
+    margin: 0 auto 2vh;
     flex: none;
+    width: 100%;
+    max-width: 1000px;
   }
   .oche-mode .player-tab,
   .oche-mode .online-score-box {
@@ -2895,7 +2946,12 @@
      siblings in the markup, so each is placed into the band rather than the
      band being a container: moving the DOM would mean game.js and online.js
      could no longer find their own elements. */
-  .oche-mode.oche-entry-open .entry-and-log {
+  /* Both panels, because they are built differently: local wraps its keypad and
+     log in .entry-and-log, online has no such wrapper and uses
+     #online-manual-section. Targeting only the first meant "Score" did nothing
+     at all online - the keypad simply flowed down the page under the score. */
+  .oche-mode.oche-entry-open .entry-and-log,
+  .oche-mode.oche-entry-open #online-manual-section {
     display: block;
     position: absolute;
     left: 0;
@@ -2923,6 +2979,8 @@
     z-index: 3;
   }
   .oche-mode.oche-entry-open #throw-log { display: none; }
+  .oche-mode.oche-entry-open .online-turn-darts,
+  .oche-mode.oche-entry-open #turn-darts { margin-bottom: 0; }
   /* The score gives way rather than being covered. Scoring a dart you cannot
      see the effect of is the one thing this panel must not do. */
   .oche-mode.oche-entry-open #big-score,

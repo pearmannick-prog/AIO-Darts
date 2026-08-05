@@ -208,7 +208,18 @@ oche — where every app this borrows from is used at one. It scales the game
 panels ONLY, and it must never reach inside `.immersive`: that layout positions
 its scoreboard at absolute offsets tuned to fixed type sizes, so scaling the
 type without moving the offsets breaks it rather than enlarging it. Hence
-`.panel:not(.immersive)` on every shared rule. `ocheview.js` is the same idea
+`.panel:not(.immersive)` on every shared rule.
+
+**`.immersive` has bitten this twice, and both times the same way.** It is
+declared as `#online-game-panel.immersive` — an ID, specificity 1,1,0 — and it
+reserves the whole camera band with `padding-top: var(--stage-h)` (460–620px)
+plus a solid `::before` backdrop. Any rule trying to override it from a
+class-only selector silently loses no matter how far down the file it sits, so
+overrides need the ID too. Hiding `#online-video-strip` does **not** reclaim
+that space. Anything that changes the game panel's layout must be checked
+against all three of: no video, `.immersive`, and `.immersive.cricket-stage`,
+because they must look identical in oche view and only one of them is the case
+you will happen to be testing. `ocheview.js` is the same idea
 taken to fullscreen, and it RESTYLES THE EXISTING PANEL rather than rendering a
 second scoreboard — a duplicate scoreboard is one that will eventually disagree
 with the real one about who won. It holds a screen wake lock, which the browser
