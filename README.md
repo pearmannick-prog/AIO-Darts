@@ -218,6 +218,53 @@ what the above does.
    hits before it's the next player's turn. It doesn't undo anything; only a
    bust reverts score.
 
+## Automatic camera scoring (OpenDartboard)
+
+A camera scorer watches your board and reports every dart, so a steel-tip board
+scores itself. AIO Darts can read one, in **local and online play alike** - it
+feeds the same input path a Bluetooth board does, so nothing else changes.
+
+**This app does not include the scorer, and deliberately doesn't.**
+[OpenDartboard](https://github.com/OpenDartboard/OpenDartboard) is separate
+GPL-3.0 software that runs on a Raspberry Pi next to your board, because the
+vision has to happen where the cameras are - it cannot run in a browser, and the
+browser cannot reach cameras plugged into a Pi across the room. AIO Darts is a
+client of it, the same way it is a client of a Granboard. You install theirs,
+point this at it, and the two stay independent.
+
+### What you need
+
+- A Raspberry Pi (a Zero 2 W is enough) with cameras aimed at your board
+- OpenDartboard installed on it - follow **their** documentation, not this file;
+  they ship a `.deb` and know their own hardware
+- The Pi and the device running AIO Darts on the same network
+
+### Pointing AIO Darts at it
+
+1. Find the Pi's address on your network, e.g. `192.168.1.50`.
+2. In **Local Play**, open **Automatic camera scorer (optional)**.
+3. Type the address and press **Connect**. The port and path are added for you;
+   a full `ws://host:port/path` also works if yours differs.
+4. **Allow the permission prompt.** Your browser asks once, per site, before a
+   page may reach devices on your local network. That prompt *is* this
+   connection - blocking it means the scorer cannot work.
+
+The header then reads `Connected: OpenDartboard`, and throws score themselves.
+The address is remembered, so this is a one-time setup.
+
+Pulling the darts out ends your visit, the same as a Granboard's button -
+OpenDartboard reports the board going clean and this reads it as "visit over".
+
+### When it doesn't work
+
+| What you see | Usually means |
+| --- | --- |
+| "Couldn't connect" straight away | Wrong address, or the Pi is off. Check you can reach it from the same device. |
+| "Lost the connection — reconnecting in Ns" | It was working and went away: a reboot, or wifi. It reconnects on its own; nothing to do. |
+| No prompt and no connection | The local-network permission was blocked earlier. Re-allow it in the padlock menu → site settings. |
+| Everything scores as a 20 | Not this app. OpenDartboard falls back to the 20 wedge when its orientation calibration is missing - recalibrate on their side. |
+| Bulls score 25 when they should be 50 | Report it. The two scorers disagree about the word "BULL" and this app keeps a vocabulary per source; a mismatch means one needs correcting. |
+
 ## Online 1v1 challenges
 
 The "Online Challenge" tab lets two people, each with their own board, play a
