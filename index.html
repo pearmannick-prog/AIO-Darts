@@ -101,7 +101,16 @@
 
     /* ---- Meaning, not decoration ---- */
     --accent: var(--gold);
+    /* Text that sits ON an accent fill. Its own token because the accent is
+       user-choosable: ink reads on gold and amber, and is unreadable on plum
+       or oche red. Each swatch below declares which one it needs. */
+    --on-accent: var(--ink);
+    /* Derived from whatever --accent currently is, so choosing a new accent
+       does not leave a gold wash behind it. The literal is the fallback for
+       anything without color-mix; it is the default accent's wash, so the only
+       browsers that see it are ones showing the default anyway. */
     --accent-wash: rgba(199,162,74,0.22);
+    --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
     --danger: var(--red);
     --danger-wash: rgba(183,48,42,0.12);
     --danger-solid: rgba(183,48,42,0.85);
@@ -496,7 +505,7 @@
 
   .setup-notice {
     background: var(--accent);
-    color: var(--on-panel);
+    color: var(--on-accent);
     border-radius: 10px;
     padding: 10px 14px;
     margin-bottom: 14px;
@@ -999,7 +1008,7 @@
 
   .btn-primary {
     background: var(--accent);
-    color: var(--on-panel);
+    color: var(--on-accent);
   }
   .btn-primary:hover { filter: brightness(1.08); }
 
@@ -1132,7 +1141,7 @@
     font-family: 'Oswald', sans-serif;
     font-size: 20px;
     background: var(--accent);
-    color: var(--on-panel);
+    color: var(--on-accent);
     padding: 10px 16px;
     border-radius: 8px;
     margin-bottom: 16px;
@@ -1527,7 +1536,7 @@
   }
   .quick-shortcut-btn {
     background: var(--accent);
-    color: var(--on-panel);
+    color: var(--on-accent);
     border: none;
     border-radius: 6px;
     padding: 10px 0;
@@ -1857,7 +1866,7 @@
     white-space: nowrap;
     cursor: pointer;
   }
-  .account-nav-btn.active { background: var(--accent); border-color: var(--accent); color: var(--on-panel); }
+  .account-nav-btn.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
   .account-section-head {
     display: flex;
@@ -2011,7 +2020,7 @@
     padding: 8px 12px;
     border-radius: 999px;
     background: var(--accent);
-    color: var(--on-panel);
+    color: var(--on-accent);
     font-size: 13px;
     font-weight: 600;
   }
@@ -2053,7 +2062,7 @@
      not a modal - it appears next to the winner banner and never interrupts. */
   .unlock-toast {
     background: var(--accent);
-    color: var(--on-panel);
+    color: var(--on-accent);
     border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 14px;
@@ -2258,7 +2267,7 @@
     top: 0;
     z-index: 40;
     background: var(--accent);
-    color: var(--on-panel);
+    color: var(--on-accent);
     border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 14px;
@@ -2315,6 +2324,360 @@
     position: sticky;
     top: 0;
     z-index: 50;
+  }
+  /* ---- The Customize panel, at the top of the settings sheet ---- */
+  .customize-panel { margin-bottom: 18px; }
+  .cz-head { margin-bottom: 14px; }
+  .cz-title {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 16px;
+    margin: 0;
+  }
+  .cz-blurb { font-size: 12px; opacity: 0.7; margin: 2px 0 0; }
+
+  .cz-field { margin-bottom: 16px; }
+  .cz-label {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 12px;
+    opacity: 0.75;
+    margin-bottom: 6px;
+  }
+  .cz-hint { font-size: 11.5px; opacity: 0.6; margin-top: 5px; }
+  .cz-note { font-size: 12px; margin: 6px 0 0; min-height: 1em; }
+  .cz-note.warn { color: var(--danger); }
+  .cz-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .cz-segmented {
+    display: inline-flex;
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .cz-seg {
+    padding: 7px 16px;
+    background: none;
+    border: none;
+    border-right: 1px solid var(--panel-border);
+    color: var(--on-panel);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .cz-seg:last-child { border-right: none; }
+  .cz-seg.active { background: var(--accent); color: var(--on-accent); }
+
+  .cz-swatches { display: flex; flex-wrap: wrap; gap: 9px; }
+  .cz-swatch {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--swatch, var(--accent));
+    border: 2px solid transparent;
+    box-shadow: 0 0 0 1px var(--panel-border) inset;
+    cursor: pointer;
+    padding: 0;
+    position: relative;
+  }
+  .cz-swatch.selected { border-color: var(--on-panel); }
+  /* The custom well shows a hue ring until a colour is chosen, so it reads as
+     "anything you like" rather than as a ninth preset. */
+  .cz-swatch-custom {
+    background: var(--swatch, conic-gradient(#c0392b, #e0902f, #c7a24a, #2f7a4d, #3d6bb8, #8e5ba6, #c0392b));
+  }
+  .cz-colour-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  /* ---- Theme cards. Each one is a real scrap of scoreboard rendered IN the
+     theme it offers - see themePreview() in customize.js. A colour swatch
+     cannot answer the only question that matters about a darts theme, which is
+     whether the big number is readable. ---- */
+  .theme-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 10px;
+  }
+  .theme-card {
+    border: 2px solid transparent;
+    box-shadow: 0 0 0 1px var(--panel-border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--chrome-bg);
+  }
+  .theme-card.selected { border-color: var(--accent); }
+  .theme-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .theme-card-stage {
+    position: relative;
+    height: 66px;
+    background: var(--panel-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .theme-card-board {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle,
+        var(--board-red) 0 18%,
+        var(--board-green) 18% 30%,
+        var(--board-light) 30% 62%,
+        var(--board-dark) 62% 78%,
+        var(--board-red) 78% 100%);
+    box-shadow: 0 0 0 1.5px var(--board-wire);
+  }
+  .theme-card-score {
+    font-family: 'Oswald', sans-serif;
+    font-size: 27px;
+    font-weight: 700;
+    color: var(--on-panel);
+    margin-left: 16px;
+  }
+  .theme-card-chip {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    font-size: 9.5px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .theme-card-name {
+    font-size: 11.5px;
+    text-align: center;
+    padding: 5px 4px;
+    color: var(--on-chrome);
+    background: var(--chrome-bg);
+  }
+
+  .cz-reset-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  .cz-reset { font-size: 12px; padding: 6px 12px; }
+
+  /* =====================================================================
+     THEMES
+
+     Themes are CSS, not JavaScript. A theme applied from script has to wait
+     for script, which is the very flash the inline bootstrap below exists to
+     prevent - and it would have to re-run on every dynamically rendered
+     panel. As plain selectors the browser does the work, before first paint,
+     for free.
+
+     They are written as [data-theme=...] rather than :root[data-theme=...] on
+     purpose. Custom properties inherit, so scoping them to ANY element means
+     the theme picker can render a real, live preview simply by putting
+     data-theme on a card - the preview is the actual theme rather than a
+     drawing of it, and it cannot drift from the real thing.
+
+     WHAT DARK MODE ACTUALLY IS HERE. This app is already half dark: the page
+     chrome is felt green with cream text. So a dark theme is mostly about
+     flipping the PANELS - the light cards sitting on that chrome - which is
+     why each block below is short and mostly --panel-*. The overlay scale
+     inverts with them: ink-over-light becomes cream-over-dark.
+     ===================================================================== */
+
+  /* ---- The default theme's dark face ---- */
+  [data-mode="dark"] {
+    --chrome-bg: #0A1F17;
+    --chrome-bg-hi: #103026;
+
+    --panel-bg: #16251E;
+    --panel-bg-alt: #1B2D25;
+    --on-panel: #E8E2D2;
+    --on-panel-muted: #93A099;
+    --on-panel-dim: rgba(232,226,210,0.55);
+    --on-panel-faint: rgba(232,226,210,0.35);
+
+    /* The raise scale inverts: over a dark panel a "raised" surface is
+       lighter, not darker. Same steps, same names, opposite direction. */
+    --panel-raise-1: rgba(232,226,210,0.04);
+    --panel-raise-2: rgba(232,226,210,0.07);
+    --panel-raise-3: rgba(232,226,210,0.1);
+    --panel-raise-4: rgba(232,226,210,0.15);
+    --panel-raise-5: rgba(232,226,210,0.28);
+    --panel-raise-6: rgba(232,226,210,0.34);
+    --panel-hairline: rgba(232,226,210,0.12);
+    --panel-rule: rgba(232,226,210,0.18);
+    --panel-border: rgba(232,226,210,0.22);
+
+    --field-bg: #0D1A14;
+    --field-ghost: rgba(232,226,210,0.12);
+
+    /* This is why --fill-strong exists as its own token. It is the brand dark
+       used as a solid fill on a light panel; on a DARK panel it has to become
+       light or the button disappears into its own background. It moves in the
+       opposite direction to the page. */
+    --fill-strong: #E8E2D2;
+    --on-fill-strong: #14201A;
+
+    --chart-series: #6FBF8F;
+    --on-solid: #14201A;
+  }
+
+  /* ---- Oche Night: the lights-down, charcoal-and-gold one. Dark whatever
+     the mode says, because a theme called Oche Night with a light face would
+     be two different themes wearing one name. ---- */
+  [data-theme="night"] {
+    --chrome-bg: #14140F;
+    --chrome-bg-hi: #1F1E17;
+    --on-chrome: #EDE7D8;
+    --on-chrome-soft: rgba(237,231,216,0.85);
+    --on-chrome-dim: rgba(237,231,216,0.75);
+    --on-chrome-muted: rgba(237,231,216,0.62);
+    --chrome-raise-1: rgba(237,231,216,0.07);
+    --chrome-raise-2: rgba(237,231,216,0.11);
+    --chrome-raise-3: rgba(237,231,216,0.18);
+    --chrome-raise-hover: rgba(237,231,216,0.15);
+    --chrome-border: rgba(237,231,216,0.24);
+    --chrome-border-soft: rgba(237,231,216,0.15);
+    --chrome-border-hi: rgba(237,231,216,0.34);
+
+    --panel-bg: #201F18;
+    --panel-bg-alt: #272620;
+    --on-panel: #EDE7D8;
+    --on-panel-muted: #9A9484;
+    --on-panel-dim: rgba(237,231,216,0.55);
+    --on-panel-faint: rgba(237,231,216,0.35);
+    --panel-raise-1: rgba(237,231,216,0.04);
+    --panel-raise-2: rgba(237,231,216,0.07);
+    --panel-raise-3: rgba(237,231,216,0.1);
+    --panel-raise-4: rgba(237,231,216,0.15);
+    --panel-raise-5: rgba(237,231,216,0.28);
+    --panel-raise-6: rgba(237,231,216,0.34);
+    --panel-hairline: rgba(237,231,216,0.12);
+    --panel-rule: rgba(237,231,216,0.18);
+    --panel-border: rgba(237,231,216,0.2);
+
+    --field-bg: #16150F;
+    --field-ghost: rgba(237,231,216,0.12);
+    --fill-strong: #EDE7D8;
+    --on-fill-strong: #1A1913;
+    --overlay-backdrop: rgba(10,10,7,0.78);
+    --chart-series: #D8B45E;
+    --on-solid: #1A1913;
+    --felt-wash: rgba(237,231,216,0.07);
+  }
+
+  /* ---- Broadcast: the televised look. Near-black, paper white, one red.
+     Deliberately the highest-contrast theme in the set - it is the one to
+     reach for when the screen is across the room and the light is bad, and
+     it doubles as the high-contrast option rather than being a separate
+     "accessibility mode" nobody finds. ---- */
+  [data-theme="broadcast"] {
+    --chrome-bg: #08090B;
+    --chrome-bg-hi: #121419;
+    --on-chrome: #FFFFFF;
+    --on-chrome-soft: rgba(255,255,255,0.92);
+    --on-chrome-dim: rgba(255,255,255,0.82);
+    --on-chrome-muted: rgba(255,255,255,0.7);
+    --chrome-raise-1: rgba(255,255,255,0.1);
+    --chrome-raise-2: rgba(255,255,255,0.16);
+    --chrome-raise-3: rgba(255,255,255,0.24);
+    --chrome-raise-hover: rgba(255,255,255,0.2);
+    --chrome-border: rgba(255,255,255,0.45);
+    --chrome-border-soft: rgba(255,255,255,0.28);
+    --chrome-border-hi: rgba(255,255,255,0.6);
+
+    --panel-bg: #16181D;
+    --panel-bg-alt: #1E2128;
+    --on-panel: #FFFFFF;
+    --on-panel-muted: #AEB4BF;
+    --on-panel-dim: rgba(255,255,255,0.72);
+    --on-panel-faint: rgba(255,255,255,0.5);
+    --panel-raise-1: rgba(255,255,255,0.05);
+    --panel-raise-2: rgba(255,255,255,0.09);
+    --panel-raise-3: rgba(255,255,255,0.14);
+    --panel-raise-4: rgba(255,255,255,0.2);
+    --panel-raise-5: rgba(255,255,255,0.34);
+    --panel-raise-6: rgba(255,255,255,0.42);
+    --panel-hairline: rgba(255,255,255,0.18);
+    --panel-rule: rgba(255,255,255,0.26);
+    --panel-border: rgba(255,255,255,0.38);
+
+    --field-bg: #0B0D10;
+    --field-ghost: rgba(255,255,255,0.14);
+    --fill-strong: #FFFFFF;
+    --on-fill-strong: #08090B;
+    --overlay-backdrop: rgba(4,5,6,0.82);
+    --danger: #FF4438;
+    --positive: #35D07F;
+    --chart-series: #FFFFFF;
+    --on-solid: #FFFFFF;
+    --felt-wash: rgba(255,255,255,0.08);
+  }
+
+  /* ---- High contrast, as an amplifier on whatever theme is chosen rather
+     than a fourth theme. Borders and dividers are what disappear first on a
+     dim screen or tired eyes, so they are what this strengthens. ---- */
+  [data-contrast="high"] {
+    --panel-border: var(--on-panel);
+    --panel-rule: var(--on-panel-dim);
+    --panel-hairline: var(--on-panel-faint);
+    --chrome-border: var(--on-chrome);
+    --on-panel-muted: var(--on-panel);
+    --on-chrome-muted: var(--on-chrome-soft);
+  }
+  [data-contrast="high"] *:focus-visible { outline-width: 3px; }
+
+  /* ---- Accent swatches. Curated rather than a colour wheel: a casual player
+     should not be able to make their own scoreboard unreadable, and every one
+     of these declares the text colour that survives on top of it. A custom
+     hex sets --accent from script and is contrast-checked there. ---- */
+  [data-accent="tungsten"] { --accent: #9BA7B0; --on-accent: #14181B; }
+  [data-accent="oche"]     { --accent: #C0392B; --on-accent: #FFFFFF; }
+  [data-accent="baize"]    { --accent: #2F7A4D; --on-accent: #FFFFFF; }
+  [data-accent="chalk"]    { --accent: #3D6BB8; --on-accent: #FFFFFF; }
+  [data-accent="amber"]    { --accent: #E0902F; --on-accent: #1B1A14; }
+  [data-accent="plum"]     { --accent: #8E5BA6; --on-accent: #FFFFFF; }
+  [data-accent="slate"]    { --accent: #5C7A8A; --on-accent: #FFFFFF; }
+
+  /* ---- Reduced motion. Defaults from the OS (see prefs.js) and can be set
+     explicitly, because wanting a still app is not the same decision as
+     wanting a still operating system. Near-zero rather than `none`: a
+     transition of 0s can cancel transitionend handlers, and 0.01ms cannot. ---- */
+  [data-motion="reduced"] *,
+  [data-motion="reduced"] *::before,
+  [data-motion="reduced"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* ---- Colourblind-safe board. Red/green is the single worst pairing there
+     is and it happens to be the dartboard's own scheme, so this is a real
+     accessibility need for this app specifically rather than a checkbox
+     imported from a list. Blue and amber are the standard substitution: they
+     separate under every common form of colour vision deficiency, and they
+     stay distinguishable in greyscale, which red and green do not. ---- */
+  [data-cb-board="on"] {
+    --board-red: #1F6FD0;
+    --board-green: #E8A33D;
   }
 </style>
 <script>
@@ -3297,6 +3660,7 @@
     </div>
   </div>
 
+  <script type="module" src="./customize.js"></script>
   <script type="module" src="./game.js"></script>
   <script type="module" src="./online.js"></script>
   <script type="module" src="./accountui.js"></script>
