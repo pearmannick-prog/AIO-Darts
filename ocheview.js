@@ -74,6 +74,23 @@ function buildControls() {
   const bar = document.createElement("div");
   bar.className = "oche-controls";
 
+  // UNDO, and it belongs here more than anywhere else in the app. A Granboard
+  // misread or a bounce-out counted as a hit happens WHILE YOU ARE AT THE
+  // OCHE, which is precisely when this mode is on - and hiding the actions row
+  // took the only way to fix it off the screen.
+  //
+  // It forwards to the panel's own undo button rather than reimplementing
+  // anything: the real one owns the snapshot stack, and a second path into it
+  // is a second thing to get wrong. Absent in online play, because there is no
+  // undo there to forward to - see the note in the commit.
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "oche-btn";
+  undo.textContent = "↶ Undo dart";
+  undo.addEventListener("click", () => active?.querySelector("#undo-btn")?.click());
+  bar.appendChild(undo);
+  bar.dataset.undo = "1";
+
   const entry = document.createElement("button");
   entry.type = "button";
   entry.className = "oche-btn";
@@ -105,6 +122,10 @@ export async function startOcheView(panel) {
   panel.classList.add("oche-mode");
 
   if (!controls) controls = buildControls();
+  // Only offered where there is something to forward to. Online has no undo at
+  // all, and a button that silently did nothing would be worse than none.
+  const undoBtn = controls.firstElementChild;
+  if (undoBtn) undoBtn.hidden = !panel.querySelector("#undo-btn");
   panel.appendChild(controls);
 
   // Fullscreen is requested, not required. It needs a user gesture and it is

@@ -197,10 +197,18 @@ export function createRecorder({ mode, format, players }) {
       if (leg.game === "cricket") {
         // A round IS a visit here, matching cricketstats.js.
         let marks = 0;
+        let points = 0;
         for (const t of mine) {
           marks += t.throws.reduce((sum, th) => sum + (th.extra?.marks || 0), 0);
+          points += t.throws.reduce((sum, th) => sum + (th.extra?.points || 0), 0);
         }
-        return { kind: "mpr", label: "MPR", value: marks / mine.length, digits: 2 };
+        return {
+          kind: "mpr", label: "MPR", value: marks / mine.length, digits: 2,
+          // The machines show points alongside the marks, and the two say
+          // different things: marks are how fast you are closing, points are
+          // what you did with the numbers you already own.
+          secondary: points / mine.length,
+        };
       }
 
       // Bermuda and Count Up count upwards and have no meaningful per-dart
@@ -217,7 +225,12 @@ export function createRecorder({ mode, format, players }) {
         scored += t.bust ? 0 : (t.scored || 0);
       }
       if (!darts) return null;
-      return { kind: "ppd", label: "PPD", value: scored / darts, digits: 2, perVisit: (scored / darts) * 3 };
+      return {
+        kind: "ppd", label: "PPD", value: scored / darts, digits: 2,
+        // The three-dart average, which is the number darts players actually
+        // talk in - "a 60 average" means 60 a visit, not 60 a dart.
+        secondary: (scored / darts) * 3,
+      };
     },
 
     startLeg({ legIndex, game, x01Start, rules, bull, rounds }) {

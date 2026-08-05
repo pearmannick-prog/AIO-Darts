@@ -2977,6 +2977,29 @@
 
   /* Player tabs become the top row of an arcade board: one column each, side
      by side, the live one lit. */
+  /* ---- With no video, the players sit along the foot of the screen ----
+     Which is where the machine in the pub puts them, and it is the right place
+     once nothing else is competing for the middle: the number you are throwing
+     at owns the centre, and the two totals become a footer you glance at
+     between legs rather than a header you read past to reach the score.
+     With cameras on this does not apply - each score is already on its own
+     picture, and those are at the top.
+
+     Done with order and an auto top margin rather than by moving markup: these
+     elements are read by id from game code, and a flex column can put its own
+     children wherever it likes without any of that knowing. */
+  .oche-mode:not(.immersive) #player-tabs,
+  .oche-mode:not(.immersive) .online-scoreboard {
+    order: 10;
+    margin-top: auto;
+    margin-bottom: 0;
+  }
+  /* The local panel has .game-top with flex:1 to absorb the slack; the online
+     one has no such child, so without this the score clings to the top edge
+     and leaves the gap in the wrong place. Two auto margins share the space
+     between them, which centres the score and floors the row. */
+  .oche-mode:not(.immersive) #online-big-score { margin-top: auto; }
+
   /* Capped and centred. Left to fill the width, the two names sit in opposite
      corners of a 27" monitor with a hundred empty centimetres between them and
      read as two unrelated scoreboards rather than one match. */
@@ -3167,6 +3190,14 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     opacity: 0.65;
+  }
+  .oche-stat-second {
+    display: block;
+    font-family: "Inter", sans-serif;
+    font-size: clamp(10px, 1.5vh, 15px);
+    opacity: 0.6;
+    margin-top: 0.2vh;
+    font-variant-numeric: tabular-nums;
   }
   .oche-stat-value {
     display: block;
@@ -3545,7 +3576,7 @@
             <div id="turn-label">Player 1's turn</div>
             <div id="turn-darts"></div>
             <div id="checkout-hint" class="checkout-hint hidden"></div>
-            <div id="oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span></div>
+            <div id="oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span><span class="oche-stat-second"></span></div>
             <div class="actions-row">
               <button id="undo-btn" class="btn-secondary btn-soft">Undo last dart</button>
               <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
@@ -3863,7 +3894,7 @@
         <div id="online-turn-label" style="text-align:center; margin:14px 0; font-weight:600;"></div>
         <div id="online-turn-darts" class="online-turn-darts"></div>
         <div id="online-checkout-hint" class="checkout-hint hidden"></div>
-        <div id="online-oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span></div>
+        <div id="online-oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span><span class="oche-stat-second"></span></div>
 
         <div class="dartboard-wrap">
           <div class="dartboard"></div>

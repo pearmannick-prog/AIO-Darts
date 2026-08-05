@@ -32,15 +32,27 @@ export function renderLiveAverage(node, stats) {
   const value = node.querySelector(".oche-stat-value");
   if (!label || !value) return;
 
+  const second = node.querySelector(".oche-stat-second");
+
   if (!stats) {
     // A dash rather than 0.00: before the first dart there is no average, and
     // showing zero reads as a bad one.
     label.textContent = "PPD";
     value.textContent = "-";
+    if (second) second.textContent = "";
     return;
   }
   label.textContent = stats.label;
   value.textContent = stats.value.toFixed(stats.digits ?? 2);
+  // The machines show a second figure under the first, and it earns its place:
+  // in x01 it is the three-dart average, which is the number players actually
+  // speak in, and in Cricket it is the points, which say something different
+  // from the marks.
+  if (second) {
+    second.textContent = typeof stats.secondary === "number"
+      ? "Ave. " + stats.secondary.toFixed(2)
+      : "";
+  }
 }
 
 /**
