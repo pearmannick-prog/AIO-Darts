@@ -31,7 +31,19 @@ export function emailConfigured() {
 }
 
 export function resetUrl(token) {
-  const base = (process.env.PUBLIC_URL || "").replace(/\/+$/, "");
+  // A VISIBLE placeholder when PUBLIC_URL is unset, rather than an empty
+  // string. Without one the logged link came out as "/#/reset?token=..." - a
+  // bare path that reads as broken and has to be mentally prefixed with the
+  // site's address, in the one path that exists for people running this
+  // themselves.
+  //
+  // The host is deliberately NOT taken from the request's Host header, which
+  // would produce a correct URL automatically and is the obvious fix. That is
+  // password reset poisoning: a forged Host makes the link point at an
+  // attacker's server, which then collects the token. An explicit PUBLIC_URL
+  // is the whole defence, so the fallback stays obviously-a-template instead
+  // of quietly trusting input.
+  const base = (process.env.PUBLIC_URL || "").replace(/\/+$/, "") || "https://YOUR-SITE";
   // The hash route, because this is a single page with tabs and accountui.js
   // already routes on the hash - see applyHash().
   return `${base}/#/reset?token=${encodeURIComponent(token)}`;
@@ -47,7 +59,9 @@ export async function sendPasswordReset(email, token) {
     // Not a warning: on a self-hosted deployment this is the intended path.
     console.log(
       `\n  password reset for ${email}\n    ${url}\n` +
-      "    (no EMAIL_API_KEY/EMAIL_FROM/PUBLIC_URL set - logging instead of sending)\n"
+      (process.env.PUBLIC_URL
+        ? "    (no mail provider configured - logging instead of sending)\n"
+        : "    (set PUBLIC_URL to have the real address here; replace YOUR-SITE by hand for now)\n")
     );
     return { sent: false, logged: true };
   }
