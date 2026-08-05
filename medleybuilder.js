@@ -13,8 +13,51 @@
 import { X01_SCORES, X01_RULES } from "./scoring.js";
 import { MATCH_PRESETS, normalizeLeg, gameLabel } from "./medley.js";
 import { COUNTUP_ROUND_OPTIONS, DEFAULT_ROUNDS } from "./countup.js";
+import { getPref, setPref, subscribe } from "./prefs.js";
 
 const DEFAULT_LEG = { game: "x01", score: 501, rules: "double" };
+
+// How many recent formats to offer. Three, because this is a shortcut and a
+// long row of near-identical chips is slower to read than the dropdown it was
+// meant to save you from.
+const RECENT_LIMIT = 3;
+const PRESET_LIMIT = 12;
+
+const describeLegs = (legs) => legs.map(gameLabel).join(" · ");
+const legsKey = (legs) => JSON.stringify(legs.map(normalizeLeg));
+
+// gameLabel is written for the format dropdown, where there is a whole row to
+// read: "501 · Open in / Double out · Cricket · 501 · Open in / Double out".
+// On a chip that is unreadable and wraps to three lines, so chips get their own
+// shorter form and keep the full one as the tooltip.
+function compactLeg(leg) {
+  const l = normalizeLeg(leg);
+  if (l.game === "x01") return String(l.score);
+  if (l.game === "countup") return "Count Up";
+  if (l.game === "bermuda") return "Bermuda";
+  return "Cricket";
+}
+
+function shortLabel(legs) {
+  const list = (legs || []).map(normalizeLeg);
+  if (!list.length) return "Format";
+  if (list.length === 1) return compactLeg(list[0]);
+  const games = [...new Set(list.map(compactLeg))];
+  return `${list.length} legs · ${games.join(" / ")}`;
+}
+
+// Building a medley is the fiddliest flow in the app - pick a format, add legs,
+// set the rules on each, choose the bull - and people play the SAME one over
+// and over, rebuilding it every time. These two together are the fix: recents
+// cost nothing to maintain and cover the common case; a named preset covers
+// "the format my league plays on Tuesdays".
+export function recordFormatUsed(legs) {
+  if (!Array.isArray(legs) || !legs.length) return;
+  const entry = { legs: legs.map(normalizeLeg), label: shortLabel(legs), full: describeLegs(legs) };
+  const key = legsKey(legs);
+  const rest = (getPref("recentFormats") || []).filter((r) => legsKey(r.legs || []) !== key);
+  setPref("recentFormats", [entry, ...rest].slice(0, RECENT_LIMIT));
+}
 
 function sameLeg(a, b) {
   const x = normalizeLeg(a), y = normalizeLeg(b);
@@ -25,7 +68,7 @@ function sameLeg(a, b) {
 // els: { legs, addBtn, preset } - any may be absent, in which case the
 // builder degrades quietly rather than throwing.
 export function createMedleyBuilder(els) {
-  const { legs: legsEl, addBtn, preset, bull: bullEl } = els || {};
+  const { legs: legsEl, addBtn, preset, bull: bullEl, chips: chipsEl } = els || {};
 
   // Bull mode is stored per leg (so it crosses the wire with the rest of the
   // config) but chosen once for the whole match - a fifth dropdown on every
@@ -144,5 +187,85 @@ export function createMedleyBuilder(els) {
   // the Format box saying one thing and the leg row showing another.
   render(MATCH_PRESETS[preset?.value] || [{ ...DEFAULT_LEG }]);
 
-  return { getLegs, render, describe: () => getLegs().map(gameLabel).join(" · ") };
+  // -------------------------------------------------------------------------
+  // Recents and saved formats
+  //
+  // Built as DOM rather than innerHTML because a saved format carries a NAME
+  // the player typed. The rest of this file builds rows with innerHTML and that
+  // is fine - every value in them comes from a fixed list of games and scores -
+  // but the moment a string is user-supplied it needs a text node, and
+  // lobbyui.js has already been the cautionary tale here.
+
+  function applyLegs(legs) {
+    const list = (legs || []).map(normalizeLeg);
+    if (!list.length) return;
+    render(list);
+    if (bullEl && list[0].bull) bullEl.value = list[0].bull;
+    markCustomIfNeeded();
+  }
+
+  function chip(label, title, onClick) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "format-chip";
+    button.textContent = label;
+    if (title) button.title = title;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function renderChips() {
+    if (!chipsEl) return;
+    chipsEl.textContent = "";
+
+    for (const saved of getPref("formatPresets") || []) {
+      const button = chip("★ " + saved.name, saved.full || saved.label || "", () => applyLegs(saved.legs));
+      const remove = document.createElement("span");
+      remove.className = "format-chip-x";
+      remove.textContent = "×";
+      remove.title = "Forget this format";
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation(); // or loading it would race deleting it
+        setPref("formatPresets", (getPref("formatPresets") || []).filter((p) => p.name !== saved.name));
+      });
+      button.appendChild(remove);
+      chipsEl.appendChild(button);
+    }
+
+    // Recents come after saved ones: something you named beats something you
+    // merely played.
+    for (const recent of getPref("recentFormats") || []) {
+      chipsEl.appendChild(chip(recent.label, recent.full || "Played recently", () => applyLegs(recent.legs)));
+    }
+
+    const save = chip("+ Save format", "Remember the format above under a name", () => {
+      const name = window.prompt("Name this format", describeLegs(getLegs()))?.trim();
+      if (!name) return;
+      const legs = getLegs();
+      const existing = (getPref("formatPresets") || []).filter((p) => p.name !== name);
+      setPref("formatPresets", [...existing, {
+        name, legs, label: shortLabel(legs), full: describeLegs(legs),
+      }].slice(0, PRESET_LIMIT));
+    });
+    save.classList.add("format-chip-save");
+    chipsEl.appendChild(save);
+  }
+
+  renderChips();
+
+  // Saving, forgetting and playing a format all change this row, and the two
+  // builders on the page - local and online - share one list. Redrawing from
+  // the store rather than at each call site is what keeps the setup screen and
+  // the challenge screen showing the same thing, and it is why nothing above
+  // calls renderChips after a write.
+  subscribe((key) => {
+    if (key === "recentFormats" || key === "formatPresets" || key === null) renderChips();
+  });
+
+  return {
+    getLegs,
+    render,
+    renderChips,
+    describe: () => describeLegs(getLegs()),
+  };
 }

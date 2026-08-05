@@ -2957,6 +2957,31 @@
   /* The control, ON the game screen rather than only in the settings sheet.
      Nobody standing at the oche having just realised they cannot read the
      score is going to go and look for a gear icon. */
+  /* ---- Saved and recent formats ---- */
+  .format-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; }
+  .format-chips:empty { display: none; }
+  .format-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .format-chip:hover { background: var(--panel-raise-3); }
+  .format-chip-save { border-style: dashed; opacity: 0.85; }
+  .format-chip-x { opacity: 0.5; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .format-chip-x:hover { opacity: 1; color: var(--danger); }
+
   .boardview-btn {
     background: var(--panel-raise-2);
     color: var(--on-panel);
@@ -3193,6 +3218,9 @@
           </select>
         </div>
 
+        <!-- Saved formats and the last three you played. Above the leg rows
+             because it is a shortcut PAST them. -->
+        <div id="format-chips" class="format-chips"></div>
         <div id="medley-legs" class="medley-legs"></div>
         <button type="button" id="add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
         <div class="setup-row">
@@ -3392,6 +3420,7 @@
             </select>
           </div>
 
+          <div id="online-format-chips" class="format-chips"></div>
           <div id="online-medley-legs" class="medley-legs"></div>
           <button type="button" id="online-add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
           <div class="setup-row">

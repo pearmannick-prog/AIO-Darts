@@ -13,7 +13,7 @@ import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartb
 import {
   renderCricketBoard as renderCricketBoard_, wireCricketBoard,
 } from "./cricketboard.js";
-import { createMedleyBuilder } from "./medleybuilder.js";
+import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
   startingPlayerForLeg, matchScoreText, legProgressText, gameLabel, normalizeLeg,
@@ -204,6 +204,10 @@ el.startGameBtn.addEventListener("click", () => {
     .map((input, i) => input.value.trim() || `Player ${i + 1}`);
 
   const legs = readMedleyLegs();
+  // Recorded on START rather than on finish: an abandoned game is still
+  // evidence of what you meant to play, and the point of the list is to save
+  // you setting it up again.
+  recordFormatUsed(legs);
   state.match = createMatch(legs, names.length);
   state.playerNames = names;
 
@@ -492,6 +496,7 @@ const medleyBuilder = createMedleyBuilder({
   addBtn: el.addLegBtn,
   preset: el.medleyPreset,
   bull: document.getElementById("bull-mode"),
+  chips: document.getElementById("format-chips"),
 });
 
 function readMedleyLegs() {

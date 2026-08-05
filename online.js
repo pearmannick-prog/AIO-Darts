@@ -35,7 +35,7 @@ import {
   startingPlayerForLeg, legProgressText, normalizeLeg, matchScoreText,
 } from "./medley.js";
 import { renderCricketBoard, wireCricketBoard } from "./cricketboard.js";
-import { createMedleyBuilder } from "./medleybuilder.js";
+import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
 
@@ -432,6 +432,7 @@ const onlineMedleyBuilder = createMedleyBuilder({
   addBtn: el.addLegBtn,
   preset: el.formatSelect,
   bull: document.getElementById("online-bull-mode"),
+  chips: document.getElementById("online-format-chips"),
 });
 
 function selectedOnlineLegs() {
@@ -1287,6 +1288,10 @@ function wirePeerLink() {
       if (peerLink.role !== "host" || online.active) return;
       setOpponentName(msg.name);
       const legs = selectedOnlineLegs();
+      // Only the HOST records this. The guest adopts whatever format it is
+      // sent, so remembering it would fill their recents with other people's
+      // choices rather than their own.
+      recordFormatUsed(legs);
       // The host's own name goes back with the config, so both sides end up
       // knowing each other without a message of their own.
       peerLink.sendGameMessage({ type: "match_config", legs, name: myDisplayName() });
