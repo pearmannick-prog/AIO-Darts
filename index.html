@@ -2705,13 +2705,24 @@
   [data-boardview="room"] .player-tab-name { font-size: 13px; }
   [data-boardview="across"] .player-tab-name { font-size: 15px; }
 
-  [data-boardview="room"] .online-score-value { font-size: 76px; }
-  [data-boardview="across"] .online-score-value { font-size: 108px; }
-  [data-boardview="room"] .online-score-label { font-size: 15px; }
-  [data-boardview="across"] .online-score-label { font-size: 17px; }
+  /* BOARD VIEW MUST NOT REACH INSIDE THE IMMERSIVE VIDEO STAGE.
 
-  [data-boardview="room"] .dart-slot { width: 76px; height: 56px; font-size: 21px; }
-  [data-boardview="across"] .dart-slot { width: 92px; height: 66px; font-size: 25px; }
+     When a camera is on, the online panel switches to .immersive and lays its
+     scoreboard out at ABSOLUTE offsets computed against fixed type sizes - a
+     40px score, a dart strip pinned 14px from the top. Scaling the type
+     without moving the offsets does not enlarge that layout, it breaks it: the
+     scores drift out of their band and print over the video.
+
+     These rules and the immersive ones have identical specificity, so source
+     order alone decided it, and these come later. :not(.immersive) is what
+     makes the exclusion explicit rather than accidental. */
+  [data-boardview="room"] .panel:not(.immersive) .online-score-value { font-size: 76px; }
+  [data-boardview="across"] .panel:not(.immersive) .online-score-value { font-size: 108px; }
+  [data-boardview="room"] .panel:not(.immersive) .online-score-label { font-size: 15px; }
+  [data-boardview="across"] .panel:not(.immersive) .online-score-label { font-size: 17px; }
+
+  [data-boardview="room"] .panel:not(.immersive) .dart-slot { width: 76px; height: 56px; font-size: 21px; }
+  [data-boardview="across"] .panel:not(.immersive) .dart-slot { width: 92px; height: 66px; font-size: 25px; }
 
   /* The score takes the room, and the board gives it up: at two metres nobody
      is tapping a segment, they are throwing at the real one. */
@@ -2722,8 +2733,8 @@
   [data-boardview="room"] #throw-log { max-height: 300px; font-size: 14px; }
   [data-boardview="across"] #throw-log { max-height: 168px; font-size: 15px; }
 
-  [data-boardview="room"] .match-bar { font-size: 15px; }
-  [data-boardview="across"] .match-bar { font-size: 18px; }
+  [data-boardview="room"] .panel:not(.immersive) .match-bar { font-size: 15px; }
+  [data-boardview="across"] .panel:not(.immersive) .match-bar { font-size: 18px; }
 
   @media (max-width: 640px) {
     /* A phone propped under the board is the commonest "across the room"
@@ -2732,9 +2743,216 @@
     [data-boardview="room"] #big-score { font-size: 104px; }
     [data-boardview="across"] #big-score { font-size: 128px; }
     [data-boardview="across"] .dartboard-wrap { max-width: 100%; }
-    [data-boardview="room"] .online-score-value { font-size: 62px; }
-    [data-boardview="across"] .online-score-value { font-size: 78px; }
+    [data-boardview="room"] .panel:not(.immersive) .online-score-value { font-size: 62px; }
+    [data-boardview="across"] .panel:not(.immersive) .online-score-value { font-size: 78px; }
   }
+
+  /* =====================================================================
+     OCHE VIEW - the arcade scoreboard.
+
+     Board View's last step, where the app stops being a page and becomes the
+     screen on the machine in the pub. See ocheview.js for why this restyles
+     the existing game panel instead of rendering a second scoreboard.
+
+     Everything here is sized in vh/vw rather than px. The whole point is to
+     fill whatever it is on - a 10" tablet under the board, a 40" TV, a phone
+     propped on a shelf - and a px score tuned for one of those is wrong on the
+     other two.
+     ===================================================================== */
+  .oche-mode {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    margin: 0;
+    border-radius: 0;
+    padding: 2.5vh 3vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-bg);
+  }
+  /* Fullscreen was granted: the element is already the whole screen, so the
+     fixed positioning above is redundant but harmless, and the padding still
+     applies. Kept as one rule so a refused request looks the same. */
+  .oche-mode:fullscreen { padding: 3vh 4vw; }
+
+  /* Browser furniture and everything that is not the score. */
+  .oche-mode .actions-row,
+  .oche-mode .entry-and-log,
+  .oche-mode .dartboard-wrap,
+  .oche-mode #online-video-strip,
+  .oche-mode #online-av-row,
+  .oche-mode .setup-notice,
+  .oche-mode .online-status-label { display: none; }
+
+  /* The immersive video stage positions the score absolutely inside a camera
+     band. In here there is no camera band, so those have to come back to the
+     normal flow or they stack on top of each other at the top of the screen. */
+  .oche-mode .online-scoreboard,
+  .oche-mode #online-turn-darts,
+  .oche-mode #online-turn-label,
+  .oche-mode #online-big-score,
+  .oche-mode #online-match-bar,
+  .oche-mode #online-cricket-board {
+    position: static;
+    top: auto;
+    left: auto;
+    transform: none;
+    max-height: none;
+  }
+  .oche-mode.immersive { padding-top: 2.5vh; }
+
+  .oche-mode .match-bar {
+    font-size: clamp(14px, 2vh, 22px);
+    margin-bottom: 1.5vh;
+    flex: none;
+  }
+
+  /* Player tabs become the top row of an arcade board: one column each, side
+     by side, the live one lit. */
+  .oche-mode #player-tabs,
+  .oche-mode .online-scoreboard {
+    display: flex;
+    gap: 2vw;
+    margin-bottom: 2vh;
+    flex: none;
+  }
+  .oche-mode .player-tab,
+  .oche-mode .online-score-box {
+    flex: 1;
+    align-items: center;
+    text-align: center;
+    padding: 1.2vh 1vw;
+    border-radius: 1.4vh;
+    min-width: 0;
+  }
+  .oche-mode .player-tab-name,
+  .oche-mode .online-score-label { font-size: clamp(12px, 2.2vh, 26px); }
+  .oche-mode .player-tab-score,
+  .oche-mode .online-score-value { font-size: clamp(28px, 7vh, 92px); }
+
+  /* The number. Sized off the viewport HEIGHT rather than width, because the
+     constraint on a wall-mounted tablet in portrait is vertical. */
+  /* Centred in whatever is left after the player row, rather than stacked
+     under it. Top-aligning leaves a third of a wall-mounted screen empty and
+     puts the number higher than eye level. */
+  .oche-mode .game-top {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    flex: 1;
+    min-height: 0;
+  }
+  .oche-mode #big-score,
+  .oche-mode #online-big-score {
+    font-size: clamp(90px, 34vh, 420px);
+    line-height: 0.95;
+    text-align: center;
+  }
+  .oche-mode #turn-label,
+  .oche-mode #online-turn-label {
+    font-size: clamp(16px, 3.2vh, 42px);
+    text-align: center;
+    margin-bottom: 2vh;
+    opacity: 1;
+  }
+  .oche-mode #turn-darts,
+  .oche-mode #online-turn-darts {
+    justify-content: center;
+    gap: 1.6vw;
+    margin-bottom: 0;
+  }
+  .oche-mode .dart-slot {
+    width: clamp(64px, 12vw, 190px);
+    height: clamp(48px, 9vh, 120px);
+    font-size: clamp(20px, 4.4vh, 56px);
+    border-radius: 1.2vh;
+  }
+
+  /* Cricket's mark pad IS the scoreboard, so it stays and grows rather than
+     being hidden with the other input surfaces. */
+  .oche-mode .cricket-board {
+    display: block;
+    font-size: clamp(13px, 2.2vh, 26px);
+    max-width: 92vw;
+    margin: 0 auto;
+  }
+
+  .oche-mode #winner-banner,
+  .oche-mode #online-winner-banner { font-size: clamp(18px, 3.4vh, 44px); }
+
+  /* Scoring from inside the mode. Hidden by default, one tap away, and an
+     overlay rather than a reflow so the score never moves. */
+  .oche-mode .entry-and-log,
+  .oche-mode .dartboard-wrap { display: none; }
+  /* One band across the bottom holding both input surfaces side by side - the
+     keypad on the left, the clickable board on the right. They are separate
+     siblings in the markup, so each is placed into the band rather than the
+     band being a container: moving the DOM would mean game.js and online.js
+     could no longer find their own elements. */
+  .oche-mode.oche-entry-open .entry-and-log {
+    display: block;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 54vh;
+    overflow-y: auto;
+    background: var(--panel-bg-alt);
+    border-top: 1px solid var(--panel-border);
+    padding: 2vh 3vw;
+    z-index: 2;
+  }
+  .oche-mode.oche-entry-open .dartboard-wrap {
+    display: block;
+    position: absolute;
+    top: auto;
+    /* Clear of the Score/Exit buttons in the same corner - at 2vh the board's
+       lower numbers sit underneath them. */
+    bottom: 7vh;
+    right: 4vw;
+    left: auto;
+    width: min(40vh, 36vw);
+    max-width: none;
+    margin: 0;
+    z-index: 3;
+  }
+  .oche-mode.oche-entry-open #throw-log { display: none; }
+  /* The score gives way rather than being covered. Scoring a dart you cannot
+     see the effect of is the one thing this panel must not do. */
+  .oche-mode.oche-entry-open #big-score,
+  .oche-mode.oche-entry-open #online-big-score { font-size: clamp(56px, 15vh, 170px); }
+  .oche-mode.oche-entry-open .dart-slot {
+    width: clamp(48px, 8vw, 110px);
+    height: clamp(36px, 6vh, 74px);
+    font-size: clamp(16px, 3vh, 34px);
+  }
+  .oche-mode.oche-entry-open .game-top { justify-content: flex-start; }
+
+  /* Bottom right, not top right. At the top they sit on the player cards,
+     which span the full width - and the corner nearest your hand is the
+     bottom one when the screen is a tablet on a stand. */
+  .oche-controls {
+    position: absolute;
+    bottom: 1.6vh;
+    right: 2vw;
+    display: flex;
+    gap: 8px;
+    z-index: 3;
+  }
+  .oche-btn {
+    background: var(--panel-raise-3);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 0.9vh 1.6vw;
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(12px, 1.8vh, 18px);
+    cursor: pointer;
+  }
+  .oche-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .oche-btn:hover { background: var(--panel-raise-4); }
 
   /* The control, ON the game screen rather than only in the settings sheet.
      Nobody standing at the oche having just realised they cannot read the
@@ -3024,6 +3242,7 @@
                    settings sheet because this is where you are standing when
                    you discover you need it. -->
               <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
+              <button type="button" class="boardview-btn js-oche" title="Fullscreen scoreboard for the oche">⛶ Oche view</button>
             </div>
           </div>
 
@@ -3290,6 +3509,7 @@
 
         <div id="online-av-row" class="av-row">
           <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
+          <button type="button" class="boardview-btn js-oche" title="Fullscreen scoreboard for the oche">⛶ Oche view</button>
           <button type="button" id="online-av-start-btn" class="av-btn">📹 Start camera &amp; mic</button>
           <button type="button" id="online-av-mic-btn" class="av-btn hidden">🎤 Mute</button>
           <button type="button" id="online-av-cam-btn" class="av-btn hidden">📹 Camera off</button>
@@ -3749,6 +3969,7 @@
   </div>
 
   <script type="module" src="./customize.js"></script>
+  <script type="module" src="./ocheview.js"></script>
   <script type="module" src="./game.js"></script>
   <script type="module" src="./online.js"></script>
   <script type="module" src="./accountui.js"></script>
