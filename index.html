@@ -869,7 +869,6 @@
   }
   #online-manual-sections { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 12px; }
 
-
   #online-throw-log {
     margin-top: 16px;
     max-height: 200px;
@@ -1599,6 +1598,69 @@
   #online-rematch-status { font-size: 13px; opacity: 0.8; }
   #online-rematch-choice { display: inline-flex; gap: 8px; align-items: center; }
 
+  /* Settings: a gear in the header, and a sheet over everything.
+     An overlay rather than a tab because switching tabs ends a match, and
+     wanting to check a camera mid-match is the normal case rather than the
+     exception. */
+  .settings-btn {
+    background: rgba(239, 230, 210, 0.08);
+    border: 1px solid rgba(239, 230, 210, 0.3);
+    color: var(--cream);
+    border-radius: 999px;
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .settings-btn:hover { background: rgba(239, 230, 210, 0.16); }
+
+  .settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(11, 32, 24, 0.72);
+    z-index: 60; /* above the immersive video stage */
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 16px;
+    overflow-y: auto;
+  }
+  .settings-sheet {
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 14px;
+    width: min(560px, 100%);
+    padding: 18px 20px 22px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+  }
+  .settings-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .settings-head h2 {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    font-size: 18px;
+    margin: 0;
+  }
+  .settings-close {
+    background: none;
+    border: none;
+    font-size: 26px;
+    line-height: 1;
+    color: var(--ink);
+    opacity: 0.6;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+  .settings-close:hover { opacity: 1; }
+  /* The two panels sit apart so they read as separate concerns rather than
+     one long form. */
+  #settings-body > details { margin-top: 14px; }
+
   .account-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   /* A secondary action that shouldn't compete with the submit button beside
      it: "Forgot password?" is the escape hatch, not the thing most people are
@@ -2122,8 +2184,88 @@
           <span class="account-chip-avatar" id="account-chip-avatar">&#9679;</span>
           <span id="account-chip-label">Sign in</span>
         </button>
+
+        <!-- Hardware settings. An OVERLAY rather than a fourth tab, because
+             switching tabs ends a match - and checking your camera mid-match
+             is exactly when you would reach for this. It also has to work for
+             guests, so it cannot live under My Darts, which does not render
+             without an accounts API. -->
+        <button type="button" id="settings-btn" class="settings-btn" title="Hardware settings" aria-label="Hardware settings">&#9881;</button>
       </div>
     </header>
+
+    <!-- Settings. Everything here is "does my hardware work" rather than "how
+         should this game be set up", which is why it is out of the setup
+         panels and reachable from anywhere including mid-match. -->
+    <div id="settings-overlay" class="settings-overlay hidden">
+      <div class="settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="settings-head">
+          <h2 id="settings-title">Settings</h2>
+          <button type="button" id="settings-close" class="settings-close" aria-label="Close settings">&times;</button>
+        </div>
+        <div id="settings-body">
+          <details class="device-check">
+                    <summary>🎥 Camera &amp; mic check</summary>
+                    <p class="device-check-note">
+                      Try your camera and mic here first, without starting a match or
+                      bothering an opponent. Whichever camera you pick is remembered and
+                      used when you turn the camera on in a game.
+                    </p>
+
+                    <div class="device-preview">
+                      <video id="device-preview-video" autoplay playsinline muted></video>
+                      <div id="device-preview-placeholder" class="video-tile-placeholder">Not started</div>
+                    </div>
+
+                    <div class="device-check-row">
+                      <button type="button" id="device-check-btn" class="av-btn">▶ Start check</button>
+                      <button type="button" id="device-check-stop-btn" class="av-btn hidden">Stop check</button>
+                    </div>
+
+                    <div id="device-camera-row" class="device-check-row hidden">
+                      <label for="device-camera-select">Camera</label>
+                      <select id="device-camera-select"></select>
+                    </div>
+
+                    <div id="device-mic-row" class="device-check-row hidden">
+                      <label for="device-mic-select">Mic</label>
+                      <select id="device-mic-select"></select>
+                    </div>
+
+                    <div id="device-level-row" class="device-check-row hidden">
+                      <label>Level</label>
+                      <!-- Speak and the bar moves: the only way to tell a working mic
+                           from a muted one without playing your own audio back, which
+                           would be a feedback loop. -->
+                      <div class="mic-meter"><div id="device-mic-level" class="mic-meter-fill"></div></div>
+                    </div>
+
+                    <p id="device-check-error" class="device-check-error hidden"></p>
+                  </details>
+
+          <details id="scorer-panel" class="scorer-panel">
+                    <summary>Automatic camera scorer (optional)</summary>
+                    <p class="format-note">
+                      An <strong>OpenDartboard</strong> setup on your network scores darts
+                      with cameras. Enter its address and this app will read its throws
+                      exactly as it reads a Bluetooth board — in local play and online.
+                    </p>
+                    <div class="setup-row">
+                      <label for="scorer-host">Address</label>
+                      <input type="text" id="scorer-host" placeholder="192.168.1.50" autocomplete="off">
+                      <button type="button" id="scorer-connect" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Connect</button>
+                      <button type="button" id="scorer-disconnect" class="btn-secondary hidden" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Disconnect</button>
+                    </div>
+                    <p class="format-note" id="scorer-status">Not connected.</p>
+                    <p class="format-note">
+                      The port and path are added for you. Your browser will ask once for
+                      permission to reach devices on your local network — that prompt is
+                      this connection, and it has to be allowed for the scorer to work.
+                    </p>
+                  </details>
+        </div>
+      </div>
+    </div>
 
     <!-- Incoming challenges. Deliberately outside #online-mode: the lobby
          panel is inside that tab, so a challenge rendered there is invisible to
@@ -2166,32 +2308,11 @@
           </select>
         </div>
 
-
         <!-- An automatic camera scorer on the network, as an alternative to a
              Bluetooth board. Collapsed by default: most people have neither,
              and the ones who do only set it up once. It feeds the same input
              bus the Granboard does, so it works in local AND online play with
              nothing else to configure. -->
-        <details id="scorer-panel" class="scorer-panel">
-          <summary>Automatic camera scorer (optional)</summary>
-          <p class="format-note">
-            An <strong>OpenDartboard</strong> setup on your network scores darts
-            with cameras. Enter its address and this app will read its throws
-            exactly as it reads a Bluetooth board — in local play and online.
-          </p>
-          <div class="setup-row">
-            <label for="scorer-host">Address</label>
-            <input type="text" id="scorer-host" placeholder="192.168.1.50" autocomplete="off">
-            <button type="button" id="scorer-connect" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Connect</button>
-            <button type="button" id="scorer-disconnect" class="btn-secondary hidden" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Disconnect</button>
-          </div>
-          <p class="format-note" id="scorer-status">Not connected.</p>
-          <p class="format-note">
-            The port and path are added for you. Your browser will ask once for
-            permission to reach devices on your local network — that prompt is
-            this connection, and it has to be allowed for the scorer to work.
-          </p>
-        </details>
 
         <div id="player-inputs"></div>
         <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
@@ -2391,44 +2512,6 @@
              camera should have to scroll past it. Sits above Create/Join
              because "check my gear" is a thing you do BEFORE you make someone
              wait on a challenge code. -->
-        <details class="device-check">
-          <summary>🎥 Camera &amp; mic check</summary>
-          <p class="device-check-note">
-            Try your camera and mic here first, without starting a match or
-            bothering an opponent. Whichever camera you pick is remembered and
-            used when you turn the camera on in a game.
-          </p>
-
-          <div class="device-preview">
-            <video id="device-preview-video" autoplay playsinline muted></video>
-            <div id="device-preview-placeholder" class="video-tile-placeholder">Not started</div>
-          </div>
-
-          <div class="device-check-row">
-            <button type="button" id="device-check-btn" class="av-btn">▶ Start check</button>
-            <button type="button" id="device-check-stop-btn" class="av-btn hidden">Stop check</button>
-          </div>
-
-          <div id="device-camera-row" class="device-check-row hidden">
-            <label for="device-camera-select">Camera</label>
-            <select id="device-camera-select"></select>
-          </div>
-
-          <div id="device-mic-row" class="device-check-row hidden">
-            <label for="device-mic-select">Mic</label>
-            <select id="device-mic-select"></select>
-          </div>
-
-          <div id="device-level-row" class="device-check-row hidden">
-            <label>Level</label>
-            <!-- Speak and the bar moves: the only way to tell a working mic
-                 from a muted one without playing your own audio back, which
-                 would be a feedback loop. -->
-            <div class="mic-meter"><div id="device-mic-level" class="mic-meter-fill"></div></div>
-          </div>
-
-          <p id="device-check-error" class="device-check-error hidden"></p>
-        </details>
 
         <div class="setup-actions">
           <button id="create-challenge-btn" class="btn-primary">Create Challenge</button>

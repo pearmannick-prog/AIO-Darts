@@ -155,6 +155,24 @@ it while its match is live. There used to be two connections, one per
 controller, and a board attached from the wrong button delivered its darts to a
 game that wasn't running.
 
+**Settings is an OVERLAY, not a fourth tab** (`#settings-overlay`, opened by the
+header gear, logic in `online.js`). Leaving a tab ends a match, and the two
+things in there — the camera/mic check and the scorer address — are exactly what
+someone reaches for mid-match; a tab would have needed an exemption from a rule
+better kept absolute. It also has to work for guests, so it cannot live under
+the account tab, which does not render without an accounts API. `closeSettings()`
+calls `stopDeviceCheck()`: the check holds a live camera, and closing a sheet
+over it without releasing it leaves the webcam light on with nothing on screen
+explaining why.
+
+`scorerlink.js` is the transport for a camera scorer: a WebSocket, the
+`dartnotation.js` parser, and two callbacks, with **no DOM** — which is what
+lets it be tested against a real stub server rather than only against hardware
+nobody has. It feeds `boardlink.js`'s `deliverExternalSegment`, so a camera dart
+routes exactly like a Bluetooth one. WebSocket and no REST fallback: a socket to
+a local address is not subject to CORS, where `fetch` needs both a Local Network
+Access grant AND the scorer sending `Access-Control-Allow-Origin`.
+
 `dartnotation.js` reads external automatic scorers (Autodarts, OpenDartboard)
 into the same segment objects, with **one parser but one vocabulary per source**.
 That split is not abstraction for its own sake: the numeric forms are universal,
