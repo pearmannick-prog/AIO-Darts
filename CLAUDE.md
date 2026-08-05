@@ -424,9 +424,12 @@ Three, and it matters which is which:
   it must not carry accounts until one is attached.
 - **`aio-darts-dev.onrender.com`** — the test build, deploys from `accounts-stats`,
   gated by `SITE_PASSWORD`. Render deploys one branch per service, which is what
-  keeps the two apart. Free tier: the filesystem resets on every deploy AND on
-  every spin-down after ~15 minutes idle, so accounts there vanish regularly and
-  that is expected, not a bug.
+  keeps the two apart. Free tier: the filesystem still resets on every deploy AND
+  on every spin-down after ~15 minutes idle — but accounts NO LONGER vanish with
+  it, because Litestream restores the database from R2 on boot. Verified: a
+  redeploy wiped the disk and the session survived. That holds only while the
+  `R2_*` variables are set; without them the old behaviour is back and the reset
+  is silent.
 - **GitHub Pages** — was serving `main` as a static-only copy. Disabled; noted here
   because it is easy to re-enable by accident and it publishes the front-end with
   no server behind it.

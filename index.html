@@ -1602,17 +1602,28 @@
      An overlay rather than a tab because switching tabs ends a match, and
      wanting to check a camera mid-match is the normal case rather than the
      exception. */
+  /* Centred with flex rather than line-height. A glyph's own metrics decide
+     where it sits inside a line box, and the gear's are not centred - so
+     line-height alone left it sitting high and slightly left in the circle. */
   .settings-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: rgba(239, 230, 210, 0.08);
     border: 1px solid rgba(239, 230, 210, 0.3);
     color: var(--cream);
     border-radius: 999px;
-    width: 32px;
-    height: 32px;
-    font-size: 16px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    /* Sized to the button rather than to the text around it, and nudged down a
+       hair: the gear glyph has more headroom than descender, so optical centre
+       sits below geometric centre. */
+    font-size: 18px;
     line-height: 1;
     cursor: pointer;
   }
+  .settings-btn > span { display: block; transform: translateY(0.5px); }
   .settings-btn:hover { background: rgba(239, 230, 210, 0.16); }
 
   .settings-overlay {
@@ -2190,7 +2201,11 @@
              is exactly when you would reach for this. It also has to work for
              guests, so it cannot live under My Darts, which does not render
              without an accounts API. -->
-        <button type="button" id="settings-btn" class="settings-btn" title="Hardware settings" aria-label="Hardware settings">&#9881;</button>
+        <!-- The glyph is wrapped so it can be nudged independently of the
+             button's own box - see .settings-btn > span. Text presentation
+             (&#9881;) rather than emoji (&#9881;&#65039;), which would render
+             as a colour image and look nothing like the rest of the header. -->
+        <button type="button" id="settings-btn" class="settings-btn" title="Hardware settings" aria-label="Hardware settings"><span>&#9881;</span></button>
       </div>
     </header>
 

@@ -542,10 +542,12 @@ A single SQLite file in `DATA_DIR` (`./data` locally, `/app/data` in the
 container). SQLite is just a file, so the app stays one container with nothing
 extra to run, and backing it up is copying it.
 
-> **This directory must be persistent.** On a host with an ephemeral filesystem -
-> Render's free tier being the obvious one - it is wiped on every deploy, which
-> silently deletes every account. The darts keep working; the accounts do not.
-> See the note in `render.yaml`, and the volume in `docker-compose.yml`.
+> **This directory must be persistent, OR replicated.** On a host with an
+> ephemeral filesystem - Render's free tier being the obvious one - it is wiped
+> on every deploy, which silently deletes every account. Two ways out: attach a
+> real disk (see `render.yaml` and the volume in `docker-compose.yml`), or set
+> the `R2_*` variables so Litestream replicates the file and restores it on boot.
+> The second is what the live deployments use, and it is free.
 >
 > If the database cannot be opened the server does not fall over: it logs the
 > problem, reports `"accounts": false` on `/healthz`, and carries on serving

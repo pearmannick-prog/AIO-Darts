@@ -105,12 +105,14 @@ services:
   #
   # WHAT FREE TIER MEANS HERE, precisely - it is not just "wiped on deploy":
   # a free service also spins down after about 15 minutes of inactivity and
-  # restarts on the next request, and the filesystem resets each time. So the
-  # accounts database can disappear several times a day, and the first request
-  # after a spin-down waits ~50s for a cold start. That is fine for "does this
-  # feature work" and useless for "does my history survive". Register, play, and
-  # check the statistics in one sitting; do not read anything into data that has
-  # gone the next morning.
+  # restarts on the next request, and the filesystem resets each time. The first
+  # request after a spin-down still waits ~50s for a cold start.
+  #
+  # The data no longer goes with it. Litestream replicates the database to R2
+  # and restores it on boot, so an account survives a deploy and a spin-down -
+  # tested by wiping the disk and finding the session still valid. This depends
+  # entirely on the R2_* variables being set; unset them and every reset is
+  # silent again.
   #
   # To promote this to a real staging environment later: change plan to a paid
   # instance type and attach a disk at /app/data, exactly as described above.
