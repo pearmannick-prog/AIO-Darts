@@ -166,6 +166,68 @@ calls `stopDeviceCheck()`: the check holds a live camera, and closing a sheet
 over it without releasing it leaves the webcam light on with nothing on screen
 explaining why.
 
+## Personalization
+
+Optional and additive, like accounts — but unlike accounts it is **device-first
+and guest-first**. Preferences live in `localStorage` (`prefs.js`, one versioned
+JSON blob under `aio-darts-prefs`) and work signed out, on the Android build,
+and with `ACCOUNTS=off`. Syncing them to an account is a convenience that can be
+removed without breaking anything. Values are validated on the way OUT, so a
+corrupt or future-versioned blob degrades to "the app looks normal" rather than
+to a blank screen; unknown keys survive a write so an older tab cannot delete a
+newer build's setting.
+
+**The DOM stamping is an inline `<head>` script in `index.html`, and must stay
+one.** A module is deferred: the page would paint the default theme and flip to
+yours on every load. `prefs.js` calls back into that script (`__aioApplyPrefs`)
+rather than reimplementing it, because two copies of "which attribute does this
+set" drift, and the copy that drifts is the one that only runs before first
+paint. Absent keys stamp NOTHING and fall through to the CSS defaults, which is
+what keeps that script from needing to know the schema at all.
+
+**Themes are CSS, not JavaScript** — `[data-theme=…]` blocks. Scoped to any
+element rather than `:root`, which is what lets a theme picker card render a
+genuinely live preview by setting the attribute on itself. `theme.js` holds only
+the catalogue and the accent contrast maths. Note the app is **already half
+dark**: the chrome is felt with cream text and the PANELS are the light
+surfaces, so `[data-mode="dark"]` is mostly `--panel-*` overrides. `--fill-strong`
+exists because the brand dark used as a fill has to get *lighter* as the page
+gets darker.
+
+**Design tokens are two layers**: eight seeds, then roles expressed in terms of
+them. Rules may only refer to roles. `dartboard.js` and `charts.js` emit CSS
+classes rather than `fill`/`stroke` attributes, because an SVG presentation
+attribute cannot read a custom property — so a themed board repaints instead of
+needing a re-render, and that is the hook the colourblind-safe palette uses.
+Shadows (`rgba(0,0,0,…)`) are deliberately NOT tokenised: they are depth, and
+they read correctly over any palette.
+
+**Board View (`data-boardview`) is the most valuable setting in the app**, and
+it exists because darts is used at two distances — 40cm on the sofa, 2.5m at the
+oche — where every app this borrows from is used at one. It scales the game
+panels ONLY, and it must never reach inside `.immersive`: that layout positions
+its scoreboard at absolute offsets tuned to fixed type sizes, so scaling the
+type without moving the offsets breaks it rather than enlarging it. Hence
+`.panel:not(.immersive)` on every shared rule. `ocheview.js` is the same idea
+taken to fullscreen, and it RESTYLES THE EXISTING PANEL rather than rendering a
+second scoreboard — a duplicate scoreboard is one that will eventually disagree
+with the real one about who won. It holds a screen wake lock, which the browser
+drops on every tab switch without giving back.
+
+**`checkout.js` is pure and composes `scoring.js`.** Which dart may finish is
+the `out` rule; the 170-vs-180 ceiling is `highestCheckout`. It takes **bull
+mode** because the answer genuinely differs: split bull has a 25 single and a 50
+double, full bull has only the 50, so routes through 25 vanish — which is why
+darts sites publish two charts. `server/checkout.test.js` exists because a wrong
+route is *plausible*; its strongest assertion cross-checks one-dart checkouts
+against `isOneDartFinish` for every score under every out rule. `checkouthint.js`
+is the DOM half, split off to keep that purity.
+
+**`audio.js` treats a missing file as silence, never an error.** That is what
+lets it ship with an empty `sounds/` directory and come alive - partially, if you
+like - when recordings appear. The filename is the whole registration; see
+`sounds/README.md`.
+
 `scorerlink.js` is the transport for a camera scorer: a WebSocket, the
 `dartnotation.js` parser, and two callbacks, with **no DOM** — which is what
 lets it be tested against a real stub server rather than only against hardware
@@ -391,6 +453,12 @@ it as the database grows rather than treating it as a constant.
   existing number MEANS. The stats page, dashboard, achievements screen and
   leaderboard picker all iterate the registry, so they need no edit at all.
 - Solo (one-player) play is supported in every game mode and must keep working.
+- **Adding a preference** is: an entry in `prefs.js`'s `SCHEMA` (with its
+  default and what counts as a legal value), a group in `PREF_GROUPS` so reset
+  covers it, a control in `customize.js`, and - only if it needs to be visible
+  before first paint - a line in the inline `<head>` script. Nothing else: the
+  panel is built from the sections it lists, and an absent key falls through to
+  the CSS default on its own.
 - Edge cases the rules deliberately encode: leaving exactly 1 busts under double/
   master out but is legal under SISO; under double-in, pre-opening darts count as
   darts but score nothing; cricket closing-out while behind on points does not win;
