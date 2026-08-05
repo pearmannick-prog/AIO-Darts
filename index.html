@@ -3575,6 +3575,12 @@
           <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
           <button type="button" class="boardview-btn js-oche" title="Fullscreen scoreboard for the oche">⛶ Oche view</button>
           <button type="button" id="online-av-start-btn" class="av-btn">📹 Start camera &amp; mic</button>
+          <!-- Silencing and cutting the OPPONENT's feeds, entirely on this
+               machine. They are never told - see setRemoteEnabled in webrtc.js.
+               Always present rather than tucked behind a menu: this is the
+               control someone reaches for in a hurry. -->
+          <button type="button" id="online-opp-mute-btn" class="av-btn hidden">🔉 Mute opponent</button>
+          <button type="button" id="online-opp-hide-btn" class="av-btn hidden">👁 Block camera</button>
           <button type="button" id="online-av-mic-btn" class="av-btn hidden">🎤 Mute</button>
           <button type="button" id="online-av-cam-btn" class="av-btn hidden">📹 Camera off</button>
           <!-- Only revealed when more than one camera actually exists, which

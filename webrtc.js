@@ -515,6 +515,32 @@ export class PeerLink {
     this.#announceMediaState();
   }
 
+  // The mirror image of setMediaEnabled: what the PEER sends US.
+  //
+  // Disabling a receiver's track stops it being decoded and played on this
+  // machine. It is not a CSS trick - a hidden <video> still decodes a live
+  // picture, and a muted one still receives the audio - and it is not a
+  // renegotiation either, so it takes effect instantly and cannot fail.
+  //
+  // IT SENDS NOTHING. The peer is not told, cannot tell, and carries on
+  // transmitting into a track we no longer render. That is deliberate, and it
+  // is the same reasoning as the blocks table in 003_blocks.sql: announcing
+  // that you have cut someone's camera produces an argument at best. This
+  // control exists for the moment a stranger points a camera at something you
+  // did not agree to look at, and in that moment the only thing that matters is
+  // that it stops immediately and without negotiation.
+  //
+  // Deliberately NOT followed by #announceMediaState: that reports what we are
+  // sending, and this changes nothing about that.
+  setRemoteEnabled({ audio, video }) {
+    for (const receiver of this.#pc?.getReceivers?.() || []) {
+      const track = receiver.track;
+      if (!track) continue;
+      if (track.kind === "audio" && audio !== undefined) track.enabled = audio;
+      if (track.kind === "video" && video !== undefined) track.enabled = video;
+    }
+  }
+
   // Tells the peer what we're sending, so their tile can say "camera off"
   // instead of showing a black rectangle. Goes over the DataChannel rather
   // than the signaling socket because it's a gameplay-time concern and the

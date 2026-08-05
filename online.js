@@ -137,6 +137,8 @@ const el = {
   remoteTile2: document.getElementById("online-remote-tile-2"),
   localVideo2: document.getElementById("online-local-video-2"),
   remoteVideo2: document.getElementById("online-remote-video-2"),
+  oppMuteBtn: document.getElementById("online-opp-mute-btn"),
+  oppHideBtn: document.getElementById("online-opp-hide-btn"),
   avViewBtn: document.getElementById("online-av-view-btn"),
   avStopBtn: document.getElementById("online-av-stop-btn"),
 
@@ -1744,6 +1746,13 @@ const av = {
   remoteVideo: false,
   remoteVideo2: false, // ...and their second camera, if they added one
   remoteBlocked: false, // the browser refused to autoplay it (see playRemote)
+  // MY decision about THEIR media, applied entirely on this machine. Named
+  // opp* rather than anything with "blocked" in it because av.remoteBlocked
+  // above already means "autoplay was refused", and those two states have
+  // nothing to do with each other - one is the browser's doing and one is
+  // mine. Not persisted: a new opponent starts from scratch.
+  oppMuted: false,  // I have silenced their microphone
+  oppHidden: false, // I have cut their cameras
   second: false, // this player added a second camera (the board view)
   cameras: [], // videoinput devices, only trustworthy after permission
   facingMode: null, // what the active camera says it is: "user"/"environment"/null
@@ -1777,6 +1786,22 @@ el.avViewBtn.addEventListener("click", () => {
   renderAv();
 });
 
+// Silencing and cutting the opponent's feeds. Both are instant, both are local,
+// and neither tells them - see setRemoteEnabled in webrtc.js for why that
+// silence is the point rather than an omission.
+el.oppMuteBtn?.addEventListener("click", () => {
+  av.oppMuted = !av.oppMuted;
+  renderAv();
+});
+
+el.oppHideBtn?.addEventListener("click", () => {
+  av.oppHidden = !av.oppHidden;
+  // If their camera was on the stage, blocking it must not leave the stage
+  // showing a tile that is no longer allowed on screen.
+  if (av.oppHidden && av.stage === "opponent") av.stage = "self";
+  renderAv();
+});
+
 // A feed is live when there is a picture in it right now - not merely when the
 // camera exists. Everything downstream keys off this: whether immersive earns
 // its keep, which tiles are on screen, and what the big view can cycle to.
@@ -1784,8 +1809,10 @@ function isFeedLive(feed) {
   switch (feed) {
     // The opponent's tiles are blocked together: remoteBlocked means this
     // browser refused to start playback, which stops both their pictures.
-    case "opponent": return av.remoteVideo && !av.remoteBlocked;
-    case "opponent2": return av.remoteVideo2 && !av.remoteBlocked;
+    // oppHidden is my own decision and outranks everything - if I have cut
+    // their cameras, no path through this function may put one back on screen.
+    case "opponent": return av.remoteVideo && !av.remoteBlocked && !av.oppHidden;
+    case "opponent2": return av.remoteVideo2 && !av.remoteBlocked && !av.oppHidden;
     // av.cam covers both of ours - "camera off" turns off every camera this
     // player is sending, or it isn't off (see setMediaEnabled in webrtc.js).
     case "self": return av.on && av.cam;
@@ -2005,6 +2032,10 @@ function resetAv() {
   av.remoteAudio = false;
   av.remoteVideo = false;
   av.remoteVideo2 = false;
+  // A new opponent is a new decision. Carrying a block over to whoever you
+  // played next would silence a stranger who had done nothing.
+  av.oppMuted = false;
+  av.oppHidden = false;
   av.remoteBlocked = false;
   av.cameras = [];
   av.facingMode = null;
@@ -2148,8 +2179,26 @@ function renderAv() {
   // Order matters: "they aren't sending video" outranks "your browser blocked
   // playback", because when both are true, tapping would play nothing and the
   // prompt would be a lie.
-  const blocked = av.remoteVideo && av.remoteBlocked;
-  const remoteVisible = av.remoteVideo && !av.remoteBlocked;
+  // Enforced on the tracks themselves, not just in the layout. A hidden
+  // <video> still decodes a live picture and a muted one still receives the
+  // audio; disabling the receiver's track is what actually stops it. Applied
+  // on every render so it survives a reconnect, a camera being switched on, or
+  // anything else that hands us new tracks.
+  peerLink?.setRemoteEnabled({ audio: !av.oppMuted, video: !av.oppHidden });
+  // Belt and braces: the element carries their audio, and muting it costs
+  // nothing if the track disable already did the job.
+  el.remoteVideo.muted = av.oppMuted;
+  el.oppMuteBtn.textContent = av.oppMuted ? "🔇 Opponent muted" : "🔉 Mute opponent";
+  el.oppMuteBtn.classList.toggle("off", av.oppMuted);
+  el.oppHideBtn.textContent = av.oppHidden ? "🚫 Camera blocked" : "👁 Block camera";
+  el.oppHideBtn.classList.toggle("off", av.oppHidden);
+  // Only worth offering once there is something of theirs to silence.
+  const anyRemote = av.remoteAudio || av.remoteVideo || av.remoteVideo2;
+  el.oppMuteBtn.classList.toggle("hidden", !anyRemote && !av.oppMuted);
+  el.oppHideBtn.classList.toggle("hidden", !anyRemote && !av.oppHidden);
+
+  const blocked = av.remoteVideo && av.remoteBlocked && !av.oppHidden;
+  const remoteVisible = av.remoteVideo && !av.remoteBlocked && !av.oppHidden;
   // Switching into or out of immersive changes which score elements are on
   // screen, so the game render has to follow. Safe from recursion:
   // renderOnline never calls back into here.
@@ -2157,7 +2206,12 @@ function renderAv() {
 
   el.remotePlaceholder.classList.toggle("hidden", remoteVisible);
   el.remotePlaceholder.classList.toggle("tappable", blocked);
-  if (blocked) {
+  if (av.oppHidden) {
+    // Says whose doing it is. A tile that simply went dark would read as the
+    // opponent having turned their camera off, and the way back would not be
+    // obvious.
+    el.remotePlaceholder.textContent = "You blocked this camera";
+  } else if (blocked) {
     el.remotePlaceholder.textContent = "▶ Tap to play opponent's video";
   } else if (remoteActive) {
     // Sending something (their mic) but no picture - a choice, not an absence.
