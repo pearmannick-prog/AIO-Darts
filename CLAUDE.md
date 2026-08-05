@@ -54,7 +54,8 @@ fine, so the app takes sign-ups and then deletes them. Unset means "try", so
 every existing deployment is unaffected. Tests: `/healthz` reports
 `accounts:false`, `/api/*` 503s, the lobby doesn't start.
 
-Tests: `node --test server/dartnotation.test.js server/statsengine.test.js`.
+Tests: `node --test server/dartnotation.test.js server/statsengine.test.js
+server/checkout.test.js`.
 
 **Password reset is the only mail this app sends, and it works with no mail
 provider.** `server/email.js` posts to Resend when `EMAIL_API_KEY`, `EMAIL_FROM`

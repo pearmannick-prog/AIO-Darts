@@ -36,6 +36,7 @@ import {
 } from "./medley.js";
 import { renderCricketBoard, wireCricketBoard } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
+import { renderCheckoutHint } from "./checkouthint.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
 
@@ -116,6 +117,7 @@ const el = {
   remoteTile: document.getElementById("online-remote-tile"),
   turnLabel: document.getElementById("online-turn-label"),
   turnDarts: document.getElementById("online-turn-darts"),
+  checkoutHint: document.getElementById("online-checkout-hint"),
   winnerBanner: document.getElementById("online-winner-banner"),
 
 
@@ -2555,6 +2557,17 @@ function renderOnline() {
     // Bermuda and Count Up count up; x01 counts down.
     el.bigScore.textContent = (countup || bermuda) ? thrower.total : thrower.remaining;
   }
+
+  // Only ever for your OWN score. Telling you how your opponent gets out is
+  // not help, it is a scoreboard reading their mind, and it would be showing
+  // during their visit when you have nothing to throw at anyway.
+  renderCheckoutHint(el.checkoutHint, {
+    on: !cricket && !countup && !bermuda && !online.gameOver && myTurn,
+    remaining: online.me?.remaining,
+    dartsLeft: 3 - (online.me?.dartsThisTurn?.length || 0),
+    rules: online.legConfig?.rules,
+    bull: online.legConfig?.bull,
+  });
 
   renderOnlineMatchBar();
 

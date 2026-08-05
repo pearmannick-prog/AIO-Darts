@@ -57,6 +57,8 @@ const PRECACHE = [
   "./theme.js",
   "./customize.js",
   "./ocheview.js",
+  "./checkout.js",
+  "./checkouthint.js",
   // Accounts, match recording and statistics
   "./accountstore.js",
   "./lobbyclient.js",

@@ -193,6 +193,34 @@ function wireBoardViewButtons() {
   return refresh;
 }
 
+function checkoutSection() {
+  const wrap = field("Checkout help");
+  wrap.appendChild(segmented(
+    [
+      { value: "off", label: "Off" },
+      { value: "route", label: "One route" },
+      { value: "all", label: "All routes" },
+    ],
+    getPref("checkoutHelp"),
+    (value) => setPref("checkoutHelp", value)
+  ));
+
+  const row = el("label", "cz-check");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = getPref("checkoutUnder100");
+  box.addEventListener("change", () => setPref("checkoutUnder100", box.checked));
+  row.appendChild(box);
+  row.appendChild(el("span", null, "Only under 100"));
+  wrap.appendChild(row);
+
+  // Said plainly because the split is real and people feel strongly: plenty of
+  // players consider an on-screen route cheating, and making it a setting is
+  // what lets both of them use the same app.
+  wrap.appendChild(el("div", "cz-hint", "Off by default - some players would rather work it out."));
+  return wrap;
+}
+
 function landingSection() {
   const wrap = field("Opens on");
   wrap.appendChild(segmented(
@@ -356,6 +384,7 @@ function render() {
   mount.appendChild(themeSection());
   mount.appendChild(modeSection());
   mount.appendChild(boardViewSection());
+  mount.appendChild(checkoutSection());
   mount.appendChild(accentSection());
   mount.appendChild(landingSection());
   mount.appendChild(resetRow());

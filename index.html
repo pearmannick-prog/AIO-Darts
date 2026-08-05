@@ -2378,6 +2378,8 @@
   .cz-seg:last-child { border-right: none; }
   .cz-seg.active { background: var(--accent); color: var(--on-accent); }
 
+  .cz-check { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 13px; cursor: pointer; }
+  .cz-check input { flex: none; }
   .cz-swatches { display: flex; flex-wrap: wrap; gap: 9px; }
   .cz-swatch {
     width: 30px;
@@ -2957,6 +2959,36 @@
   /* The control, ON the game screen rather than only in the settings sheet.
      Nobody standing at the oche having just realised they cannot read the
      score is going to go and look for a gear icon. */
+  /* ---- Checkout suggestion ----
+     Quiet on purpose. It is help, not the score: a player who wants it should
+     find it under the number without having to look past it, and one who
+     doesn't should barely register it. Monospaced digits so the route does not
+     shuffle sideways as the darts change it. */
+  .checkout-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: -6px 0 16px;
+    font-family: 'Oswald', sans-serif;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+  .checkout-hint.hidden { display: none; }
+  .checkout-route {
+    font-size: 15px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: var(--accent-wash);
+    color: var(--on-panel);
+    white-space: nowrap;
+  }
+  /* The first is the one to throw; any others are alternatives. */
+  .checkout-route:not(:first-child) { opacity: 0.62; font-size: 13.5px; }
+  [data-boardview="room"] .checkout-route { font-size: 18px; }
+  [data-boardview="across"] .checkout-route { font-size: 22px; }
+  .oche-mode .checkout-hint { justify-content: center; margin: 1.5vh 0 0; }
+  .oche-mode .checkout-route { font-size: clamp(14px, 2.6vh, 34px); }
+
   /* ---- Saved and recent formats ---- */
   .format-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; }
   .format-chips:empty { display: none; }
@@ -3263,6 +3295,7 @@
             <div id="big-score">501</div>
             <div id="turn-label">Player 1's turn</div>
             <div id="turn-darts"></div>
+            <div id="checkout-hint" class="checkout-hint hidden"></div>
             <div class="actions-row">
               <button id="undo-btn" class="btn-secondary btn-soft">Undo last dart</button>
               <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
@@ -3573,6 +3606,7 @@
 
         <div id="online-turn-label" style="text-align:center; margin:14px 0; font-weight:600;"></div>
         <div id="online-turn-darts" class="online-turn-darts"></div>
+        <div id="online-checkout-hint" class="checkout-hint hidden"></div>
 
         <div class="dartboard-wrap">
           <div class="dartboard"></div>

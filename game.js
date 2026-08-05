@@ -14,6 +14,7 @@ import {
   renderCricketBoard as renderCricketBoard_, wireCricketBoard,
 } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
+import { renderCheckoutHint } from "./checkouthint.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
   startingPlayerForLeg, matchScoreText, legProgressText, gameLabel, normalizeLeg,
@@ -84,6 +85,7 @@ const el = {
   bigScore: document.getElementById("big-score"),
   turnLabel: document.getElementById("turn-label"),
   turnDarts: document.getElementById("turn-darts"),
+  checkoutHint: document.getElementById("checkout-hint"),
   undoBtn: document.getElementById("undo-btn"),
   newGameBtn: document.getElementById("new-game-btn"),
   manualSection: document.getElementById("manual-section"),
@@ -1050,6 +1052,15 @@ function render() {
 
   const current = state.players[state.currentPlayerIndex];
   el.bigScore.textContent = scoreOf(current);
+  renderCheckoutHint(el.checkoutHint, {
+    // x01 only: Cricket has no "remaining", Count Up counts upwards, and
+    // Bermuda's target is fixed by the round, so there is nothing to suggest.
+    on: state.gameType === "x01" && !state.gameOver,
+    remaining: current?.remaining,
+    dartsLeft: 3 - state.dartsThisTurn.length,
+    rules: state.legConfig?.rules,
+    bull: state.legConfig?.bull,
+  });
 
   if (state.gameOver) {
     // Count Up can end level, in which case there's no winner to name.
