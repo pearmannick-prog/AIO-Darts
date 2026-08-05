@@ -174,6 +174,14 @@ const GROUPS = {
 export function resetGroup(group) {
   const keys = group === "all" ? Object.keys(SCHEMA) : GROUPS[group];
   if (!keys) return false;
+  return resetKeys(keys);
+}
+
+// A reset button should undo exactly what the panel above it shows, and a panel
+// does not always map onto one group - the Customize panel offers appearance
+// plus board view, which lives with the game-screen settings.
+export function resetKeys(keys) {
+  if (!Array.isArray(keys)) return false;
   // The previous values are returned so the caller can offer an undo rather
   // than a confirm dialog. Asking "are you sure?" first punishes everyone to
   // guard against a mistake that undo fixes better.

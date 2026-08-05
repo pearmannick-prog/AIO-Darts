@@ -19,7 +19,7 @@
 // style now precisely so that nobody has to notice when a string starts being
 // user-controlled.
 
-import { getPref, setPref, resetGroup, restore, subscribe } from "./prefs.js";
+import { getPref, setPref, resetKeys, restore, subscribe, PREF_GROUPS } from "./prefs.js";
 import { THEMES, ACCENTS, checkAccent } from "./theme.js";
 
 const el = (tag, className, text) => {
@@ -138,6 +138,61 @@ function modeSection() {
   return wrap;
 }
 
+// The one setting in here that changes how the app is USED rather than how it
+// looks. See the long note beside [data-boardview] in index.html.
+const BOARD_VIEWS = [
+  { value: "desk", label: "Desk", hint: "Sitting down, phone or laptop in front of you." },
+  { value: "room", label: "Room", hint: "A few steps back - a tablet on the side." },
+  { value: "across", label: "Across the room", hint: "At the oche. The score fills the screen." },
+];
+
+function boardViewSection() {
+  const wrap = field("Board view");
+  wrap.appendChild(segmented(
+    BOARD_VIEWS.map(({ value, label }) => ({ value, label })),
+    getPref("boardView"),
+    (value) => setPref("boardView", value)
+  ));
+  const hint = el("div", "cz-hint");
+  const describe = () => {
+    hint.textContent = BOARD_VIEWS.find((v) => v.value === getPref("boardView"))?.hint || "";
+  };
+  describe();
+  wrap.addEventListener("click", describe);
+  // The only honest way to choose this one is to go and look from where you
+  // actually stand, so the panel says so rather than pretending a preview on a
+  // screen 40cm away can answer it.
+  wrap.appendChild(hint);
+  wrap.appendChild(el("div", "cz-hint", "Pick this one standing at the oche, not sitting here."));
+  return wrap;
+}
+
+// The in-game control. Lives on the game screen itself, cycles rather than
+// expanding, because it has to be one tap while holding three darts.
+function wireBoardViewButtons() {
+  const label = () => {
+    const current = getPref("boardView");
+    const entry = BOARD_VIEWS.find((v) => v.value === current) || BOARD_VIEWS[0];
+    return "⤡ " + entry.label;
+  };
+  const buttons = document.querySelectorAll(".js-boardview");
+  const refresh = () => {
+    for (const button of buttons) button.textContent = label();
+  };
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      const index = BOARD_VIEWS.findIndex((v) => v.value === getPref("boardView"));
+      // Nothing is updated here on purpose: setPref notifies, and the
+      // subscriber below is the single place that reconciles the button with
+      // the panel's segmented control. Two of them cycling out of step is the
+      // obvious bug in a setting with two front doors.
+      setPref("boardView", BOARD_VIEWS[(index + 1) % BOARD_VIEWS.length].value);
+    });
+  }
+  refresh();
+  return refresh;
+}
+
 function accentSection() {
   const wrap = field("Accent");
   const row = el("div", "cz-swatches");
@@ -237,15 +292,20 @@ function accentSection() {
 
 function resetRow() {
   const row = el("div", "cz-reset-row");
-  const button = el("button", "btn-quiet cz-reset", "Reset appearance");
+  const button = el("button", "btn-quiet cz-reset", "Reset these");
   button.type = "button";
   const undo = el("button", "cz-link", "Undo");
   undo.type = "button";
   undo.hidden = true;
 
+  // Exactly what this panel shows, no more: board view sits with the
+  // game-screen settings rather than the appearance ones, but it is on screen
+  // here, so a reset button here has to include it.
+  const shown = [...PREF_GROUPS.appearance, "boardView"];
+
   let timer = null;
   button.addEventListener("click", () => {
-    const previous = resetGroup("appearance");
+    const previous = resetKeys(shown);
     render();
     undo.hidden = false;
     clearTimeout(timer);
@@ -266,6 +326,7 @@ function resetRow() {
 // Mounting
 
 let mount = null;
+let refreshBoardViewButtons = () => {};
 
 function render() {
   if (!mount) return;
@@ -278,6 +339,7 @@ function render() {
 
   mount.appendChild(themeSection());
   mount.appendChild(modeSection());
+  mount.appendChild(boardViewSection());
   mount.appendChild(accentSection());
   mount.appendChild(resetRow());
 }
@@ -290,12 +352,23 @@ export function mountCustomize() {
   // and forget, and this is the one you come back to.
   body.insertBefore(mount, body.firstChild);
   render();
+  refreshBoardViewButtons = wireBoardViewButtons();
 }
 
 // Another tab on the same machine can change these; the app should not need a
 // reload to agree with itself.
 subscribe((key) => {
-  if (key === null) return;
+  // The in-game button and the panel's segmented control are two views of one
+  // setting; whichever is touched, the other has to agree.
+  if (key === "boardView") {
+    refreshBoardViewButtons();
+    render();
+    return;
+  }
+  if (key === null) {
+    refreshBoardViewButtons();
+    return;
+  }
   const card = mount?.querySelector('.theme-card[data-theme="baize"]');
   if (card && key === "mode") card.dataset.mode = getPref("mode");
 });

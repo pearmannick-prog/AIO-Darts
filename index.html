@@ -2669,6 +2669,89 @@
     scroll-behavior: auto !important;
   }
 
+  /* =====================================================================
+     BOARD VIEW - how far away you are standing.
+
+     The single most valuable setting in this app, and the one no generic
+     personalization checklist would produce. Every app this borrows from is
+     used at one distance; a darts app is used at two that could not be more
+     different. On the sofa you are 40cm from a phone reading statistics. At
+     the oche you are two and a half metres from the screen, standing, holding
+     three darts, glancing at it for about four seconds between throws.
+
+     The app has only ever served the sofa. This serves the oche.
+
+     Scoped to the GAME PANELS alone. The lobby, the stats screens and the
+     setup form are all read close up even by someone playing across the room,
+     and blowing them up would just mean more scrolling.
+
+     Nothing is ever REMOVED, only re-proportioned. It is tempting to drop the
+     keypad at the largest step - if you are throwing from the oche something
+     else is doing the scoring - but "something else" is a Bluetooth board or a
+     camera that may not be connected, and an unreachable keypad means a game
+     nobody can score. The throw log shrinks rather than being filtered,
+     because rows are unshifted newest-first and a height is honest about that
+     where a :nth-child rule would silently depend on it.
+     ===================================================================== */
+
+  [data-boardview="room"] #big-score { font-size: 132px; }
+  [data-boardview="across"] #big-score { font-size: 184px; }
+
+  [data-boardview="room"] #turn-label { font-size: 20px; }
+  [data-boardview="across"] #turn-label { font-size: 26px; }
+
+  [data-boardview="room"] .player-tab-score { font-size: 26px; }
+  [data-boardview="across"] .player-tab-score { font-size: 34px; }
+  [data-boardview="room"] .player-tab-name { font-size: 13px; }
+  [data-boardview="across"] .player-tab-name { font-size: 15px; }
+
+  [data-boardview="room"] .online-score-value { font-size: 76px; }
+  [data-boardview="across"] .online-score-value { font-size: 108px; }
+  [data-boardview="room"] .online-score-label { font-size: 15px; }
+  [data-boardview="across"] .online-score-label { font-size: 17px; }
+
+  [data-boardview="room"] .dart-slot { width: 76px; height: 56px; font-size: 21px; }
+  [data-boardview="across"] .dart-slot { width: 92px; height: 66px; font-size: 25px; }
+
+  /* The score takes the room, and the board gives it up: at two metres nobody
+     is tapping a segment, they are throwing at the real one. */
+  [data-boardview="room"] .game-top { grid-template-columns: 1.7fr 1fr; }
+  [data-boardview="across"] .game-top { grid-template-columns: 2.4fr 1fr; }
+  [data-boardview="across"] .dartboard-wrap { max-width: 210px; }
+
+  [data-boardview="room"] #throw-log { max-height: 300px; font-size: 14px; }
+  [data-boardview="across"] #throw-log { max-height: 168px; font-size: 15px; }
+
+  [data-boardview="room"] .match-bar { font-size: 15px; }
+  [data-boardview="across"] .match-bar { font-size: 18px; }
+
+  @media (max-width: 640px) {
+    /* A phone propped under the board is the commonest "across the room"
+       setup there is, and it is also the narrowest screen. The steps have to
+       come down or the score simply overflows its own panel. */
+    [data-boardview="room"] #big-score { font-size: 104px; }
+    [data-boardview="across"] #big-score { font-size: 128px; }
+    [data-boardview="across"] .dartboard-wrap { max-width: 100%; }
+    [data-boardview="room"] .online-score-value { font-size: 62px; }
+    [data-boardview="across"] .online-score-value { font-size: 78px; }
+  }
+
+  /* The control, ON the game screen rather than only in the settings sheet.
+     Nobody standing at the oche having just realised they cannot read the
+     score is going to go and look for a gear icon. */
+  .boardview-btn {
+    background: var(--panel-raise-2);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .boardview-btn:hover { background: var(--panel-raise-3); }
+
   /* ---- Colourblind-safe board. Red/green is the single worst pairing there
      is and it happens to be the dartboard's own scheme, so this is a real
      accessibility need for this app specifically rather than a checkbox
@@ -2937,6 +3020,10 @@
             <div class="actions-row">
               <button id="undo-btn" class="btn-secondary btn-soft">Undo last dart</button>
               <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
+              <!-- Cycles Desk / Room / Across the room. Here as well as in the
+                   settings sheet because this is where you are standing when
+                   you discover you need it. -->
+              <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
             </div>
           </div>
 
@@ -3202,6 +3289,7 @@
         </div>
 
         <div id="online-av-row" class="av-row">
+          <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
           <button type="button" id="online-av-start-btn" class="av-btn">📹 Start camera &amp; mic</button>
           <button type="button" id="online-av-mic-btn" class="av-btn hidden">🎤 Mute</button>
           <button type="button" id="online-av-cam-btn" class="av-btn hidden">📹 Camera off</button>
