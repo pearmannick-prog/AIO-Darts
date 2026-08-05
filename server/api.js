@@ -362,6 +362,31 @@ const routes = {
     });
   },
 
+  // Is this link still good? Read-only, and answered BEFORE showing a password
+  // form, so a used or expired link says so immediately instead of asking
+  // someone to choose a password and only then refusing it.
+  //
+  // A POST rather than a GET with the token in the query, deliberately. The
+  // whole reason the token rides the URL's hash fragment is to keep it out of
+  // access logs; putting it in a query string here would hand it straight to
+  // every proxy on the way and undo that.
+  //
+  // Telling a caller whether a token is valid gives away nothing: they already
+  // hold it, and could learn the same by submitting. Guessing one is not a
+  // threat worth modelling at 256 bits.
+  "POST /api/auth/reset/check": async (req, res) => {
+    const body = await readJsonBody(req);
+    const token = String(body.token ?? "").trim();
+    if (!token) return sendJson(res, 200, { valid: false });
+
+    const row = getDatabase()
+      .prepare("SELECT used_at, expires_at FROM password_resets WHERE token_hash = ?")
+      .get(hashToken(token));
+
+    const valid = Boolean(row) && !row.used_at && new Date(row.expires_at) > new Date();
+    sendJson(res, 200, { valid });
+  },
+
   // Redeems a link. The token arrives from an email, so everything about it is
   // treated as hostile: it is looked up by hash, expiry is checked in SQL the
   // way sessions are, and it works exactly once.

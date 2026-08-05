@@ -14,7 +14,7 @@
 import {
   subscribe, refresh, register, login, logout,
   updateProfile, changePassword, uploadAvatar, avatarUrl, ApiUnavailable,
-  requestPasswordReset, resetPassword,
+  requestPasswordReset, resetPassword, checkResetToken,
   fetchMatches, fetchStats, fetchDashboard, fetchAchievements,
   fetchBoardCatalogue, fetchLeaderboard, fetchFriends, searchPlayers,
   friendAction, createClub, joinClub, leaveClub,
@@ -1195,8 +1195,21 @@ function applyHash() {
     pendingResetToken = new URLSearchParams(query).get("token") || "";
     openAccountTab();
     if (pendingResetToken) {
+      // Checked with the server BEFORE offering a password form. A used or
+      // expired link previously rendered a form that could not work, and only
+      // said so after someone had chosen a password and submitted it.
       setMessage(el.resetMessage, "");
       showAuthForm("reset");
+      const token = pendingResetToken;
+      checkResetToken(token).then((valid) => {
+        // Ignore a late answer for a link the player has already moved on from.
+        if (!valid && pendingResetToken === token) {
+          pendingResetToken = "";
+          showAuthForm("forgot");
+          setMessage(el.forgotMessage,
+            "That reset link has already been used or has expired. Ask for a new one.");
+        }
+      });
     } else {
       showAuthForm("forgot");
       setMessage(el.forgotMessage, "That reset link is missing its token. Ask for a new one.");

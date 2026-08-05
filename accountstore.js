@@ -156,6 +156,24 @@ export async function requestPasswordReset(email) {
   return apiFetch("/api/auth/forgot", { method: "POST", body: { email } });
 }
 
+// Is a reset link still usable? Asked before showing a password form, so a dead
+// link is refused up front rather than after someone has chosen a password.
+// Read-only: this consumes nothing and changes no local state.
+export async function checkResetToken(token) {
+  try {
+    const { valid } = await apiFetch("/api/auth/reset/check", {
+      method: "POST",
+      body: { token },
+    });
+    return Boolean(valid);
+  } catch {
+    // Offline, or no accounts API. Treat as usable and let the submit decide -
+    // refusing here would strand someone whose link is fine on a flaky
+    // connection, which is worse than one wasted attempt.
+    return true;
+  }
+}
+
 // Redeems a link. The server signs the user straight back in, so this behaves
 // like login from here on - including flushing any guest matches, since the
 // person may have played some while locked out.
