@@ -1018,6 +1018,15 @@ function endTurn({ busted = false } = {}) {
   }
 }
 
+// Oche view's End turn. An event rather than a shared button, so ocheview.js
+// need not know which controller is running - see the matching listener in
+// online.js.
+document.addEventListener("aio-end-turn", () => {
+  if (!state.players.length || state.gameOver) return;
+  endTurnEarly();
+  render();
+});
+
 function endTurnEarly() {
   // Manually finalize the current turn (e.g. via the board's physical
   // button) without waiting for 3 registered darts, and without reverting

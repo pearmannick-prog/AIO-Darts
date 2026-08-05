@@ -120,6 +120,7 @@ const el = {
   turnDarts: document.getElementById("online-turn-darts"),
   checkoutHint: document.getElementById("online-checkout-hint"),
   ocheStat: document.getElementById("online-oche-stat"),
+  undoBtn: document.getElementById("online-undo-btn"),
   winnerBanner: document.getElementById("online-winner-banner"),
 
 
@@ -1360,6 +1361,15 @@ function wirePeerLink() {
         endTurn("opp");
         renderOnline();
       }
+    } else if (msg.type === "undo") {
+      // They took a dart back. Roll our copy of it back too, or the two
+      // scoreboards disagree from here on. An empty stack means the visit has
+      // already ended on this side, which is the same "within the visit" rule
+      // their own button enforces - so there is nothing to do rather than
+      // something to guess at.
+      if (!undoStacks.opp.length) return;
+      onlineRestore(undoStacks.opp.pop());
+      renderOnline();
     } else if (msg.type === "quick_total") {
       applyQuickTotalThrow("opp", msg.value);
     } else if (msg.type === "next_leg") {
@@ -1645,6 +1655,11 @@ function startOnlineLeg() {
   online.opp = buildOnlinePlayer("Opponent", leg);
   online.me.dartsThisTurn = [];
   online.opp.dartsThisTurn = [];
+  // Undo must never reach back into a finished leg - the same rule game.js
+  // applies locally, and here it would also be rewinding a leg the other side
+  // has already banked.
+  undoStacks.me = [];
+  undoStacks.opp = [];
 
   // Throw alternates each leg, and both sides compute it from the same
   // absolute index so they never disagree about whose turn it is.
@@ -1790,6 +1805,18 @@ el.avViewBtn.addEventListener("click", () => {
 // Silencing and cutting the opponent's feeds. Both are instant, both are local,
 // and neither tells them - see setRemoteEnabled in webrtc.js for why that
 // silence is the point rather than an omission.
+el.undoBtn?.addEventListener("click", () => undoOwnDart());
+
+// Ending a visit early - a bounce-out, a dart that missed the board entirely.
+// The board's physical button already does this; oche view needs a way to say
+// it too, and announces rather than calls so ocheview.js stays ignorant of both
+// controllers (the same reason "aio-mode-left" is an event).
+document.addEventListener("aio-end-turn", () => {
+  if (!online.active || online.gameOver) return;
+  if (online.activeSide !== "me") return;
+  onLocalEndTurn();
+});
+
 el.oppMuteBtn?.addEventListener("click", () => {
   av.oppMuted = !av.oppMuted;
   renderAv();
@@ -2273,6 +2300,12 @@ function applyQuickTotalThrow(side, totalValue) {
     return;
   }
 
+  // A quick total finalises the whole visit in one go, which makes it the
+  // easiest thing in the app to mistype - so it is the last thing that should
+  // be unundoable. Same window as a dart.
+  undoStacks[side === "me" ? "opp" : "me"] = [];
+  undoStacks[side].push(onlineSnapshot());
+
   const s = online[side];
   const remainingBefore = s.remaining;
   const segment = {
@@ -2323,6 +2356,66 @@ function applyQuickTotalThrow(side, totalValue) {
   renderOnline();
 }
 
+// ---------- Undo, online ----------
+//
+// YOUR OWN DARTS, INSIDE THE VISIT YOU ARE THROWING. That limit is not
+// timidity, it is what keeps the determinism guarantee intact. Both browsers
+// run the same pure rules in lockstep and there is no authoritative server, so
+// a dart rolled back on one side alone is simply two different matches from
+// then on. Reaching back past the end of a visit - or into darts the opponent
+// has already answered - means rewinding THEIR play too, and there is no
+// honest way to do that without asking them.
+//
+// So the rewind is a snapshot, exactly as local play does it, and it is
+// mirrored: whoever threw the dart rolls back their own copy and tells the
+// peer, who rolls back their copy of the same dart. Two stacks per machine,
+// because each side has to be able to service the other's undo:
+//
+//   undoStacks.me  - my darts, so I can undo them
+//   undoStacks.opp - their darts, so I can apply the undo they send me
+//
+// Both are pushed in the same order for the same dart on both machines, so
+// popping one on each keeps them in step.
+const undoStacks = { me: [], opp: [] };
+
+function onlineSnapshot() {
+  return {
+    ...JSON.parse(JSON.stringify({
+      me: online.me,
+      opp: online.opp,
+      log: online.log,
+      activeSide: online.activeSide,
+      gameOver: online.gameOver,
+      legOver: online.legOver,
+      iWon: online.iWon,
+    })),
+    // Rides in the same snapshot rather than a second stack, for the reason
+    // game.js gives: one undo, one rewind, always the same one.
+    recorder: online.recorder?.capture() ?? null,
+  };
+}
+
+function onlineRestore(snap) {
+  const { recorder, ...rest } = snap;
+  Object.assign(online, rest);
+  online.recorder?.restore(recorder);
+}
+
+function canUndoOwnDart() {
+  // An empty stack IS the "within this visit" rule: endTurn clears it, so
+  // anything left in it was thrown during the visit still in progress.
+  return Boolean(online.active) && !online.gameOver && undoStacks.me.length > 0;
+}
+
+function undoOwnDart() {
+  if (!canUndoOwnDart()) return;
+  onlineRestore(undoStacks.me.pop());
+  // Told, not asked. The peer has no say in whether my misread dart counted,
+  // and a round trip would leave the two scoreboards disagreeing in between.
+  peerLink?.sendGameMessage({ type: "undo" });
+  renderOnline();
+}
+
 function applyThrow(side, rawSegment) {
   if (online.gameOver) return;
 
@@ -2337,6 +2430,18 @@ function applyThrow(side, rawSegment) {
     console.warn(`Ignored an out-of-turn '${side}' throw.`);
     return;
   }
+
+  // THROWING CLOSES THE OTHER PLAYER'S WINDOW. This is the boundary, rather
+  // than the end of their visit: a dart of theirs can be taken back right up
+  // until you answer it, which covers the case that actually happens - three
+  // darts land, the third was misread, and it is noticed a second later.
+  // Once you have thrown, rewinding their dart would mean rewinding yours too,
+  // and there is no honest way to do that without asking you.
+  undoStacks[side === "me" ? "opp" : "me"] = [];
+  // Before anything is mutated, and before the per-game branches below, so
+  // every mode is undoable by the same one line rather than each remembering
+  // to do it.
+  undoStacks[side].push(onlineSnapshot());
 
   if (online.gameType === "cricket") return applyCricketThrowOnline(side, segment);
   if (online.gameType === "countup") return applyCountUpThrowOnline(side, segment);
@@ -2565,6 +2670,11 @@ function endTurn(side, { busted = false } = {}) {
     callScore(s.dartsThisTurn.reduce((sum, d) => sum + (d?.value || 0), 0));
   }
   online.recorder?.endTurn();
+  // Deliberately NOT clearing the undo stack here. A misread is usually
+  // spotted as the third dart lands or on the walk to the board, which is
+  // after the visit has technically ended - locking it at that moment would
+  // make the fix unreachable exactly when it is wanted. The window closes when
+  // the OPPONENT throws instead; see applyThrow.
   s.dartsThisTurn = [];
   // Cricket has no bust, so there's no start-of-turn value to revert to.
   // Only x01 has a start-of-turn score to revert a bust to.
@@ -2635,6 +2745,11 @@ function renderOnline() {
   // Only ever for your OWN score. Telling you how your opponent gets out is
   // not help, it is a scoreboard reading their mind, and it would be showing
   // during their visit when you have nothing to throw at anyway.
+  // Offered only while there is something to take back. Shown rather than
+  // disabled-and-greyed, because a permanently visible undo on a scoreboard
+  // invites a tap that does nothing.
+  el.undoBtn?.classList.toggle("hidden", !canUndoOwnDart());
+
   // My own seat only. The opponent's average is not mine to put on screen.
   renderLiveAverage(el.ocheStat, online.recorder?.liveStats(online.myIndex));
   renderCheckoutHint(el.checkoutHint, {

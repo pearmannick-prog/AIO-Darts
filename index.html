@@ -3578,12 +3578,13 @@
             <div id="checkout-hint" class="checkout-hint hidden"></div>
             <div id="oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span><span class="oche-stat-second"></span></div>
             <div class="actions-row">
-              <button id="undo-btn" class="btn-secondary btn-soft">Undo last dart</button>
+              <button id="undo-btn" data-undo class="btn-secondary btn-soft">Undo last dart</button>
               <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
               <!-- Cycles Desk / Room / Across the room. Here as well as in the
                    settings sheet because this is where you are standing when
                    you discover you need it. -->
-              <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
+              <button type="button" id="online-undo-btn" data-undo class="av-btn hidden">↶ Undo last dart</button>
+          <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
               <button type="button" class="boardview-btn js-oche" title="Fullscreen scoreboard for the oche">⛶ Oche view</button>
             </div>
           </div>

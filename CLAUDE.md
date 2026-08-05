@@ -294,6 +294,21 @@ left to send it on). `media_state` also rides the channel but is intercepted in
 about it. `hello` and `match_config` also carry the sender's display name, so a
 saved match can name the opponent.
 
+**`undo` is the one message that rewinds.** A player may take back their OWN
+darts, and the window closes when the OPPONENT throws — not when the visit
+ends, because a misread is usually spotted as the third dart lands or on the
+walk to the board. Each side keeps two snapshot stacks (`me` and `opp`) pushed
+in the same order for the same dart, so popping one on each keeps them in step;
+the sender rolls back and tells the peer, who rolls back their copy. Undoing
+restores `activeSide` too, so the turn comes back.
+
+It cannot extend past the opponent's next dart, and that is a design limit
+rather than a missing feature: with no authoritative server and no
+rollback/replay, rewinding a dart they have already answered means rewinding
+theirs as well, and in Cricket it retroactively changes whether their marks
+scored. The honest fix for a late-noticed misread is a score correction, which
+is a different feature and needs the recorder to understand an adjustment.
+
 **Rematch is the only other handshake**: `rematch_offer` → `rematch_accept` or
 `rematch_decline`. It is mutual on purpose and must stay that way — a one-sided
 rematch restarts the scoreboard of someone who has already walked away, and they

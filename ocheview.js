@@ -87,9 +87,24 @@ function buildControls() {
   undo.type = "button";
   undo.className = "oche-btn";
   undo.textContent = "↶ Undo dart";
-  undo.addEventListener("click", () => active?.querySelector("#undo-btn")?.click());
+  // [data-undo] rather than an id, because the two panels have different ones
+  // and this bar moves between them.
+  undo.addEventListener("click", () => active?.querySelector("[data-undo]")?.click());
   bar.appendChild(undo);
-  bar.dataset.undo = "1";
+
+  // END TURN. The board's physical button already does this, but a bounce-out
+  // with a camera scorer - or no board at all - leaves you with three darts
+  // thrown and nothing that says so. Announced as an event so this file stays
+  // ignorant of which controller is playing; both listen.
+  const endTurn = document.createElement("button");
+  endTurn.type = "button";
+  endTurn.className = "oche-btn";
+  endTurn.textContent = "⏭ End turn";
+  endTurn.title = "Finish this visit now - a bounce-out, or a dart that missed the board";
+  endTurn.addEventListener("click", () => {
+    document.dispatchEvent(new CustomEvent("aio-end-turn"));
+  });
+  bar.appendChild(endTurn);
 
   const entry = document.createElement("button");
   entry.type = "button";
@@ -122,10 +137,10 @@ export async function startOcheView(panel) {
   panel.classList.add("oche-mode");
 
   if (!controls) controls = buildControls();
-  // Only offered where there is something to forward to. Online has no undo at
-  // all, and a button that silently did nothing would be worse than none.
+  // Only offered where there is something to forward to. A button that
+  // silently did nothing would be worse than no button.
   const undoBtn = controls.firstElementChild;
-  if (undoBtn) undoBtn.hidden = !panel.querySelector("#undo-btn");
+  if (undoBtn) undoBtn.hidden = !panel.querySelector("[data-undo]");
   panel.appendChild(controls);
 
   // Fullscreen is requested, not required. It needs a user gesture and it is
