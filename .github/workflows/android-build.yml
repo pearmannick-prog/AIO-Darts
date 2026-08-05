@@ -37,7 +37,7 @@ jobs:
       # than what the runner image ships with. This installs the missing SDK
       # packages and accepts the licenses, so Gradle doesn't fail partway
       # through trying to resolve the platform itself.
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       # Assembles the front-end into www/ by copying the repo and pruning
       # infrastructure that has no place in an APK. Exclusion-based on
