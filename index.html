@@ -2766,6 +2766,28 @@
     /* Half the screen for a keypad leaves nothing above it to score into. */
     .oche-mode.oche-entry-open .entry-and-log,
     .oche-mode.oche-entry-open #online-manual-section { height: 72vh; }
+
+    /* Video goes BESIDE the score here rather than above it. A band across the
+       top of a 390px-tall screen leaves nothing underneath worth reading,
+       whereas the width is the one thing landscape has spare.
+       Absolutely positioned against the panel with matching padding to make
+       room, because the tiles and the scoreboard are siblings - a side-by-side
+       flow layout would need a wrapper element that does not exist, and adding
+       one means touching markup that game code reads by id. */
+    #online-game-panel.oche-mode.immersive { padding-left: 42vw; }
+    #online-game-panel.oche-mode.immersive #online-video-strip {
+      position: absolute;
+      left: 1.5vw;
+      top: 1.5vh;
+      bottom: 1.5vh;
+      width: 39vw;
+      height: auto;
+      max-width: none;
+      margin: 0;
+      flex-direction: column;
+    }
+    .oche-mode.immersive #big-score,
+    .oche-mode.immersive #online-big-score { font-size: clamp(56px, 28vh, 180px); }
   }
 
   @media (max-width: 640px) {
@@ -2816,10 +2838,69 @@
   .oche-mode .entry-and-log,
   .oche-mode #online-manual-section,
   .oche-mode .dartboard-wrap,
-  .oche-mode #online-video-strip,
   .oche-mode #online-av-row,
   .oche-mode .setup-notice,
+  /* .end-match-row is a class and #online-throw-log is an id - they read alike
+     and are not. End match is also deliberately gone from in here: it is
+     destructive, and nobody should be able to hit it from two metres away when
+     Exit is right there and leads back to the panel that owns it. */
+  .oche-mode .end-match-row,
+  .oche-mode #online-throw-log,
   .oche-mode #online-status-label { display: none; }
+
+  /* ---- Video in oche view ----
+     The cameras STAY. Hiding them was wrong: the reason you are playing online
+     rather than alone is on the other end of them, and a fullscreen scoreboard
+     that drops your opponent is a worse version of local play.
+     What changes is the emphasis. Immersive makes the camera the surface with
+     the score floating on it; here that is inverted - the score is why you
+     opened this mode, so the cameras become a band across the top and give up
+     the middle of the screen.
+     Scoped with the ID for the reason written beside --stage-h above: the
+     immersive tile rules are .immersive #online-video-strip > .video-tile,
+     three classes deep, and a class-only override loses to them. */
+  #online-game-panel.oche-mode #online-video-strip {
+    display: flex;
+    position: static;
+    flex: none;
+    /* Above the player row whatever the markup order happens to be. */
+    order: -1;
+    gap: 1vh;
+    height: 24vh;
+    width: 100%;
+    max-width: 1000px;
+    margin: 0 auto 1.5vh;
+    padding: 0;
+    overflow: hidden;
+  }
+  #online-game-panel.oche-mode #online-video-strip > .video-tile {
+    position: static;
+    flex: 1 1 0;
+    width: auto;
+    height: 100%;
+    min-width: 0;
+    margin: 0;
+    border-radius: 1.2vh;
+  }
+  #online-game-panel.oche-mode #online-video-strip > .video-tile.hidden { display: none; }
+  /* .hidden is how the AV code says "nobody has a camera on", and it is only
+     0,1,0 - the rule above is 1,2,0 and would override it, leaving an empty
+     black band across the top of every oche view with no video in it. */
+  #online-game-panel.oche-mode #online-video-strip.hidden { display: none; }
+  #online-game-panel.oche-mode #online-video-strip video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* The tiles carry their own little score overlays for the immersive layout.
+     In here the real scoreboard is directly underneath them at ten times the
+     size, so they are just clutter. */
+  .oche-mode .tile-score { display: none; }
+  /* With a band of video up top the number takes what is left rather than what
+     it would like. .immersive is the honest signal that a camera is actually
+     live - it is what the AV code already sets when any feed is staged. */
+  .oche-mode.immersive #big-score,
+  .oche-mode.immersive #online-big-score { font-size: clamp(70px, 25vh, 300px); }
 
   /* THE IMMERSIVE STAGE RESERVATION MUST GO.
      #online-game-panel.immersive reserves the whole camera band with
@@ -2829,8 +2910,20 @@
      the score pushed off the bottom.
      It needs the ID to win: .oche-mode.immersive is 0,2,0 and loses to 1,1,0
      however far down the file it sits. */
+  /* EVERY overlay property is repeated here, not just the padding. The
+     immersive block also sets position: relative and overflow, at the same
+     1,1,0 - so .oche-mode's position: fixed lost to it and oche view opened
+     over a match with cameras was not an overlay at all: it sat in normal flow
+     under the header, which is where the 150px of dead space above the video
+     came from. Anything .immersive declares has to be answered here. */
   #online-game-panel.oche-mode {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    margin: 0;
+    border-radius: 0;
     padding: 2.5vh 3vw;
+    overflow: hidden;
     --stage-h: 0px;
   }
   #online-game-panel.oche-mode:fullscreen { padding: 3vh 4vw; }
@@ -2979,6 +3072,37 @@
     z-index: 3;
   }
   .oche-mode.oche-entry-open #throw-log { display: none; }
+  /* THE KEYPAD MUST NOT SCROLL. It is stacked - display, five shortcuts, a
+     3x4 pad, then Miss - which runs to roughly 600px and did not fit the band
+     on a desktop, so the Enter key was below the fold of a panel that had just
+     been opened to press it. Given width, the same pieces sit in two columns
+     and come in at about 240px. Nobody should have to scroll to reach Enter. */
+  @media (min-width: 900px) {
+    .oche-mode.oche-entry-open .quick-entry {
+      max-width: 620px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-areas:
+        "display pad"
+        "shortcuts pad"
+        "miss pad";
+      grid-template-rows: auto auto 1fr;
+      gap: 10px 16px;
+      align-content: start;
+    }
+    .oche-mode.oche-entry-open .quick-display { grid-area: display; margin: 0; }
+    .oche-mode.oche-entry-open .quick-shortcuts { grid-area: shortcuts; margin: 0; }
+    .oche-mode.oche-entry-open .quick-pad { grid-area: pad; margin: 0; align-content: start; }
+    .oche-mode.oche-entry-open .quick-miss-btn { grid-area: miss; }
+    /* Per-Dart is a 20-button grid rather than a keypad; it fits already, but
+       it is roomier than it needs to be inside a band. */
+    .oche-mode.oche-entry-open #manual-sections,
+    .oche-mode.oche-entry-open #online-manual-sections {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 5px;
+    }
+  }
   .oche-mode.oche-entry-open .online-turn-darts,
   .oche-mode.oche-entry-open #turn-darts { margin-bottom: 0; }
   /* The score gives way rather than being covered. Scoring a dart you cannot
