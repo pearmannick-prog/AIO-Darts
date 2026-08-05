@@ -83,7 +83,7 @@ jobs:
           # they are worth keeping legible and worth checking together.
           for f in game.js online.js accountui.js lobbyui.js version.js \
                    accountstore.js lobbyclient.js matchrecorder.js charts.js statsengine.js \
-                   granboard.js boardlink.js autodarts.js webrtc.js \
+                   granboard.js boardlink.js dartnotation.js webrtc.js \
                    scoring.js cricket.js countup.js bermuda.js medley.js rating.js botplayer.js \
                    dartboard.js cricketboard.js quickentry.js medleybuilder.js \
                    stats/x01stats.js stats/cricketstats.js stats/countupstats.js stats/bermudastats.js; do

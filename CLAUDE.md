@@ -54,7 +54,7 @@ fine, so the app takes sign-ups and then deletes them. Unset means "try", so
 every existing deployment is unaffected. Tests: `/healthz` reports
 `accounts:false`, `/api/*` 503s, the lobby doesn't start.
 
-Statistics tests: `node --test server/autodarts.test.js server/statsengine.test.js`.
+Tests: `node --test server/dartnotation.test.js server/statsengine.test.js`.
 
 **Password reset is the only mail this app sends, and it works with no mail
 provider.** `server/email.js` posts to Resend when `EMAIL_API_KEY`, `EMAIL_FROM`
@@ -148,6 +148,22 @@ picker; a factory, not a singleton, because the page renders two instances).
 `granboard.js` owns Web Bluetooth and the raw-bytes→`SegmentID` table (adapted from
 sobassy/gran-app, MIT — keep the attribution). `SegmentType` doubles as the
 multiplier (1/2/3), which several rule functions rely on.
+
+`boardlink.js` owns the ONE connection to the one physical board and routes each
+dart to whichever mode is playing — online.js subscribes above game.js and takes
+it while its match is live. There used to be two connections, one per
+controller, and a board attached from the wrong button delivered its darts to a
+game that wasn't running.
+
+`dartnotation.js` reads external automatic scorers (Autodarts, OpenDartboard)
+into the same segment objects, with **one parser but one vocabulary per source**.
+That split is not abstraction for its own sake: the numeric forms are universal,
+but the word `BULL` is the OUTER bull to Autodarts and the INNER bull to
+OpenDartboard, whose `OUTER` is the outer one. A merged table would silently
+halve every bull for one of them. Autodarts' bare `BULL` is still an unverified
+guess — see the note in the file. OpenDartboard's `END` maps to `RESET_BUTTON`,
+so "visit over" reuses the concept the Granboard's physical button already had.
+No connection layer exists yet for either.
 
 The two top-level controllers are `game.js` (local pass-and-play) and `online.js`
 (WebRTC 1v1); both are loaded on every page load and wire up their own half of

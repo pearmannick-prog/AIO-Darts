@@ -51,7 +51,7 @@ const PRECACHE = [
   // Hardware and transport
   "./granboard.js",
   "./boardlink.js",
-  "./autodarts.js",
+  "./dartnotation.js",
   "./webrtc.js",
   // Rules (pure)
   "./scoring.js",
