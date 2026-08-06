@@ -2897,7 +2897,14 @@
      drops its score on top of the other one.
      Computing the width from the shared --tile-h removes the cycle entirely. */
   #online-game-panel.oche-mode #online-video-strip > .video-tile {
-    position: static;
+    /* RELATIVE, not static. Static also cancels the immersive layout's
+       absolute positioning, which is why it was used - but .tile-score is
+       absolutely positioned against its own tile, and a static tile is not a
+       containing block. Both scores escaped to the panel and stacked on its
+       bottom edge, half of them clipped off the screen. Relative cancels the
+       immersive positioning just as well and keeps each score on its own
+       picture, which is where it is supposed to be. */
+    position: relative;
     flex: 0 0 auto;
     height: var(--tile-h);
     width: calc(var(--tile-h) * 4 / 3);
