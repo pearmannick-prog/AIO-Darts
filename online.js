@@ -24,7 +24,7 @@ import {
 import { createRecorder } from "./matchrecorder.js";
 import { recordMatch, getState as accountState } from "./accountstore.js";
 import { onMatchReady, reportMatchOver, pushMatchState } from "./lobbyclient.js";
-import { getPref, setPref } from "./prefs.js";
+import { getPref, setPref, VISIT_HOLD_MS } from "./prefs.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
@@ -2699,11 +2699,17 @@ function broadcastMatchState() {
 // out of turn. So the thrower owns the clock and announces the end with the
 // `end_turn` message that already exists in the protocol; the receiver waits
 // for it, with a grace period as a backstop in case it never comes.
-const VISIT_HOLD_MS = 10000;
-// The receiver waits longer than the thrower holds. It only ever fires if the
-// `end_turn` never arrives - a peer on an older build, or a message lost on a
-// channel that should not lose them - and ending the turn late is far better
-// than a match that sits still forever.
+// VISIT_HOLD_MS is shared, from prefs.js - the pause should feel the same in
+// both modes, and the two controllers cannot import each other.
+//
+// THIS ONE IS NOT SHARED, deliberately. It is how long a receiver waits for an
+// `end_turn` that never arrived - a peer on an older build, or a message lost
+// on a channel that should not lose them - so it is protocol tolerance, not
+// comfort. Sharing it would mean that shortening the hold to make
+// pass-and-play feel snappier also shortened how much of a network hiccup an
+// online match can absorb: a correctness change arriving from a cosmetic edit,
+// with nothing in the diff to say so. Ending a turn late beats a match that
+// sits still forever.
 const PEER_HOLD_GRACE_MS = 8000;
 
 let hold = null; // { side, opts, until, timer, ticker }

@@ -27,6 +27,26 @@
 const STORAGE_KEY = "aio-darts-prefs";
 const VERSION = 1;
 
+/**
+ * How long a completed visit sits before the turn passes, so a misread can
+ * still be undone.
+ *
+ * Here rather than in either controller because game.js and online.js
+ * deliberately do not import each other, and both already import this module -
+ * so this is the one place both can see without coupling them. A player who
+ * uses both modes should feel the same pause in each.
+ *
+ * ONLY THE DURATION IS SHARED. online.js keeps its own PEER_HOLD_GRACE_MS, the
+ * extra time a receiver waits before ending a turn it was never told about,
+ * because that is protocol tolerance rather than comfort: it decides how late
+ * or lost an `end_turn` may be and still be survived. Sharing that too would
+ * mean shortening this number to make pass-and-play feel snappier also
+ * shortened how much of a network hiccup an online match can absorb - a
+ * correctness change arriving from a cosmetic edit, with nothing in the diff
+ * to say so.
+ */
+export const VISIT_HOLD_MS = 10000;
+
 // ---------------------------------------------------------------------------
 // Schema
 //

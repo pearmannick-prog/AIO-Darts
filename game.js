@@ -15,7 +15,7 @@ import {
 } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
 import { renderCheckoutHint, renderLiveAverage } from "./checkouthint.js";
-import { getPref } from "./prefs.js";
+import { getPref, VISIT_HOLD_MS } from "./prefs.js";
 import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
@@ -1012,10 +1012,10 @@ function maybeThrowForBot() {
 // paid every single visit, with the next player stood beside you waiting for
 // the darts, so it is off unless asked for.
 //
-// The duration is repeated rather than imported from online.js. The two
-// controllers deliberately do not import each other, and this is a UX timing
-// rather than a rule - nothing breaks if they ever differ.
-const VISIT_HOLD_MS = 10000;
+// The duration comes from prefs.js, which both controllers already import -
+// game.js and online.js deliberately do not import each other, so that is the
+// one place both can see it. Somebody who plays both modes should feel the
+// same pause in each.
 let hold = null; // { until, timer, ticker }
 
 function clearHold() {
