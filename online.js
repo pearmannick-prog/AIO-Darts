@@ -810,10 +810,22 @@ el.createBtn.addEventListener("click", async () => {
   // an empty one and fills it in below.
   showWaitingPanel("create");
 
+  // GETTING TO THE SERVER IS BOUNDED HERE TOO, even though waiting for an
+  // opponent is not. The two were conflated, and create was excluded from the
+  // watchdog entirely - one phase too early. Waiting indefinitely for a friend
+  // to use the code is the feature; waiting indefinitely for the server to
+  // answer is a dead end, because PeerLink's socket open has no timeout of its
+  // own, so a socket that neither opens nor errors leaves "Connecting to the
+  // signaling server…" on screen for as long as the player is willing to look
+  // at it. The clock is cancelled the moment the server answers - see
+  // onStatusChange.
+  startConnectWatchdog();
+
   try {
     const code = await peerLink.createChallenge();
     el.codeDisplay.textContent = code;
   } catch (err) {
+    stopConnectWatchdog();
     alert(`Couldn't create a challenge: ${err.message}`);
     hideWaitingPanel();
     el.setupPanel.classList.remove("hidden");
@@ -1166,7 +1178,18 @@ function teardownMatch(message) {
 
   // The lobby cannot see the darts, so it only knows a match is over because
   // it is told. Purely a hint - a disconnect resolves the same state anyway.
-  reportMatchOver();
+  //
+  // Wrapped because everything below this line is the part that hands the tab
+  // back: hiding the waiting panel, restoring setup, showing why. An optional
+  // notification to a server that may not even be connected must never be able
+  // to abort that - a throw here would strand the player on whichever panel
+  // they were on, which is the same class of failure as the stuck "in match"
+  // state and looks identical to the player.
+  try {
+    reportMatchOver();
+  } catch (err) {
+    console.warn("Couldn't tell the lobby the match ended.", err);
+  }
 
   resetAv();
 
@@ -1231,13 +1254,19 @@ function wirePeerLink() {
     el.statusLabel.textContent = statusText(status);
     updateWaitingNote(status);
 
-    // Reaching the server ends the signaling phase and starts the peer one, so
-    // a slow container wake-up isn't charged against the opponent's clock.
-    // Create is excluded on purpose: waiting there is the feature, and the code
-    // may sit unshared for minutes.
+    // Reaching the server ends the signaling phase. What happens next depends
+    // on which side you are:
+    //
+    //   create - the clock STOPS. Waiting here is the feature, and the code may
+    //            sit unshared for minutes. But it has to stop rather than never
+    //            have been started, or "the server never answered" is a state
+    //            with no way out of it - see the note on the create handler.
+    //   others - the clock RESTARTS on the peer phase, so a slow container
+    //            wake-up isn't charged against the opponent's budget.
     if ((status === "waiting-for-opponent" || status === "joining")
-        && waitingMode && waitingMode !== "create" && !online.active) {
-      startConnectWatchdog("peer");
+        && waitingMode && !online.active) {
+      if (waitingMode === "create") stopConnectWatchdog();
+      else startConnectWatchdog("peer");
     }
 
     if (status === "connected" && !online.active) {
