@@ -2862,24 +2862,44 @@
     /* Above the player row whatever the markup order happens to be. */
     order: -1;
     gap: 1vh;
-    /* One height, used by the strip AND by each tile, so the width below can be
-       computed from it rather than inferred. Capped against the viewport WIDTH
-       as well: two 4:3 tiles at 24vh are wider than a phone in portrait, and
-       the band has to fit two of them side by side. */
+    /* THE STAGED CAMERA IS THE BACKGROUND, not a tile in a band. That is what
+       the immersive layout always did and what this mode spent several
+       iterations wrongly fighting: a scoreboard for the oche wants the picture
+       behind the number, not beside it. So the strip covers the whole panel and
+       sits at the back, and the score and turn label float over it.
+       Sized in one place: --tile-h is only the THUMBNAIL's height now, and is
+       left at the value that produced the corner tile as it stands. */
     --tile-h: min(24vh, 34vw);
-    height: var(--tile-h);
-    width: 100%;
-    max-width: 1000px;
-    margin: 0 auto 1.5vh;
+    position: absolute;
+    inset: 0;
+    display: block;
+    height: auto;
+    width: auto;
+    max-width: none;
+    margin: 0;
     padding: 0;
-    /* visible, not hidden: the thumbnail below leaves this box for the corner
-       of the screen, and an overflow-clipped strip would cut it off on the way
-       out. Nothing else escapes - the tiles are explicitly sized now. */
     overflow: visible;
-    /* Centred, because the tiles no longer fill the band - see below. */
-    justify-content: center;
-    align-items: center;
+    z-index: 0;
   }
+  /* Full bleed, behind everything. */
+  #online-game-panel.oche-mode #online-video-strip > .video-tile.as-stage {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+  }
+  /* Everything that is not the video has to be lifted above it - a positioned
+     element paints over unpositioned flow content, so without this the score
+     would be behind the picture. The two that are already absolute are left
+     alone or they would lose their own placement. */
+  #online-game-panel.oche-mode > *:not(#online-video-strip):not(.oche-controls):not(.oche-stat) {
+    position: relative;
+    z-index: 1;
+  }
+  /* With the band gone there is nothing pushing the score down the screen, so
+     it centres itself over the picture instead of sitting under the top edge. */
+  #online-game-panel.oche-mode.immersive { justify-content: center; }
 
   /* THE SMALL CAMERA GOES IN THE TOP-LEFT CORNER, out of the flow entirely, so
      the main view keeps the middle of the band to itself rather than being
