@@ -2805,6 +2805,10 @@
        stretch sideways to fill it. Only the variable changes - the tiles size
        themselves from it. */
     #online-game-panel.oche-mode #online-video-strip { --tile-h: min(34vh, 30vw); }
+    /* Landscape has almost no height to give the pad, and it is the one thing
+       here that must not scroll - so it takes nearly all of what is left and
+       the type comes down to suit. */
+    .oche-mode .cricket-board { font-size: clamp(10px, 4vh, 20px); max-height: 76vh; }
   }
 
   @media (max-width: 640px) {
@@ -3067,8 +3071,25 @@
   /* Landscape is included by ORIENTATION, not width: a phone on its side
      reports well under 900px, and "landscape should look like desktop" is
      about shape rather than size. */
+  /* CRICKET KEEPS ITS SCOREBOARD, along the foot of the screen, cameras or not.
+     Everywhere else the scores ride the pictures and the centre of the screen
+     carries a big number, so a row as well would be saying it twice. Cricket
+     has no big number - the mark pad is the display - which leaves the points
+     with nowhere to live, and the machines put them exactly here: a player at
+     each end of the bottom edge. The tile scores go, so it is said once.
+     Ordered and floored the same way the no-video row is. */
+  .oche-mode.cricket-stage .online-scoreboard {
+    display: flex;
+    order: 10;
+    margin-top: auto;
+    margin-bottom: 7.5vh;
+  }
+  /* The rule that turns these on is five classes deep, so a five-class hide
+     only TIES and then loses on source order. An ID settles it outright. */
+  #online-game-panel.oche-mode.cricket-stage .tile-score { display: none; }
+
   @media (min-width: 900px), (orientation: landscape) {
-    .oche-mode.immersive .online-scoreboard { display: none; }
+    .oche-mode.immersive:not(.cricket-stage) .online-scoreboard { display: none; }
     /* Both of these beat the immersive rules that hide them (0,3,0) at 0,4,0. */
     .oche-mode.immersive .video-tile.as-stage .tile-score,
     .oche-mode.immersive .video-tile.as-thumb .tile-score { display: flex; }
@@ -3263,13 +3284,45 @@
     background: var(--video-bg);
     border-color: var(--panel-border);
   }
+  /* Sized off the viewport HEIGHT, because that is what the pad runs out of:
+     seven rows plus Miss, stacked. The old 2.2vh capped at 26px left it a
+     postage stamp on a desktop while still overflowing a landscape phone -
+     the cap was doing the wrong job at both ends. 3.4vh scales with the screen
+     and the max-height is the backstop, so it shrinks to fit rather than
+     scrolling. A mark pad you have to scroll is worse than a small one: you
+     cannot see which numbers are closed. */
   .oche-mode .cricket-board {
     display: block;
-    font-size: clamp(13px, 2.2vh, 26px);
     max-width: 92vw;
+    max-height: 82vh;
+    overflow-y: auto;
     margin: 0 auto;
     border-radius: 1.2vh;
   }
+  /* THE ROWS HAVE TO BE SIZED, not the board. Every part of the pad carries a
+     fixed pixel font - .ck-num is 22px, .ck-mod 14px - so scaling the
+     container did nothing at all and the pad stayed a widget in the middle of
+     the screen however large the board's own font-size got.
+     Sized in vh here so it grows with the screen: on a real machine the pad is
+     the main event and takes about seventy per cent of the height, which is
+     what these land on. */
+  .oche-mode .ck-num {
+    font-size: clamp(15px, 4.2vh, 54px);
+    min-width: clamp(46px, 9vh, 120px);
+    padding: clamp(5px, 1.1vh, 16px) 0;
+  }
+  .oche-mode .ck-mod {
+    font-size: clamp(10px, 2.4vh, 30px);
+    min-width: clamp(26px, 5vh, 66px);
+    padding: clamp(5px, 1.1vh, 16px) 0;
+  }
+  .oche-mode .ck-miss {
+    font-size: clamp(10px, 2.2vh, 26px);
+    padding: clamp(5px, 1vh, 14px) clamp(14px, 3vh, 40px);
+  }
+  .oche-mode .ck-name { font-size: clamp(10px, 2vh, 24px); }
+  .oche-mode .ck-points { font-size: clamp(16px, 3.6vh, 44px); }
+  .oche-mode .ck-mark { font-size: clamp(12px, 2.8vh, 34px); }
 
   .oche-mode #winner-banner,
   .oche-mode #online-winner-banner { font-size: clamp(18px, 3.4vh, 44px); }
