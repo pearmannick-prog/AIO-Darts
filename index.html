@@ -3008,7 +3008,15 @@
      once the staged tile IS the whole screen - it became a dark band across the
      foot of the picture. A text shadow does the same job for two short strings
      without dimming a quarter of the video. */
+  /* No "YOU" / "OPPONENT" in here. The score is sitting on the picture of the
+     player it belongs to, which already says whose it is - and the immersive
+     layout is close enough to a broadcast that a caption reads as clutter.
+     The label stays in the normal panel, where the two scores sit side by side
+     with no pictures to tell them apart. */
+  .oche-mode .tile-score-label { display: none; }
   .oche-mode .tile-score {
+    /* With the label gone the number would drift left under space-between. */
+    justify-content: flex-end;
     background: none;
     /* An outline rather than a glow. The scrim existed to keep two short
        strings readable over an arbitrary room, and a hard edge on the glyphs
