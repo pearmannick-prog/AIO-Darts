@@ -225,6 +225,35 @@ second scoreboard — a duplicate scoreboard is one that will eventually disagre
 with the real one about who won. It holds a screen wake lock, which the browser
 drops on every tab switch without giving back.
 
+**Oche view is ONE picture at many sizes.** Desktop and phone must look the
+same — the same proportions, the same relative type, the same gaps — even though
+the pixel sizes differ. So oche-view geometry is expressed relative to the
+viewport, never in per-device breakpoints; a change that improves one screen and
+is not visible on the other is not finished. Two things this rule has already
+caught, both of which produce a layout that is right at one end and wrong at the
+other:
+
+- **Fixed pixel constants break the proportion at the small end.** The Cricket
+  pad measures `16.95u + 21px` — the constant is nine row borders — which is 1.8%
+  of a desktop viewport and 5.4% of a landscape phone's. `--ck-u` therefore
+  subtracts it *before* dividing (`calc((70vh - 24px) / 17)`), which is what makes
+  the pad the same fraction of every screen. A plain `Nvh` fits one device and
+  overflows the other, and eight separately-tuned `clamp()`s — the thing this
+  replaced — cannot be right at both ends at once, because the constraint being
+  divided among them is a single one on the total height.
+- **Absolutely-positioned furniture reserves nothing.** The darts strip and the
+  control bar are both absolute, so the flow runs underneath them unless padding
+  says otherwise; `.cricket-stage` reserves 9vh at *both* ends for exactly that.
+  `.game-top` has `flex-grow`, so it swallows whatever the pad leaves and pushes
+  the pad down onto the control bar however small the pad is made — which is why
+  an overlap there is not evidence the pad is too big.
+
+`cricket-stage` is set by **both** controllers (`game.js` and `online.js`). It
+was online-only for a while, and local play inherited the x01 stage underneath
+it: the darts overlapped the top of the pad and `#big-score` rendered the
+player's Cricket points at 318px, taking three hundred pixels off the stage while
+the same number sat in the tiles at the bottom.
+
 **`checkout.js` is pure and composes `scoring.js`.** Which dart may finish is
 the `out` rule; the 170-vs-180 ceiling is `highestCheckout`. It takes **bull
 mode** because the answer genuinely differs: split bull has a 25 single and a 50

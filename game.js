@@ -1188,6 +1188,13 @@ function render() {
   // because a turn total says nothing about which numbers were hit.
   el.cricketBoard?.classList.toggle("hidden", !cricket);
   el.manualSection?.classList.toggle("cricket-mode", cricket);
+  // Oche view needs to know Cricket is on the stage: the darts thrown are
+  // absolutely positioned there, so they reserve no space, and the mark pad
+  // centred itself straight underneath them. The reservation is keyed on this
+  // class. online.js has set it since the mode was built; local play never
+  // did, so the darts sat on top of the top two rows of the pad - which is
+  // where the numbers you have already closed are.
+  el.gamePanel?.classList.toggle("cricket-stage", cricket);
   if (cricket) renderCricketBoard();
 
   el.turnDarts.innerHTML = "";
