@@ -302,12 +302,27 @@ in the same order for the same dart, so popping one on each keeps them in step;
 the sender rolls back and tells the peer, who rolls back their copy. Undoing
 restores `activeSide` too, so the turn comes back.
 
-It cannot extend past the opponent's next dart, and that is a design limit
+**A completed visit HOLDS for ten seconds before the turn passes**, and that is
+what makes undo reach the case it exists for — a misread is spotted as the
+third dart lands, after the visit is technically over. While the hold runs it
+is still your turn, so the opponent *cannot* have thrown, and the question of
+rewinding a dart they already answered never arises. Either player cuts it
+short with End turn.
+
+**Both sides hold, and the thrower owns the clock.** Holding unilaterally is
+worse than not holding: the other side would believe it was their turn, throw,
+and have the dart rejected as out of turn. So the thrower counts down and
+announces the end with the existing `end_turn` message; the receiver waits for
+it, with a longer backstop timer in case it never comes (an older peer, a lost
+message) — ending a turn late beats a match that sits still forever.
+
+Undo past the opponent's next dart is still refused, and that is a design limit
 rather than a missing feature: with no authoritative server and no
 rollback/replay, rewinding a dart they have already answered means rewinding
 theirs as well, and in Cricket it retroactively changes whether their marks
-scored. The honest fix for a late-noticed misread is a score correction, which
-is a different feature and needs the recorder to understand an adjustment.
+scored. The honest fix for a misread noticed that late is a score correction,
+which is a different feature and needs the recorder to understand an
+adjustment.
 
 **Rematch is the only other handshake**: `rematch_offer` → `rematch_accept` or
 `rematch_decline`. It is mutual on purpose and must stay that way — a one-sided

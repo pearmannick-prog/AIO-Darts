@@ -1139,6 +1139,7 @@ function disarmEndMatch() {
 
 function teardownMatch(message) {
   disarmEndMatch();
+  clearHold();
   // Before anything else: closing the peer link below fires the status handler
   // again, and a timer left running would tear down whatever comes next.
   stopPeerLostGrace();
@@ -1357,8 +1358,12 @@ function wirePeerLink() {
     if (msg.type === "dart") {
       applyThrow("opp", msg.segment);
     } else if (msg.type === "end_turn") {
-      if (online.activeSide === "opp") {
-        endTurn("opp");
+      // They have finished - either their hold ran out or they cut it short.
+      // Either way the wait is over and the backstop timer is no longer needed.
+      if (hold && hold.side === "opp") {
+        commitAndRender("opp", hold.opts);
+      } else if (online.activeSide === "opp") {
+        commitTurn("opp");
         renderOnline();
       }
     } else if (msg.type === "undo") {
@@ -1660,6 +1665,7 @@ function startOnlineLeg() {
   // has already banked.
   undoStacks.me = [];
   undoStacks.opp = [];
+  clearHold();
 
   // Throw alternates each leg, and both sides compute it from the same
   // absolute index so they never disagree about whose turn it is.
@@ -2269,8 +2275,15 @@ function onLocalEndTurn() {
     showNotice("Not your turn yet - wait for the opponent to finish.");
     return;
   }
+  // Mid-hold this cuts the wait short; otherwise it ends a visit early - a
+  // bounce-out, or a dart that missed the board. finishVisitNow sends the
+  // message itself, so it must not be sent twice.
+  if (hold && hold.side === "me") {
+    finishVisitNow();
+    return;
+  }
   peerLink?.sendGameMessage({ type: "end_turn" });
-  endTurn("me");
+  commitTurn("me");
   renderOnline();
 }
 
@@ -2399,6 +2412,10 @@ function onlineRestore(snap) {
   const { recorder, ...rest } = snap;
   Object.assign(online, rest);
   online.recorder?.restore(recorder);
+  // The visit is no longer finished, so nothing should still be counting down
+  // towards handing it over. Both sides do this, which is what stops the
+  // backstop timer on the receiving side from ending a turn that was undone.
+  clearHold();
 }
 
 function canUndoOwnDart() {
@@ -2662,7 +2679,88 @@ function broadcastMatchState() {
   });
 }
 
-function endTurn(side, { busted = false } = {}) {
+// ---------- The hold before the turn passes ----------
+//
+// A completed visit does NOT hand over immediately. It sits for ten seconds
+// first, during which the darts are still undoable, and either player can cut
+// that short with End turn.
+//
+// This is what makes undo actually reach the case it was built for. A misread
+// is noticed as the third dart lands or on the walk to the board - after the
+// visit is technically over - and without the hold the only way to allow that
+// was to leave the window open until the opponent threw, which raised the
+// question of what happens when they already have. The hold removes the
+// question entirely: while it is running it is still your turn, so they
+// CANNOT have thrown, and there is nothing to reconcile.
+//
+// BOTH SIDES HOLD, driven by the thrower. Holding unilaterally would be worse
+// than not holding at all: the opponent would believe it was their turn, throw
+// into a match that still thinks it is yours, and have the dart rejected as
+// out of turn. So the thrower owns the clock and announces the end with the
+// `end_turn` message that already exists in the protocol; the receiver waits
+// for it, with a grace period as a backstop in case it never comes.
+const VISIT_HOLD_MS = 10000;
+// The receiver waits longer than the thrower holds. It only ever fires if the
+// `end_turn` never arrives - a peer on an older build, or a message lost on a
+// channel that should not lose them - and ending the turn late is far better
+// than a match that sits still forever.
+const PEER_HOLD_GRACE_MS = 8000;
+
+let hold = null; // { side, opts, until, timer, ticker }
+
+function clearHold() {
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  clearInterval(hold.ticker);
+  hold = null;
+}
+
+export function holdSecondsLeft() {
+  if (!hold || hold.side !== "me") return 0;
+  return Math.max(0, Math.ceil((hold.until - Date.now()) / 1000));
+}
+
+function beginHold(side, opts) {
+  clearHold();
+  const mine = side === "me";
+  hold = {
+    side,
+    opts,
+    until: Date.now() + VISIT_HOLD_MS,
+    timer: setTimeout(
+      () => (mine ? finishVisitNow() : commitAndRender(side, opts)),
+      mine ? VISIT_HOLD_MS : VISIT_HOLD_MS + PEER_HOLD_GRACE_MS
+    ),
+    // Only the thrower counts down on screen; the other side simply has not
+    // been handed the turn yet, which is the truth and needs no clock.
+    ticker: mine ? setInterval(() => renderOnline(), 1000) : null,
+  };
+}
+
+function commitAndRender(side, opts) {
+  clearHold();
+  commitTurn(side, opts);
+  renderOnline();
+}
+
+// Manual End turn, the board's physical button, or the hold expiring.
+function finishVisitNow() {
+  if (!hold) return;
+  const { side, opts } = hold;
+  clearHold();
+  if (side === "me") peerLink?.sendGameMessage({ type: "end_turn" });
+  commitTurn(side, opts);
+  renderOnline();
+}
+
+// Every visit-completing path calls this. It starts the hold rather than
+// handing over, so no call site has to know the hold exists.
+function endTurn(side, opts = {}) {
+  beginHold(side, opts);
+  renderOnline();
+}
+
+function commitTurn(side, { busted = false } = {}) {
   const s = online[side];
   // Your own visit only, and not on a bust - cueBust has already said what
   // happened, and a total would be a lie.
@@ -2787,6 +2885,14 @@ function renderOnline() {
       `${who} · round ${Math.min(p.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(p)}`;
   } else {
     el.turnLabel.textContent = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+  }
+
+  // The hold, said plainly. Without a countdown a ten second pause reads as
+  // the app having frozen, and the whole point of it - that there is still
+  // time to take a dart back - would go unnoticed.
+  const left = holdSecondsLeft();
+  if (left > 0) {
+    el.turnLabel.textContent = `Visit over - ${left}s to undo · End turn to skip`;
   }
 
   el.turnDarts.innerHTML = "";
