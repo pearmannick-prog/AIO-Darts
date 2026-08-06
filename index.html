@@ -2889,17 +2889,43 @@
     height: auto;
     border-radius: 0;
   }
-  /* Everything that is not the video has to be lifted above it - a positioned
+  /* The scoring furniture has to be lifted above the video - a positioned
      element paints over unpositioned flow content, so without this the score
-     would be behind the picture. The two that are already absolute are left
-     alone or they would lose their own placement. */
-  #online-game-panel.oche-mode > *:not(#online-video-strip):not(.oche-controls):not(.oche-stat) {
+     would sit behind the picture.
+     Listed explicitly rather than as * with :not() exclusions. :not() carries
+     the specificity of its ARGUMENT, so :not(#online-video-strip) was quietly
+     worth an ID and made that rule (2,3,0) - which then beat every more
+     specific-looking override written afterwards, including the one meant to
+     move the darts. An explicit list has no hidden weight. */
+  #online-game-panel.oche-mode .online-scoreboard,
+  #online-game-panel.oche-mode #online-big-score,
+  #online-game-panel.oche-mode #online-turn-label,
+  #online-game-panel.oche-mode #online-cricket-board,
+  #online-game-panel.oche-mode .checkout-hint,
+  #online-game-panel.oche-mode #online-winner-banner {
     position: relative;
     z-index: 1;
   }
   /* With the band gone there is nothing pushing the score down the screen, so
      it centres itself over the picture instead of sitting under the top edge. */
   #online-game-panel.oche-mode.immersive { justify-content: center; }
+
+  /* THE THREE DARTS RUN ACROSS THE TOP CENTRE, which puts the whole top edge to
+     work: your camera in the left corner, this visit in the middle, the average
+     in the right corner - and the score alone in the centre of the screen with
+     nothing stacked under it.
+     Out of the flow, so the score stays centred on the picture rather than
+     being pushed down by them. ID-scoped because the z-index rule above sets
+     position: relative on flow children and would otherwise win. */
+  #online-game-panel.oche-mode #online-turn-darts,
+  #game-panel.oche-mode #turn-darts {
+    position: absolute;
+    top: 1.6vh;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    z-index: 2;
+  }
 
   /* THE SMALL CAMERA GOES IN THE TOP-LEFT CORNER, out of the flow entirely, so
      the main view keeps the middle of the band to itself rather than being
