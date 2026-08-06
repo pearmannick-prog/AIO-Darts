@@ -3003,6 +3003,23 @@
   #online-game-panel.oche-mode #online-video-strip .video-tile-placeholder:not(.hidden) {
     display: flex;
   }
+  /* NO SCRIM ON THE SCORES IN HERE. .tile-score paints a gradient up from the
+     bottom of its tile, which is right for a small tile in a strip and wrong
+     once the staged tile IS the whole screen - it became a dark band across the
+     foot of the picture. A text shadow does the same job for two short strings
+     without dimming a quarter of the video. */
+  .oche-mode .tile-score {
+    background: none;
+    /* An outline rather than a glow. The scrim existed to keep two short
+       strings readable over an arbitrary room, and a hard edge on the glyphs
+       does that without touching the picture at all - four offsets for the
+       border, one soft shadow underneath to lift it off a busy background. */
+    text-shadow:
+      1px 1px 0 rgba(0,0,0,0.95), -1px 1px 0 rgba(0,0,0,0.95),
+      1px -1px 0 rgba(0,0,0,0.95), -1px -1px 0 rgba(0,0,0,0.95),
+      0 2px 12px rgba(0,0,0,0.75);
+  }
+
   /* On a phone the tiles are too small to carry a score as well as a face, so
      the central row stays and the overlays go. Desktop does the opposite - see
      the block below. */
@@ -3417,8 +3434,22 @@
   .checkout-route:not(:first-child) { opacity: 0.62; font-size: 13.5px; }
   [data-boardview="room"] .checkout-route { font-size: 18px; }
   [data-boardview="across"] .checkout-route { font-size: 22px; }
-  .oche-mode .checkout-hint { justify-content: center; margin: 1.5vh 0 0; }
-  .oche-mode .checkout-route { font-size: clamp(14px, 2.6vh, 34px); }
+  /* Directly under the score, centred, and as plain text rather than a chip -
+     over a camera picture the pill reads as a button and competes with the
+     number above it. A shadow instead of a background, for the same reason the
+     tile scores use a gradient scrim: the room behind it could be any colour. */
+  .oche-mode .checkout-hint {
+    justify-content: center;
+    margin: 2vh 0 0;
+    column-gap: 2.5vw;
+  }
+  .oche-mode .checkout-route {
+    background: none;
+    padding: 0;
+    font-size: clamp(16px, 3.2vh, 40px);
+    letter-spacing: 0.06em;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.85), 0 0 3px rgba(0,0,0,0.9);
+  }
 
   /* ---- Saved and recent formats ---- */
   .format-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; }

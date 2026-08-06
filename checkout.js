@@ -193,14 +193,20 @@ export function checkoutAdvice(remaining, dartsLeft, rulesKey, bullMode, options
   if (level === "off") return [];
   if (onlyUnder100 && remaining > 100) return [];
   const limit = level === "all" ? 3 : 1;
-  return checkoutRoutes(remaining, dartsLeft, rulesKey, bullMode, { limit }).map(describeRoute);
+  return checkoutRoutes(remaining, dartsLeft, rulesKey, bullMode, { limit })
+    .map((route) => describeRoute(route, " - "));
 }
 
 /**
  * "T20 T20 D20" - the form a player reads on a wall chart, where a plain
  * number means a single.
+ *
+ * The separator is a parameter because the two places this is read want
+ * different things: a wall chart runs the darts together, but on a scoreboard
+ * being read from the oche - over a camera picture, at a glance - "T20 - T20 -
+ * D15" separates far better than three tokens with a space between them.
  */
-export function describeRoute(route) {
+export function describeRoute(route, separator = " ") {
   if (!route?.length) return "";
-  return route.map((t) => (t.kind === "single" ? String(t.value) : t.label)).join(" ");
+  return route.map((t) => (t.kind === "single" ? String(t.value) : t.label)).join(separator);
 }
