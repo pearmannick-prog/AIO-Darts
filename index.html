@@ -2935,10 +2935,28 @@
      0,1,0 - the rule above is 1,2,0 and would override it, leaving an empty
      black band across the top of every oche view with no video in it. */
   #online-game-panel.oche-mode #online-video-strip.hidden { display: none; }
-  /* The video itself is deliberately NOT overridden here. .video-tile already
-     fixes the tile at 4:3 and fills it with object-fit: cover, which is what
-     the rest of the app does - and it is what makes two different cameras look
-     alike rather than one letterboxed and one not. */
+  /* THE STAGED VIDEO HAS TO BE RESIZED, and not resetting it is what made the
+     opponent's camera vanish while its tile still drew a border.
+     .immersive sizes the staged video with height: var(--stage-h) - and this
+     mode sets --stage-h to 0 to reclaim the band the immersive layout reserves.
+     The tile kept the explicit size given above, so the box was there; the
+     video inside it was zero pixels tall. Filling the tile is all that is
+     wanted here, which is what the tile does for every other video in the app. */
+  #online-game-panel.oche-mode #online-video-strip > .video-tile > video {
+    position: static;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* And say so when there is no picture. .immersive hides the placeholder on
+     the staged tile because its band is full-bleed and a caption would sit on
+     the video; in here an empty tile with no explanation just looks broken.
+     :not(.hidden) matters - renderAv toggles that class to mean "there IS a
+     picture", and forcing display would put the caption back over a live one. */
+  #online-game-panel.oche-mode #online-video-strip .video-tile-placeholder:not(.hidden) {
+    display: flex;
+  }
   /* On a phone the tiles are too small to carry a score as well as a face, so
      the central row stays and the overlays go. Desktop does the opposite - see
      the block below. */
