@@ -537,7 +537,27 @@ httpServer.on("upgrade", (req, socket, head) => {
 
   // Gating pages but not sockets would leave signaling and the lobby open to
   // anyone who skipped the front door.
+  //
+  // ANSWER, then hang up. A bare socket.destroy() here sends no HTTP response
+  // at all, and a proxy in front of this - Render's, in our case - reports that
+  // to the browser as a 502 Bad Gateway. The player is then told the signaling
+  // server could not be reached, when the server is running perfectly and has
+  // simply refused them for want of the test build's password. It cost hours,
+  // and it presents as a phone-only fault: service workers do not intercept
+  // WebSocket handshakes, so a phone running the app from cache never makes the
+  // ordinary request that would refresh the gate cookie, while a desktop that
+  // just loaded the page always has one.
+  //
+  // The browser still only surfaces this to JavaScript as a generic socket
+  // error - the status is not exposed to the WebSocket API - but it is now in
+  // the network panel, in the server's reach, and no longer a lie.
   if (!isAllowed(req)) {
+    socket.write(
+      "HTTP/1.1 401 Unauthorized\r\n" +
+      'WWW-Authenticate: Basic realm="AIO Darts test build", charset="UTF-8"\r\n' +
+      "Content-Length: 0\r\n" +
+      "Connection: close\r\n\r\n"
+    );
     socket.destroy();
     return;
   }

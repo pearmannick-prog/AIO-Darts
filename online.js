@@ -984,19 +984,51 @@ function startConnectWatchdog(phase = "signaling") {
     // on a code that will never be used. The diagnosis goes in teardown's
     // notice, not the status line - teardownMatch hides the waiting panel the
     // status line lives on, so anything written there is never read.
-    teardownMatch(
-      signaling
-        ? `Couldn't reach the signaling server (${currentSignalingUrl()}). ` +
-          "It may be starting up, or blocked by a network in between - try again."
-        : "Reached the server, but the other player never joined. They may have " +
-          "closed the app, or their connection couldn't be established."
-    );
+    const notice = signaling
+      ? `Couldn't reach the signaling server (${currentSignalingUrl()}). ` +
+        "It may be starting up, or blocked by a network in between - try again."
+      : "Reached the server, but the other player never joined. They may have " +
+        "closed the app, or their connection couldn't be established.";
+
+    teardownMatch(notice);
+
+    // Tear down first, then find out whether that message was true. The player
+    // gets their tab back immediately either way; the wording catches up.
+    if (signaling) refineSignalingNotice(notice);
   }, signaling ? SIGNALING_TIMEOUT_MS : PEER_TIMEOUT_MS);
 }
 
 function stopConnectWatchdog() {
   clearTimeout(connectTimer);
   connectTimer = null;
+}
+
+// "Couldn't reach the signaling server" is a guess, and on a gated test build
+// it is the wrong one: the server is up and has refused the socket for want of
+// the site password, which the browser reports as an indistinguishable socket
+// error. Being told the server is down sends you looking at the server.
+//
+// /healthz is the one thing the gate NEVER blocks - it exists so Render can
+// tell whether the service is alive - which makes it exactly the right probe.
+// If it answers, the server is running and the fault is between us and its
+// socket, not the server itself.
+//
+// The teardown has already happened by the time this resolves; all this does is
+// replace the text, and only if the player is still looking at the notice it
+// wrote. Anything else means they have moved on and the message is stale.
+async function refineSignalingNotice(shown) {
+  try {
+    const res = await fetch("/healthz", { cache: "no-store" });
+    if (!res.ok) return;
+  } catch {
+    // Genuinely unreachable - the original message was right after all.
+    return;
+  }
+  if (el.setupNotice.textContent !== shown) return;
+  el.setupNotice.textContent =
+    `This server is up, but the signaling socket wouldn't open (${currentSignalingUrl()}). ` +
+    "On a test build the usual cause is the site password having lapsed on this device - " +
+    "reload the page, enter it again, and try once more.";
 }
 
 // ---------- Starting from the lobby ----------

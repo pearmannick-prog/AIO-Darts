@@ -483,6 +483,18 @@ take the deployment down rather than protect it; and the WebSocket upgrades ARE
 gated, since protecting pages but not sockets would leave signaling and the lobby
 open to anyone who skipped the front door.
 
+**A refused upgrade must ANSWER before hanging up.** Rejecting one with a bare
+`socket.destroy()` sends no HTTP response at all, and Render's proxy turns that
+into a **502 Bad Gateway** — so the player is told the signaling server cannot be
+reached while the server is running perfectly and has merely refused them for
+want of the site password. It reads as a phone-only fault, because service
+workers do not intercept WebSocket handshakes: a phone running the app from cache
+never makes the ordinary request that would refresh the gate cookie, while a
+desktop that just loaded the page always carries one. The browser still only
+exposes a generic socket error to JavaScript, which is why `online.js` probes
+`/healthz` — the one thing the gate never blocks — before deciding whether
+"couldn't reach the server" is actually true.
+
 **Never build HTML from a player's display name.** `lobbyui.js` once interpolated
 the challenger's name into `innerHTML`, which is stored cross-user XSS — set your
 name to an `<img>` with an `onerror` and challenge someone, and it runs in their
