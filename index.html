@@ -2810,7 +2810,7 @@
        shrinks it without a breakpoint saying so. What landscape does change is
        the strip above it, which is smaller here and so reserves less. */
     #online-game-panel.oche-mode.cricket-stage,
-    #game-panel.oche-mode.cricket-stage { padding-top: 7vh; }
+    #game-panel.oche-mode.cricket-stage { padding-top: 7vh; padding-top: 7dvh; }
   }
 
   @media (max-width: 640px) {
@@ -3120,6 +3120,18 @@
      Online never hit this because its stage shows scores in the tiles from the
      start; local play still had the x01 layout underneath it. */
   #game-panel.oche-mode.cricket-stage #big-score { display: none; }
+  /* The pad is the scoreboard here, so everything above it is overhead and the
+     turn label is all that is left of it. Trimmed rather than removed - you do
+     need to know whose turn it is - but its 2vh margin and 3.2vh type were
+     sized for the x01 stage, where a 34vh number sits underneath and a couple
+     of vh either way is invisible. Here they come straight off the pad. */
+  #online-game-panel.oche-mode.cricket-stage #online-turn-label,
+  #game-panel.oche-mode.cricket-stage #turn-label {
+    font-size: clamp(14px, 2.4vh, 30px);
+    font-size: clamp(14px, 2.4dvh, 30px);
+    margin-bottom: 0.8vh;
+    margin-bottom: 0.8dvh;
+  }
 
   @media (min-width: 900px), (orientation: landscape) {
     .oche-mode.immersive:not(.cricket-stage) .online-scoreboard { display: none; }
@@ -3320,7 +3332,14 @@
      tint. Same objection as the score scrims, arriving by a different route. */
   #online-game-panel.oche-mode #online-cricket-board,
   #game-panel.oche-mode #cricket-board {
+    /* Solid first as the fallback, then let a little of the room through.
+       Not the 55% the immersive layout uses - at that depth the marks go muddy
+       over an arbitrary background, which is why this was made solid in the
+       first place. Around three quarters keeps the chalk marks and the closed
+       ⊗ reading at oche distance while the pad stops looking like a slab
+       pasted over the video. */
     background: var(--video-bg);
+    background: color-mix(in srgb, var(--video-bg) 78%, transparent);
     border-color: var(--panel-border);
   }
   /* THE PAD HAS ONE SIZE KNOB: --ck-u. Everything below is a multiple of it.
@@ -3335,9 +3354,13 @@
 
      Expressed as a unit the arithmetic is one line, and it was measured rather
      than guessed: the pad is nine rows - seven numbers, a header and the Miss
-     footer - and comes out at 16.95u + 21px. The constant is the nine row
+     footer - and comes out at 17.07u + 21px. The constant is the nine row
      borders and the padding that does not scale. The layout above and below
-     leaves the pad about 70vh, so solving for u gives the line below.
+     leaves the pad about 78vh, so solving for u gives the line below.
+     RE-MEASURE THE MULTIPLIER IF A ROW'S CONTENTS CHANGE HEIGHT. It was 16.95
+     until the marks were enlarged to nearly a full row, at which point they -
+     not the buttons - became what sets the row height, and the total moved with
+     them.
 
      SUBTRACTING THE CONSTANT IS THE WHOLE POINT, and it is why this is not
      simply `4vh`. 21px is 1.8% of a desktop viewport and 5.4% of a landscape
@@ -3354,7 +3377,18 @@
      the same reason the constant broke it at the bottom: a big screen across a
      room should get a big pad. */
   .oche-mode .cricket-board {
-    --ck-u: calc((70vh - 24px) / 17);
+    /* vh first, dvh second - a browser without dvh ignores the line it cannot
+       parse and keeps the vh one.
+       DVH IS THE MOBILE HALF OF THE PROPORTION RULE. On a phone `vh` is the
+       viewport with the URL bar HIDDEN, which is taller than what you can
+       actually see while the bar is showing - so a pad sized to 78vh genuinely
+       does not fit on screen, and the page scrolls, while the identical
+       arithmetic fits perfectly on a desktop where the two are the same number.
+       That is the whole "right on one end, wrong on the other" failure again,
+       arriving through the unit rather than through a constant. dvh is the
+       height that is actually visible right now. */
+    --ck-u: calc((78vh - 24px) / 17.1);
+    --ck-u: calc((78dvh - 24px) / 17.1);
     display: block;
     /* WIDTH IS A MULTIPLE OF u TOO, and it has to be stated. The panel is a
        flex container, so the board shrink-wrapped to its minimum content
@@ -3383,13 +3417,17 @@
   #online-game-panel.oche-mode.cricket-stage,
   #game-panel.oche-mode.cricket-stage {
     padding-top: 9vh;
+    padding-top: 9dvh;
     /* And the SAME reservation at the bottom, for the same reason. The control
        bar is absolute too, so the flow ran underneath it - and .game-top has
        flex-grow, so it swallowed every pixel the pad did not use and pushed
        the pad down onto the bar however small the pad was made. That is why
        shrinking the pad never cured the overlap: the pad was not too big, the
-       flow simply had no bottom. */
-    padding-bottom: 9vh;
+       flow simply had no bottom.
+       7 rather than 9: the bar measures a shade under 6vh, and the two spare
+       vh are worth more to the pad than to the gap. */
+    padding-bottom: 7vh;
+    padding-bottom: 7dvh;
     /* Cricket re-declares --stage-h at .immersive.cricket-stage, which is a
        class deeper than the oche rule that zeroes it - so the taller stage
        came back, and with it the 760px scrim above. This is why the gradient
@@ -3419,7 +3457,15 @@
   }
   .oche-mode .ck-name { font-size: calc(var(--ck-u) * 0.45); }
   .oche-mode .ck-points { font-size: calc(var(--ck-u) * 1.05); }
-  .oche-mode .ck-mark { font-size: calc(var(--ck-u) * 0.9); }
+  /* THE MARKS ARE THE SCORE, and at 0.9u they were the smallest thing on a pad
+     whose buttons are only inputs. On a real board the chalk is the biggest
+     thing on it. 1.65u makes the ⊗ very nearly a row tall, which is what it
+     has to be to read from the oche.
+     It stops just short of a full row on purpose: .ck-mark has line-height 1,
+     so once it exceeds the button row it becomes what sets the row height, and
+     the pad's 16.95u total - the number --ck-u is solved against - would start
+     moving with it. */
+  .oche-mode .ck-mark { font-size: calc(var(--ck-u) * 1.65); }
   /* .ck-mark carries a 30px min-height, which is a floor the vh sizing could
      not get under - on a landscape phone seven of those alone were most of the
      screen, and it was a large part of why the pad still scrolled there after
