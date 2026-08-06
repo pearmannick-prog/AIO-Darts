@@ -3078,11 +3078,33 @@
      with nowhere to live, and the machines put them exactly here: a player at
      each end of the bottom edge. The tile scores go, so it is said once.
      Ordered and floored the same way the no-video row is. */
-  .oche-mode.cricket-stage .online-scoreboard {
+  /* The two scores FLANK the pad in the bottom corners rather than forming a
+     row beneath it. Out of the flow, so they cost no height at all - which is
+     what stopped the column running past the bottom of the screen and taking
+     the whole panel with it. It is also where they read best: the pad owns the
+     middle, and a player sits at each end the way a machine lays them out. */
+  #online-game-panel.oche-mode.cricket-stage .online-scoreboard,
+  #game-panel.oche-mode.cricket-stage #player-tabs {
     display: flex;
-    order: 10;
-    margin-top: auto;
-    margin-bottom: 7.5vh;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 9.5vh;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin: 0;
+    padding: 0 3vw;
+    max-width: none;
+    z-index: 2;
+    pointer-events: none;
+  }
+  #online-game-panel.oche-mode.cricket-stage .online-score-box,
+  #game-panel.oche-mode.cricket-stage .player-tab {
+    flex: 0 0 auto;
+    min-width: 0;
+    background: none;
+    padding: 0;
+    text-align: center;
   }
   /* The rule that turns these on is five classes deep, so a five-class hide
      only TIES and then loses on source order. An ID settles it outright. */
@@ -3154,7 +3176,13 @@
     transform: none;
   }
   #online-game-panel.oche-mode:fullscreen { padding: 3vh 4vw; }
-  .oche-mode.immersive::before { display: none; }
+  /* BOTH scrims, not just the first. The immersive layout has two: ::before
+     paints the stage backdrop and ::after paints a readability gradient over
+     it. Only ::before was turned off here, so the gradient survived - and no
+     amount of scanning elements found it, because a pseudo-element is not an
+     element and querySelectorAll cannot see one. */
+  .oche-mode.immersive::before,
+  .oche-mode.immersive::after { display: none; }
 
   /* The immersive video stage positions the score absolutely inside a camera
      band. In here there is no camera band, so those have to come back to the
@@ -3294,10 +3322,26 @@
   .oche-mode .cricket-board {
     display: block;
     max-width: 92vw;
-    max-height: 82vh;
+    /* Fits between the darts strip above and the control bar below. The scores
+       take no height now - they are pinned in the corners - so the pad gets
+       most of what is left, which is the proportion a real machine gives it. */
+    max-height: 68vh;
     overflow-y: auto;
     margin: 0 auto;
     border-radius: 1.2vh;
+  }
+  /* The darts are absolutely positioned, so they reserve no space and the pad
+     centred itself straight underneath them. Reserving it here is what stops
+     the two overlapping - and it has to carry the ID, because the padding it
+     is overriding is set on #online-game-panel.oche-mode. */
+  #online-game-panel.oche-mode.cricket-stage,
+  #game-panel.oche-mode.cricket-stage {
+    padding-top: 12vh;
+    /* Cricket re-declares --stage-h at .immersive.cricket-stage, which is a
+       class deeper than the oche rule that zeroes it - so the taller stage
+       came back, and with it the 760px scrim above. This is why the gradient
+       appeared in Cricket and not in x01. */
+    --stage-h: 0px;
   }
   /* THE ROWS HAVE TO BE SIZED, not the board. Every part of the pad carries a
      fixed pixel font - .ck-num is 22px, .ck-mod 14px - so scaling the
