@@ -2779,6 +2779,10 @@
        the layout itself is the same one. */
     .oche-mode.immersive #big-score,
     .oche-mode.immersive #online-big-score { font-size: clamp(56px, 28vh, 180px); }
+    /* A taller band here. Height is what landscape is short of, so a 24vh strip
+       leaves the cameras as postage stamps once they are no longer allowed to
+       stretch sideways to fill it. */
+    #online-game-panel.oche-mode #online-video-strip { height: 34vh; }
   }
 
   @media (max-width: 640px) {
@@ -2863,26 +2867,42 @@
     margin: 0 auto 1.5vh;
     padding: 0;
     overflow: hidden;
+    /* Centred, because the tiles no longer fill the band - see below. */
+    justify-content: center;
+    align-items: center;
   }
+  /* THE TILES MUST NOT STRETCH.
+     flex: 1 1 0 made each one take half the band whatever shape the camera
+     actually was, so on a landscape phone a 24vh band became a 94px-tall,
+     425px-wide letterbox - and because both were forced to the same width
+     regardless of their source, two different cameras got cropped by different
+     amounts and stopped lining up.
+     Now the height is the band and the width comes from .video-tile's own
+     4:3 aspect-ratio, so both tiles are exactly as tall AND as wide as each
+     other whatever the two cameras happen to be. Identical boxes is what
+     "aligned" actually means here. */
   #online-game-panel.oche-mode #online-video-strip > .video-tile {
     position: static;
-    flex: 1 1 0;
+    flex: 0 0 auto;
     width: auto;
     height: 100%;
-    min-width: 0;
+    /* On a narrow phone two 4:3 tiles at full band height are wider than the
+       screen. Capping the width makes the aspect-ratio pull the HEIGHT down
+       instead - equally for both, so they stay identical. */
+    max-width: 46%;
     margin: 0;
     border-radius: 1.2vh;
+    overflow: hidden;
   }
   #online-game-panel.oche-mode #online-video-strip > .video-tile.hidden { display: none; }
   /* .hidden is how the AV code says "nobody has a camera on", and it is only
      0,1,0 - the rule above is 1,2,0 and would override it, leaving an empty
      black band across the top of every oche view with no video in it. */
   #online-game-panel.oche-mode #online-video-strip.hidden { display: none; }
-  #online-game-panel.oche-mode #online-video-strip video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
+  /* The video itself is deliberately NOT overridden here. .video-tile already
+     fixes the tile at 4:3 and fills it with object-fit: cover, which is what
+     the rest of the app does - and it is what makes two different cameras look
+     alike rather than one letterboxed and one not. */
   /* On a phone the tiles are too small to carry a score as well as a face, so
      the central row stays and the overlays go. Desktop does the opposite - see
      the block below. */
@@ -2908,8 +2928,13 @@
     .oche-mode.immersive .video-tile.as-thumb .tile-score { display: flex; }
     .oche-mode.immersive .video-tile.as-thumb .tile-score-value { display: inline; }
 
+    /* Lifted clear of the control bar along the bottom edge. The stage tile is
+       the whole screen in this layout, so its score sits on the very bottom
+       and was landing on the buttons - and, where the tile runs past the
+       viewport, being clipped by it. */
     .oche-mode.immersive .video-tile.as-stage .tile-score {
       padding: 40px 20px 14px;
+      bottom: 7.5vh;
     }
     .oche-mode.immersive .video-tile.as-stage .tile-score-label { font-size: 15px; }
     .oche-mode.immersive .video-tile.as-stage .tile-score-value { font-size: 40px; }
@@ -2992,7 +3017,10 @@
   .oche-mode:not(.immersive) .online-scoreboard {
     order: 10;
     margin-top: auto;
-    margin-bottom: 0;
+    /* Sits above the controls, which are centred along the bottom edge. The
+       two were previously both in the bottom-right corner and printed through
+       each other. */
+    margin-bottom: 7.5vh;
   }
   /* The local panel has .game-top with flex:1 to absorb the slack; the online
      one has no such child, so without this the score clings to the top edge
@@ -3173,14 +3201,17 @@
      Only ever visible in oche view. On the ordinary game screen the stats
      pages already carry this, in far more detail. */
   .oche-stat { display: none; }
+  /* Top right, not the middle. Halfway down the screen it lands on whatever
+     the camera is pointing at - a face, usually - and it is a number you
+     glance at between visits, not one you read while throwing. The machines
+     put it in the corner for the same reason. */
   .oche-mode .oche-stat {
     display: block;
     position: absolute;
     right: 2vw;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 1.6vh;
     text-align: right;
-    z-index: 2;
+    z-index: 3;
     pointer-events: none;
   }
   .oche-stat-label {
@@ -3215,13 +3246,22 @@
     background: rgba(0,0,0,0.45);
   }
 
+  /* Bottom CENTRE. The corners are where the scores want to be - a player at
+     each end, the way every machine lays it out - and putting the buttons in
+     one of them meant a score was always printed through them. The middle of
+     the bottom edge is the one part of an oche scoreboard with nothing else
+     competing for it, and on a tablet on a stand it is no harder to reach. */
   .oche-controls {
     position: absolute;
     bottom: 1.6vh;
-    right: 2vw;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 8px;
-    z-index: 3;
+    z-index: 4;
+    max-width: 96vw;
   }
   .oche-btn {
     background: var(--panel-raise-3);
