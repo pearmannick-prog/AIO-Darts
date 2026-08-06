@@ -2781,8 +2781,9 @@
     .oche-mode.immersive #online-big-score { font-size: clamp(56px, 28vh, 180px); }
     /* A taller band here. Height is what landscape is short of, so a 24vh strip
        leaves the cameras as postage stamps once they are no longer allowed to
-       stretch sideways to fill it. */
-    #online-game-panel.oche-mode #online-video-strip { height: 34vh; }
+       stretch sideways to fill it. Only the variable changes - the tiles size
+       themselves from it. */
+    #online-game-panel.oche-mode #online-video-strip { --tile-h: min(34vh, 30vw); }
   }
 
   @media (max-width: 640px) {
@@ -2861,7 +2862,12 @@
     /* Above the player row whatever the markup order happens to be. */
     order: -1;
     gap: 1vh;
-    height: 24vh;
+    /* One height, used by the strip AND by each tile, so the width below can be
+       computed from it rather than inferred. Capped against the viewport WIDTH
+       as well: two 4:3 tiles at 24vh are wider than a phone in portrait, and
+       the band has to fit two of them side by side. */
+    --tile-h: min(24vh, 34vw);
+    height: var(--tile-h);
     width: 100%;
     max-width: 1000px;
     margin: 0 auto 1.5vh;
@@ -2881,15 +2887,20 @@
      4:3 aspect-ratio, so both tiles are exactly as tall AND as wide as each
      other whatever the two cameras happen to be. Identical boxes is what
      "aligned" actually means here. */
+  /* BOTH DIMENSIONS ARE EXPLICIT, and that is the fix rather than a style
+     choice. width: auto plus a video at width: 100% is a cycle - the tile
+     waits on its content and the content waits on the tile - and aspect-ratio
+     is meant to break it but does not do so reliably for a flex item. The
+     staged tile resolved to ZERO WIDTH, which is why the opponent's camera
+     disappeared, and why both tile scores piled into one corner: each score is
+     positioned against its own tile's bottom edge, so a tile with no width
+     drops its score on top of the other one.
+     Computing the width from the shared --tile-h removes the cycle entirely. */
   #online-game-panel.oche-mode #online-video-strip > .video-tile {
     position: static;
     flex: 0 0 auto;
-    width: auto;
-    height: 100%;
-    /* On a narrow phone two 4:3 tiles at full band height are wider than the
-       screen. Capping the width makes the aspect-ratio pull the HEIGHT down
-       instead - equally for both, so they stay identical. */
-    max-width: 46%;
+    height: var(--tile-h);
+    width: calc(var(--tile-h) * 4 / 3);
     margin: 0;
     border-radius: 1.2vh;
     overflow: hidden;
