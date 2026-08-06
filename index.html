@@ -2872,10 +2872,28 @@
     max-width: 1000px;
     margin: 0 auto 1.5vh;
     padding: 0;
-    overflow: hidden;
+    /* visible, not hidden: the thumbnail below leaves this box for the corner
+       of the screen, and an overflow-clipped strip would cut it off on the way
+       out. Nothing else escapes - the tiles are explicitly sized now. */
+    overflow: visible;
     /* Centred, because the tiles no longer fill the band - see below. */
     justify-content: center;
     align-items: center;
+  }
+
+  /* THE SMALL CAMERA GOES IN THE TOP-LEFT CORNER, out of the flow entirely, so
+     the main view keeps the middle of the band to itself rather than being
+     pushed off-centre by a second tile beside it.
+     The strip is position: static in here, so this resolves against the panel -
+     which is the fullscreen box - and lands in the corner of the screen rather
+     than the corner of the band. */
+  #online-game-panel.oche-mode #online-video-strip > .video-tile.as-thumb {
+    position: absolute;
+    top: 1.8vh;
+    left: 2vw;
+    height: calc(var(--tile-h) * 0.62);
+    width: calc(var(--tile-h) * 0.62 * 4 / 3);
+    z-index: 3;
   }
   /* THE TILES MUST NOT STRETCH.
      flex: 1 1 0 made each one take half the band whatever shape the camera
@@ -2992,6 +3010,17 @@
     padding: 2.5vh 3vw;
     overflow: hidden;
     --stage-h: 0px;
+    /* THESE THREE ARE THE ONES THAT KEPT ESCAPING.
+       #online-game-panel.immersive centres itself with
+       width: min(1280px, 94vw); margin-left: 50%; transform: translateX(-50%).
+       Same specificity as this rule, so declaring position and margin here does
+       not touch them - an undeclared property is not overridden, it is
+       inherited from the winning declaration of THAT property.
+       The result was a fullscreen panel 1280px wide, shifted half its own width
+       to the left. Every stray negative x I chased this session came from here. */
+    width: auto;
+    margin-left: 0;
+    transform: none;
   }
   #online-game-panel.oche-mode:fullscreen { padding: 3vh 4vw; }
   .oche-mode.immersive::before { display: none; }
