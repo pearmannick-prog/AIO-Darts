@@ -55,7 +55,7 @@ every existing deployment is unaffected. Tests: `/healthz` reports
 `accounts:false`, `/api/*` 503s, the lobby doesn't start.
 
 Tests: `node --test server/dartnotation.test.js server/statsengine.test.js
-server/checkout.test.js`.
+server/checkout.test.js server/matchrecorder.test.js`.
 
 **Password reset is the only mail this app sends, and it works with no mail
 provider.** `server/email.js` posts to Resend when `EMAIL_API_KEY`, `EMAIL_FROM`

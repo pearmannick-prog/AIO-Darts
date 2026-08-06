@@ -219,7 +219,12 @@ export function createRecorder({ mode, format, players }) {
       let darts = 0;
       let scored = 0;
       for (const t of mine) {
-        darts += t.throws.length;
+        // t.darts, NOT t.throws.length. A quick total records the whole visit
+        // as a single throw but sets darts to 3, because three darts is what
+        // the person actually threw - which is the entire reason that field
+        // exists separately. Counting throws made a 180 read as 180 points off
+        // ONE dart: a PPD of 180 against a ceiling of 60.
+        darts += t.darts || t.throws.length;
         // A bust visit scores nothing however good its darts looked on the way
         // there - the same rule closeTurn applies when it writes the visit.
         scored += t.bust ? 0 : (t.scored || 0);
