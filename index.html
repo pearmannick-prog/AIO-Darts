@@ -3252,11 +3252,23 @@
 
   /* Cricket's mark pad IS the scoreboard, so it stays and grows rather than
      being hidden with the other input surfaces. */
+  /* Cricket's mark pad IS the score, so in here it is a SOLID panel rather
+     than the translucent wash the immersive layout gives it. At 55% opacity
+     over an arbitrary room both suffer: the marks are muddy and the video
+     behind them is dimmed to no purpose. Solid is also what the machines do -
+     the numbers column on a real Cricket board sits on a dark card, not a
+     tint. Same objection as the score scrims, arriving by a different route. */
+  #online-game-panel.oche-mode #online-cricket-board,
+  #game-panel.oche-mode #cricket-board {
+    background: var(--video-bg);
+    border-color: var(--panel-border);
+  }
   .oche-mode .cricket-board {
     display: block;
     font-size: clamp(13px, 2.2vh, 26px);
     max-width: 92vw;
     margin: 0 auto;
+    border-radius: 1.2vh;
   }
 
   .oche-mode #winner-banner,
