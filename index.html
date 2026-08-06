@@ -34,6 +34,14 @@
      giving them theme knobs would be thirty more values for no gain.
      --------------------------------------------------------------------- */
   :root {
+    /* Tells the browser which way round the page is, so the parts it draws
+       ITSELF follow - the option list of a <select>, scrollbars, spinners,
+       date pickers. Without it a dark theme styles the closed select but the
+       popup keeps the system's white background and inherits the theme's light
+       text, which is white on white and unreadable. No amount of styling the
+       <select> fixes that, because none of it reaches the popup. */
+    color-scheme: light;
+
     /* ---- Seeds ---- */
     --felt: #0F3D2E;
     --felt-light: #16513D;
@@ -2325,6 +2333,15 @@
     top: 0;
     z-index: 50;
   }
+  /* Belt and braces for the select popup. color-scheme above is the real fix
+     and handles this on its own in current Chrome, Firefox and Safari - but
+     some builds draw the option list from these properties instead, and an
+     unreadable format picker is worth two lines of insurance. */
+  select option {
+    background-color: var(--field-bg);
+    color: var(--on-panel);
+  }
+
   /* ---- The Customize panel, at the top of the settings sheet ---- */
   .customize-panel { margin-bottom: 18px; }
   .cz-head { margin-bottom: 14px; }
@@ -2507,6 +2524,7 @@
 
   /* ---- The default theme's dark face ---- */
   [data-mode="dark"] {
+    color-scheme: dark;
     --chrome-bg: #0A1F17;
     --chrome-bg-hi: #103026;
 
@@ -2546,7 +2564,9 @@
   /* ---- Oche Night: the lights-down, charcoal-and-gold one. Dark whatever
      the mode says, because a theme called Oche Night with a light face would
      be two different themes wearing one name. ---- */
+  /* Dark whatever the brightness setting says, so the native widgets are too. */
   [data-theme="night"] {
+    color-scheme: dark;
     --chrome-bg: #14140F;
     --chrome-bg-hi: #1F1E17;
     --on-chrome: #EDE7D8;
@@ -2593,6 +2613,7 @@
      it doubles as the high-contrast option rather than being a separate
      "accessibility mode" nobody finds. ---- */
   [data-theme="broadcast"] {
+    color-scheme: dark;
     --chrome-bg: #08090B;
     --chrome-bg-hi: #121419;
     --on-chrome: #FFFFFF;
