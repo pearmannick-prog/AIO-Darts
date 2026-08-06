@@ -15,6 +15,7 @@ import {
 } from "./cricketboard.js";
 import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
 import { renderCheckoutHint, renderLiveAverage } from "./checkouthint.js";
+import { getPref } from "./prefs.js";
 import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
@@ -1000,7 +1001,54 @@ function maybeThrowForBot() {
   }, 700);
 }
 
-function endTurn({ busted = false } = {}) {
+// ---------- The optional hold before the turn passes ----------
+//
+// The same idea online uses, and OPTIONAL here because the two modes need it
+// for different reasons. Online must hold: without it, undoing a dart the
+// opponent had already answered would mean rewinding their play too. Local
+// play has no such problem - the undo stack survives the end of a visit
+// already, so the darts are reachable either way - which leaves the hold
+// buying a countdown at the price of a pause. In pass-and-play that price is
+// paid every single visit, with the next player stood beside you waiting for
+// the darts, so it is off unless asked for.
+//
+// The duration is repeated rather than imported from online.js. The two
+// controllers deliberately do not import each other, and this is a UX timing
+// rather than a rule - nothing breaks if they ever differ.
+const VISIT_HOLD_MS = 10000;
+let hold = null; // { until, timer, ticker }
+
+function clearHold() {
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  clearInterval(hold.ticker);
+  hold = null;
+}
+
+function holdSecondsLeft() {
+  if (!hold) return 0;
+  return Math.max(0, Math.ceil((hold.until - Date.now()) / 1000));
+}
+
+function endTurn(opts = {}) {
+  // A computer opponent never needs a chance to undo, and holding after its
+  // visit would add ten seconds to every round of a practice game.
+  const thrower = state.bots[state.currentPlayerIndex];
+  if (!getPref("localHold") || thrower || state.gameOver) {
+    commitTurn(opts);
+    return;
+  }
+  clearHold();
+  hold = {
+    until: Date.now() + VISIT_HOLD_MS,
+    timer: setTimeout(() => { commitTurn(opts); render(); }, VISIT_HOLD_MS),
+    // Redraws the countdown. render() is cheap and already runs on every dart.
+    ticker: setInterval(() => render(), 1000),
+  };
+  render();
+}
+
+function commitTurn({ busted = false } = {}) {
   // The caller announces the VISIT, so the total is taken before the darts are
   // cleared - and not at all on a bust, where cueBust has already said what
   // happened and a number would be a lie.
@@ -1009,6 +1057,7 @@ function endTurn({ busted = false } = {}) {
   }
   state.recorder?.endTurn();
   state.dartsThisTurn = [];
+  clearHold();
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   // Cricket players have no `remaining` - there's nothing to revert to,
   // since it has no bust rule.
@@ -1032,6 +1081,15 @@ function endTurnEarly() {
   // button) without waiting for 3 registered darts, and without reverting
   // any score - only a bust does that.
   if (state.gameOver) return;
+  // Mid-hold this means "stop waiting, hand over now" - the visit is already
+  // complete and its snapshot was taken when its last dart landed, so pushing
+  // another would make the first undo do nothing.
+  if (hold) {
+    clearHold();
+    commitTurn();
+    render();
+    return;
+  }
   undoStack.push(snapshot());
   endTurn();
   render();
@@ -1040,6 +1098,9 @@ function endTurnEarly() {
 function undo() {
   cancelBot();
   if (undoStack.length === 0) return;
+  // The visit is no longer finished, so nothing should still be counting down
+  // towards handing it over.
+  clearHold();
   restore(undoStack.pop());
   render();
 }
@@ -1109,6 +1170,15 @@ function render() {
       `${current.name}'s turn · round ${Math.min(current.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(current)}`;
   } else {
     el.turnLabel.textContent = `${current.name}'s turn`;
+  }
+
+  // The hold, said plainly. A silent pause reads as the app having frozen, and
+  // the one thing worth saying - that there is still time to take a dart back -
+  // would go unnoticed. Written after the branches above so it wins whatever
+  // the game type wanted to say.
+  const heldFor = holdSecondsLeft();
+  if (heldFor > 0) {
+    el.turnLabel.textContent = `Visit over - ${heldFor}s to undo · End turn to skip`;
   }
 
   renderMatchBar();

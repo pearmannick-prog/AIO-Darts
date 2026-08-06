@@ -309,6 +309,13 @@ is still your turn, so the opponent *cannot* have thrown, and the question of
 rewinding a dart they already answered never arises. Either player cuts it
 short with End turn.
 
+Local play has the same hold behind the `localHold` preference, **off by
+default**. Online must hold — it is what makes undo safe there. Local does not
+need it, because its undo stack already survives the end of a visit, so the
+setting buys a countdown at the price of a pause: worth it alone at the board,
+a tax paid every visit in pass-and-play. It is skipped for bot seats, which
+never need a chance to undo and would otherwise add ten seconds a round.
+
 **Both sides hold, and the thrower owns the clock.** Holding unilaterally is
 worse than not holding: the other side would believe it was their turn, throw,
 and have the dart rejected as out of turn. So the thrower counts down and

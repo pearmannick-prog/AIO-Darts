@@ -83,6 +83,12 @@ const SCHEMA = {
   // ---- The game screen ----
   // The single most valuable setting in the app: how far away you are standing.
   boardView: { def: "desk", parse: ENUM("desk", "room", "across"), attr: "data-boardview" },
+  // Hold a finished visit before the turn passes, so a misread can still be
+  // undone. Online always holds - it is what makes undo safe there - but local
+  // play already lets you undo after a visit, so here it buys a countdown at
+  // the cost of a wait. Off by default because pass-and-play is the common
+  // case and the next player is standing beside you with their hand out.
+  localHold: { def: false, parse: BOOL },
   checkoutHelp: { def: "off", parse: ENUM("off", "route", "all") },
   checkoutUnder100: { def: false, parse: BOOL },
   entryMode: { def: "quicktotal", parse: ENUM("perdart", "quicktotal") },
@@ -165,7 +171,7 @@ export function setPref(key, value) {
 // their dashboard should be able to undo a theme experiment without losing it.
 const GROUPS = {
   appearance: ["theme", "mode", "accent", "motion", "contrast", "density", "textScale", "colourblindBoard"],
-  game: ["boardView", "checkoutHelp", "checkoutUnder100", "entryMode"],
+  game: ["boardView", "checkoutHelp", "checkoutUnder100", "entryMode", "localHold"],
   sound: ["sound", "soundVolume", "caller"],
   app: ["landing", "lastTab"],
   setup: ["formatPresets", "recentFormats"],

@@ -266,6 +266,27 @@ function checkoutSection() {
   return wrap;
 }
 
+function holdSection() {
+  const wrap = field("Pause after each visit");
+
+  const row = el("label", "cz-check");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = getPref("localHold");
+  box.addEventListener("change", () => setPref("localHold", box.checked));
+  row.appendChild(box);
+  row.appendChild(el("span", null, "Hold 10 seconds before the turn passes"));
+  wrap.appendChild(row);
+
+  // Names the two cases rather than describing the mechanism, because which
+  // one you are in is what decides whether you want it.
+  wrap.appendChild(el("div", "cz-hint",
+    "Local play only - time to undo a misread before handing over. "
+    + "Leave it off for pass-and-play; turn it on when you're at the board alone. "
+    + "Online always pauses."));
+  return wrap;
+}
+
 function landingSection() {
   const wrap = field("Opens on");
   wrap.appendChild(segmented(
@@ -430,6 +451,7 @@ function render() {
   mount.appendChild(modeSection());
   mount.appendChild(boardViewSection());
   mount.appendChild(checkoutSection());
+  mount.appendChild(holdSection());
   mount.appendChild(soundSection());
   mount.appendChild(accentSection());
   mount.appendChild(landingSection());
