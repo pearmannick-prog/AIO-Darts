@@ -48,9 +48,12 @@ export function renderLiveAverage(node, stats) {
   // in x01 it is the three-dart average, which is the number players actually
   // speak in, and in Cricket it is the points, which say something different
   // from the marks.
+  // The caption comes from the stats object, not from here, so it always names
+  // the number beneath it: 3DA where that is a three-dart average, PPR in
+  // Cricket where it is points per round and no kind of average at all.
   if (second) {
     second.textContent = typeof stats.secondary === "number"
-      ? "Ave. " + stats.secondary.toFixed(2)
+      ? `${stats.secondaryLabel || ""} ${stats.secondary.toFixed(2)}`.trim()
       : "";
   }
 }

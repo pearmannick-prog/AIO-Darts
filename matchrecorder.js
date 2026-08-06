@@ -196,19 +196,17 @@ export function createRecorder({ mode, format, players }) {
 
       if (leg.game === "cricket") {
         // A round IS a visit here, matching cricketstats.js.
+        //
+        // MPR alone, with no second figure. Marks are the whole story of a
+        // Cricket visit - how fast you are closing - and the points a visit
+        // scored are already on the mark pad, number by number, where they
+        // mean something. A second average beside it would be a number nobody
+        // was looking for.
         let marks = 0;
-        let points = 0;
         for (const t of mine) {
           marks += t.throws.reduce((sum, th) => sum + (th.extra?.marks || 0), 0);
-          points += t.throws.reduce((sum, th) => sum + (th.extra?.points || 0), 0);
         }
-        return {
-          kind: "mpr", label: "MPR", value: marks / mine.length, digits: 2,
-          // The machines show points alongside the marks, and the two say
-          // different things: marks are how fast you are closing, points are
-          // what you did with the numbers you already own.
-          secondary: points / mine.length,
-        };
+        return { kind: "mpr", label: "MPR", value: marks / mine.length, digits: 2 };
       }
 
       // Bermuda and Count Up count upwards and have no meaningful per-dart
@@ -235,6 +233,7 @@ export function createRecorder({ mode, format, players }) {
         // The three-dart average, which is the number darts players actually
         // talk in - "a 60 average" means 60 a visit, not 60 a dart.
         secondary: (scored / darts) * 3,
+        secondaryLabel: "3DA",
       };
     },
 
