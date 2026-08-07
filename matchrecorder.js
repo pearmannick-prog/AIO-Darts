@@ -31,6 +31,12 @@
 // crypto.randomUUID needs a secure context, which this app always has in
 // practice (Web Bluetooth requires one too) - but the fallback keeps recording
 // working on a plain-http LAN address, where the app otherwise still runs.
+// Three, everywhere, and not a rule any game gets to vary: a visit is three
+// darts unless it finished the leg. It is here rather than inline because
+// endTurn and the quick-total path both stand on it for the same reason - each
+// knows how many darts were THROWN without having a segment for each of them.
+const DARTS_PER_VISIT = 3;
+
 function newUuid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -98,9 +104,15 @@ export function createRecorder({ mode, format, players }) {
 
   function closeTurn() {
     if (!turn) return;
-    if (turn.throws.length === 0) {
+    if (turn.throws.length === 0 && !turn.darts) {
       // A visit with no darts in it isn't a visit. This happens when the
       // board's physical end-turn button is pressed before anything registers.
+      //
+      // `!turn.darts` is what distinguishes that from a visit where all three
+      // darts MISSED, which registers nothing either and is a real visit that
+      // has to be counted. endTurn sets darts before calling this, so the two
+      // cases are told apart by whether anyone claimed the visit happened
+      // rather than by guessing from an empty throw list.
       turn = null;
       return;
     }
@@ -145,6 +157,24 @@ export function createRecorder({ mode, format, players }) {
     };
   }
 
+  // Marks in one visit, for the two games whose live figure is an MPR.
+  //
+  // The RULE is identical - a dart is worth its multiplier on a target it
+  // actually found, so a visit runs 0 to 9 either way - but the two games record
+  // the answer differently, and neither should be made to record it twice.
+  // Cricket resolves marks in its rules (a dart on a dead number is worth
+  // nothing) and stores the count. Bermuda only knows whether the dart hit the
+  // round's target, so the multiplier on the throw IS the mark count - which is
+  // also why "Any Double" and "Any Triple" rounds come out at 2 and 3 a dart
+  // without a special case.
+  function turnMarks(t) {
+    return (t.throws ?? []).reduce((sum, th) => {
+      if (th.extra?.marks !== undefined) return sum + (th.extra.marks || 0);
+      if (th.extra?.hit) return sum + (th.multiplier || 1);
+      return sum;
+    }, 0);
+  }
+
   // The per-visit Bermuda payload. Without one, a Bermuda turn writes no
   // game_json and the per-dart detail is dropped the moment the match is read
   // back out of the database - the throws table has no column for it, by
@@ -186,33 +216,46 @@ export function createRecorder({ mode, format, players }) {
     // what a player expects to see moving after every visit. The 80% scoring
     // average is a post-match statistic and needs the whole leg to mean
     // anything (see the note on averages in statsengine.js).
+    // NULL AND "NO DARTS YET" ARE DIFFERENT ANSWERS, and the difference is the
+    // label. Returning null for both made the scoreboard fall back to a
+    // hardcoded caption, so a Cricket player who had not thrown yet was shown
+    // "PPD -" - the wrong number's name, on the one screen where the name is
+    // all there is to read. Which figure a game shows is knowledge this module
+    // already has and the renderer should never acquire a second copy of, so an
+    // empty average comes back LABELLED, with a null value.
+    //
+    // null now means only "there is no leg" - the caller hides the whole thing
+    // rather than captioning an absence.
+    //
+    // EVERY GAME GETS ONE, and they fall into two kinds rather than four.
+    // A game is either counting MARKS on a target - Cricket and Bermuda, where
+    // the question is how much of a round found what it was aimed at - or
+    // counting POINTS off darts, which is x01 and Count Up alike whichever
+    // direction the total moves in. Deciding by that rather than by game name
+    // is what keeps a fifth game from needing a third branch.
     liveStats(seat) {
       if (!leg) return null;
       // The open visit counts too - an average that only moved when a turn
       // ended would sit still for the three darts you are actually throwing.
       const all = turn ? [...leg.turns, turn] : leg.turns;
       const mine = all.filter((t) => t.seat === seat);
-      if (!mine.length) return null;
 
-      if (leg.game === "cricket") {
+      if (leg.game === "cricket" || leg.game === "bermuda") {
+        if (!mine.length) return { kind: "mpr", label: "MPR", value: null, digits: 2 };
         // A round IS a visit here, matching cricketstats.js.
         //
-        // MPR alone, with no second figure. Marks are the whole story of a
-        // Cricket visit - how fast you are closing - and the points a visit
-        // scored are already on the mark pad, number by number, where they
-        // mean something. A second average beside it would be a number nobody
-        // was looking for.
+        // MPR alone, with no second figure. Marks are the whole story of one of
+        // these visits - how fast you are closing, or how much of the round
+        // found the target - and the points are already on the pad or the
+        // scoreboard, where they mean something. A second average beside it
+        // would be a number nobody was looking for.
         let marks = 0;
-        for (const t of mine) {
-          marks += t.throws.reduce((sum, th) => sum + (th.extra?.marks || 0), 0);
-        }
+        for (const t of mine) marks += turnMarks(t);
         return { kind: "mpr", label: "MPR", value: marks / mine.length, digits: 2 };
       }
 
-      // Bermuda and Count Up count upwards and have no meaningful per-dart
-      // average to offer mid-leg, so they get nothing rather than a number
-      // that looks like one.
-      if (leg.game !== "x01") return null;
+      const blank = { kind: "ppd", label: "PPD", value: null, digits: 2, secondaryLabel: "3DA" };
+      if (!mine.length) return blank;
 
       let darts = 0;
       let scored = 0;
@@ -225,9 +268,10 @@ export function createRecorder({ mode, format, players }) {
         darts += t.darts || t.throws.length;
         // A bust visit scores nothing however good its darts looked on the way
         // there - the same rule closeTurn applies when it writes the visit.
+        // Count Up cannot bust, so this costs it nothing.
         scored += t.bust ? 0 : (t.scored || 0);
       }
-      if (!darts) return null;
+      if (!darts) return blank;
       return {
         kind: "ppd", label: "PPD", value: scored / darts, digits: 2,
         // The three-dart average, which is the number darts players actually
@@ -323,7 +367,29 @@ export function createRecorder({ mode, format, players }) {
       closeTurn();
     },
 
-    endTurn() {
+    // A VISIT IS THREE DARTS. Ending a turn asserts the visit is over, and the
+    // darts that were never entered were thrown - they simply went nowhere.
+    // Recording only the ones that registered was silently flattering: a visit
+    // of 60 and two misses, entered as one dart, read as a PPD of 60 against a
+    // ceiling of 60 rather than the 20 it was, and every average that counts
+    // darts inherited the error. It is also what makes deleting Cricket's Miss
+    // button safe - the misses are accounted for by the visit ending, which is
+    // the thing the player was going to do anyway.
+    //
+    // `darts` is the field that carries this, not a fourth entry in `throws`.
+    // A dart nobody recorded has no segment, and inventing one would put a
+    // phantom miss in the heatmap and in every per-dart statistic. The split
+    // between "darts thrown" and "darts recorded" already exists for quick
+    // totals, which is exactly the same problem arriving from the other side.
+    //
+    // seat is passed because an all-missed visit registers nothing at all,
+    // leaving no open turn to read it from - and that visit still has to be
+    // counted, or a player who misses everything has the round quietly dropped
+    // from the denominator and their MPR goes UP for missing.
+    endTurn(seat) {
+      if (!leg) return;
+      if (!turn && seat !== null && seat !== undefined) openTurn(seat, null, "dart");
+      if (turn && !turn.isCheckout) turn.darts = Math.max(turn.darts || 0, DARTS_PER_VISIT);
       closeTurn();
     },
 

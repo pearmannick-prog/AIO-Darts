@@ -23,6 +23,12 @@ function x01Recorder() {
   return rec;
 }
 
+function cricketRecorder() {
+  const rec = createRecorder({ mode: "local", format: "cricket", players: ["A", "B"] });
+  rec.startLeg({ legIndex: 0, game: "cricket", x01Start: null, rules: null, bull: "split" });
+  return rec;
+}
+
 test("three darts thrown one at a time average per DART, not per visit", () => {
   const rec = x01Recorder();
   let remaining = 501;
@@ -106,10 +112,61 @@ test("Cricket reports marks per round, and a round is a visit", () => {
   assert.equal(s.value, 9, "nine marks in one visit is an MPR of 9");
 });
 
-test("nothing to report before anything is thrown", () => {
+// An empty average still knows its own NAME. Returning a bare null for this
+// made the scoreboard fall back to a hardcoded caption, so a Cricket player who
+// had not thrown yet was shown "PPD -" - the wrong number's name, on the one
+// screen where the name is all there is to read.
+test("no value but the right label before anything is thrown", () => {
   const rec = x01Recorder();
-  assert.equal(rec.liveStats(0), null);
-  // And a seat that has not thrown reports nothing even when the other has.
+  const before = rec.liveStats(0);
+  assert.equal(before.label, "PPD");
+  assert.equal(before.value, null, "no darts is not an average of zero");
+
+  // And a seat that has not thrown reports the same even when the other has.
   rec.quickTotal(0, { total: 60, remainingBefore: 501, remainingAfter: 441, bust: false, isCheckout: false });
-  assert.equal(rec.liveStats(1), null);
+  assert.equal(rec.liveStats(1).value, null);
+});
+
+test("a Cricket leg names its figure MPR before a dart is thrown", () => {
+  const rec = cricketRecorder();
+  const s = rec.liveStats(0);
+  assert.equal(s.label, "MPR");
+  assert.equal(s.value, null);
+});
+
+// A VISIT IS THREE DARTS. The two that were never entered were thrown and
+// missed, and counting only what registered flattered every average with darts
+// in its denominator.
+test("ending a turn counts the darts that were never entered", () => {
+  const rec = x01Recorder();
+  rec.dart(0, T20, { remainingBefore: 501, remainingAfter: 441, scored: 60 });
+  assert.equal(rec.liveStats(0).value, 60, "mid-visit, one dart has scored 60");
+
+  rec.endTurn(0);
+  assert.equal(rec.liveStats(0).value, 20, "60 across three darts, two of them missed");
+  assert.equal(rec.liveStats(0).secondary, 60, "and a three-dart average of 60");
+});
+
+// The visit that leaves no trace at all. Without this it was dropped, and a
+// player who missed everything had the round taken out of their MPR denominator
+// - so missing made the average go UP.
+test("a visit where all three darts missed is still a round", () => {
+  const rec = cricketRecorder();
+  rec.dart(0, T20, { scored: 0, extra: { target: "20", marks: 3, marksApplied: 3, points: 0 } });
+  rec.endTurn(0);
+  assert.equal(rec.liveStats(0).value, 3, "three marks in one round");
+
+  rec.endTurn(0); // seat 0 again: nothing registered, the whole visit missed
+  assert.equal(rec.liveStats(0).value, 1.5, "three marks across TWO rounds");
+});
+
+// The exception, and the reason endTurn checks it: a leg-winning visit really
+// did use fewer than three darts.
+test("a checkout keeps the darts it actually used", () => {
+  const rec = x01Recorder();
+  rec.dart(0, T20, { remainingBefore: 60, remainingAfter: 0, scored: 60 });
+  rec.endLeg(0);
+  const doc = rec.endMatch({ winnerSeat: 0 });
+  assert.equal(doc.legs[0].turns[0].darts, 1, "one dart finished it");
+  assert.equal(doc.legs[0].turns[0].isCheckout, true);
 });

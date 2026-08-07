@@ -91,6 +91,7 @@ const el = {
   ocheStat: document.getElementById("oche-stat"),
   undoBtn: document.getElementById("undo-btn"),
   newGameBtn: document.getElementById("new-game-btn"),
+  endGameBtn: document.getElementById("end-game-btn"),
   manualSection: document.getElementById("manual-section"),
   manualPerdart: document.getElementById("manual-perdart"),
   manualQuickTotal: document.getElementById("manual-quicktotal"),
@@ -301,6 +302,37 @@ el.rematchBtn?.addEventListener("click", () => {
 
 el.newGameBtn.addEventListener("click", () => abandonGame());
 
+// End game, behind two taps - the same guard online.js puts on End match, for
+// the same reason: a modal is poor on a phone mid-match, but throwing away
+// someone's leg on one stray tap is worth guarding against, and the arming
+// lapses on its own rather than sitting primed for the rest of the game.
+//
+// "New game" beside the score does the same thing and keeps its name: it is the
+// change-the-format path, reached while thinking about the next match rather
+// than about stopping this one.
+let endGameArmTimeout = null;
+
+function disarmEndGame() {
+  clearTimeout(endGameArmTimeout);
+  if (!el.endGameBtn) return;
+  el.endGameBtn.dataset.armed = "0";
+  el.endGameBtn.textContent = "End game";
+  el.endGameBtn.classList.remove("armed");
+}
+
+el.endGameBtn?.addEventListener("click", () => {
+  if (el.endGameBtn.dataset.armed !== "1") {
+    el.endGameBtn.dataset.armed = "1";
+    el.endGameBtn.textContent = "Tap again to end";
+    el.endGameBtn.classList.add("armed");
+    clearTimeout(endGameArmTimeout);
+    endGameArmTimeout = setTimeout(disarmEndGame, 4000);
+    return;
+  }
+  disarmEndGame();
+  abandonGame();
+});
+
 // Leaving the Local Play tab ends the local game, the same way leaving an
 // online match ends that. A game running on a tab nobody is looking at is not
 // paused, it is abandoned - and leaving it there is what let a dead scoreboard
@@ -323,6 +355,10 @@ document.addEventListener("aio-query-local-match", (event) => {
 
 function abandonGame() {
   cancelBot();
+  // However the game ended, the button goes back to saying what it does - a
+  // primed "Tap again to end" left over from last time is one tap from
+  // throwing away the NEXT match.
+  disarmEndGame();
   // An abandoned match is not saved. Half a game would drag every average down
   // with darts that were never a real attempt at a finish - the same rule
   // online.js applies when a match is walked out of.
@@ -582,6 +618,26 @@ function finishLeg(winnerIndex) {
 
 function applyHit(rawSegment) {
   if (state.gameOver) return;
+
+  // A DART THROWN DURING THE HOLD BELONGS TO THE NEXT VISIT, NOT THE ONE THAT
+  // JUST ENDED. Without this it was appended to the completed visit, and the
+  // damage went well past a cosmetic one: the marks and points were credited to
+  // the player who had already finished, so in pass-and-play the next player's
+  // darts scored for their opponent. It surfaced as Cricket's MPR reading 12
+  // and 15 - marks divided by ROUNDS, and no round can hold more than the nine
+  // marks three treble beds are worth - which is the symptom that gives the
+  // whole thing away, because x01 has no equivalent ceiling to breach.
+  //
+  // Committing rather than ignoring, because the hold is a courtesy and not a
+  // lock: someone stepping up to the board is the clearest possible statement
+  // that the visit is over, and swallowing their dart to protect an undo window
+  // they did not ask for is the worse of the two failures. It is exactly what
+  // End turn does mid-hold - see endTurnEarly - reached by throwing instead of
+  // by pressing it.
+  if (hold) {
+    clearHold();
+    commitTurn();
+  }
 
   // One transform at the boundary, before any game logic sees the dart, so
   // full-bull applies identically to x01, Cricket and Count Up - and to
@@ -1055,7 +1111,9 @@ function commitTurn({ busted = false } = {}) {
   if (!busted) {
     callScore(state.dartsThisTurn.reduce((sum, s) => sum + (s?.value || 0), 0));
   }
-  state.recorder?.endTurn();
+  // The seat is passed BEFORE currentPlayerIndex moves below - the visit being
+  // closed is the one that has just been thrown, not the one about to start.
+  state.recorder?.endTurn(state.currentPlayerIndex);
   state.dartsThisTurn = [];
   clearHold();
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;

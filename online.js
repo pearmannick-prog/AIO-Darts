@@ -2324,6 +2324,30 @@ function onLocalHit(segment) {
     showNotice("Not your turn yet - wait for the opponent to finish.");
     return;
   }
+  // THE HOLD IS NOT A GAP TO THROW INTO. Your visit is complete and only the
+  // ten-second undo window is still running, so a dart arriving now was being
+  // appended to a visit that had already been scored - which credited the marks
+  // to the wrong round and pushed Cricket's MPR past the nine marks three treble
+  // beds are worth.
+  //
+  // Refused here rather than started as a new visit, which is where this parts
+  // company with local play, and the reason is the board rather than the rule.
+  // The rule is the same in both: a dart thrown after the visit belongs to the
+  // NEXT one. In pass-and-play the next visit is at this same board, so the
+  // dart is the next player's and is applied to them. Online the opponent
+  // throws at their own board, so there is no next visit here to give it to and
+  // a fourth dart is a stray one - a bounce-out re-thrown, or one knocked out
+  // while pulling. Undo is the honest answer to that, and is exactly what the
+  // ten seconds are open for.
+  //
+  // Before the send, so nothing reaches the peer and the two sides cannot
+  // disagree about what was thrown. Peer darts are still applied as sent: the
+  // thrower decides what counts as their visit, which is what keeps an older
+  // build on the other end in step rather than desynced.
+  if (hold && hold.side === "me") {
+    showNotice("That visit is over - undo a dart, or wait for the handover.");
+    return;
+  }
   peerLink?.sendGameMessage({ type: "dart", segment });
   applyThrow("me", segment);
 }
@@ -2834,7 +2858,10 @@ function commitTurn(side, { busted = false } = {}) {
   if (side === "me" && !busted) {
     callScore(s.dartsThisTurn.reduce((sum, d) => sum + (d?.value || 0), 0));
   }
-  online.recorder?.endTurn();
+  // Whose visit is ending, so darts that were thrown but never registered are
+  // counted against the right player - and so a visit where all three missed is
+  // still recorded, which is a visit that leaves nothing at all behind.
+  online.recorder?.endTurn(seatOf(side));
   // Deliberately NOT clearing the undo stack here. A misread is usually
   // spotted as the third dart lands or on the walk to the board, which is
   // after the visit has technically ended - locking it at that moment would

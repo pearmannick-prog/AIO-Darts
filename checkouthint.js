@@ -34,16 +34,21 @@ export function renderLiveAverage(node, stats) {
 
   const second = node.querySelector(".oche-stat-second");
 
-  if (!stats) {
-    // A dash rather than 0.00: before the first dart there is no average, and
-    // showing zero reads as a bad one.
-    label.textContent = "PPD";
-    value.textContent = "-";
-    if (second) second.textContent = "";
-    return;
-  }
+  // NOTHING AT ALL rather than a captioned blank. null means the game has no
+  // live average to offer - Count Up and Bermuda, which are won by scoring MORE
+  // - and an empty "PPD -" sitting in the corner of those is a number the player
+  // waits for and is never given. Before the first dart the recorder returns a
+  // labelled object with a null value instead, which is the case below.
+  node.classList.toggle("hidden", !stats);
+  if (!stats) return;
+
   label.textContent = stats.label;
-  value.textContent = stats.value.toFixed(stats.digits ?? 2);
+  // A dash rather than 0.00: before the first dart there is no average, and
+  // showing zero reads as a bad one. The LABEL is still the game's own - see
+  // liveStats - so Cricket says MPR while it waits.
+  value.textContent = stats.value === null
+    ? "-"
+    : stats.value.toFixed(stats.digits ?? 2);
   // The machines show a second figure under the first, and it earns its place:
   // in x01 it is the three-dart average, which is the number players actually
   // speak in, and in Cricket it is the points, which say something different
