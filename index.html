@@ -170,19 +170,27 @@
   /* Deliberately small and quiet - this is a hobby project, not a product
      with a paywall, so the ask should read as optional rather than a banner
      asking to be dismissed. */
-  #support-link {
-    text-align: center;
+  #footer-links {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
     margin-top: 8px;
     font-family: 'Inter', sans-serif;
   }
-  #support-link a {
+  #footer-links a,
+  #footer-links span {
     font-size: 11px;
     letter-spacing: 0.03em;
     color: var(--on-chrome);
     opacity: 0.45;
     text-decoration: none;
   }
-  #support-link a:hover { opacity: 0.8; text-decoration: underline; }
+  /* The separator is decoration, and must not light up with the links either
+     side of it - hovering a dot that does nothing reads as a broken link. */
+  #footer-links span { opacity: 0.3; }
+  #footer-links a:hover { opacity: 0.8; text-decoration: underline; }
 
   header {
     display: flex;
@@ -5004,7 +5012,19 @@
     </div>
 
     <footer id="app-version">&nbsp;</footer>
-    <div id="support-link">
+    <!-- Source and licence, reachable from the app rather than only from the
+         repo. Partly so anyone curious can read how it works or file a bug, and
+         partly because the licence terms should be findable BY THE PEOPLE USING
+         IT: this is PolyForm Noncommercial, and the Granboard decoding is
+         third-party code under MIT, whose notice is meant to travel with the
+         code you hand out. A hosted app hands that JavaScript to every visitor,
+         and the attribution sitting in a README nobody can see from here is a
+         thin way to carry it. -->
+    <div id="footer-links">
+      <a href="https://github.com/pearmannick-prog/AIO-Darts" target="_blank" rel="noopener">
+        Source &amp; licence
+      </a>
+      <span aria-hidden="true">&middot;</span>
       <a href="https://ko-fi.com/nickpearman" target="_blank" rel="noopener">
         &#9825; Support this project
       </a>
