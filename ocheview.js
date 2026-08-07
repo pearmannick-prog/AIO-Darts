@@ -198,4 +198,18 @@ export function wireOcheButtons() {
   }
 }
 
+// End turn, on the ORDINARY game screen. Not an oche-view concern, and it lives
+// here only because this file already owns the one dispatcher for the event and
+// a second module holding three lines would be the worse trade. It is the same
+// event the fullscreen control bar sends, so both controllers keep the single
+// listener they already have and neither learns about a second button.
+export function wireEndTurnButtons() {
+  for (const button of document.querySelectorAll(".js-end-turn")) {
+    button.addEventListener("click", () => {
+      document.dispatchEvent(new CustomEvent("aio-end-turn"));
+    });
+  }
+}
+
 wireOcheButtons();
+wireEndTurnButtons();

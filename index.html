@@ -1201,8 +1201,34 @@
      in a flanking column, so two players read as a familiar left-vs-right
      board. Every button here produces the same segment ID a real board hit or
      a click on the dartboard would, so all three inputs share one code path. */
+  /* THE PAD HAS ONE SIZE KNOB HERE TOO: --ck-u, exactly as in oche view, and
+     every measurement below is a multiple of it.
+
+     It used to be a dozen independent pixel values in a box with no width, and
+     the box is the part that was wrong. .ck-row is `1fr auto 1fr` - buttons in
+     the middle, marks either side - so on a desktop panel the pad stretched to
+     812px, the buttons stayed the 140px their pixel sizes asked for, and the
+     two mark columns swallowed five hundred pixels of slack between them. The
+     result read as a strip of tiny buttons marooned in the middle of a very
+     wide card, and it got WORSE the bigger the window, which is the opposite of
+     what every other panel on this screen does.
+
+     Stating the width as 12.5u is what fixes it, and it is the same 12.5u the
+     oche pad uses - the buttons are about 7u and three marks a side need about
+     2.75u each. Sharing the number is the point: the pad is then the same SHAPE
+     at the oche and on the sofa, and only the unit differs.
+
+     The unit is a plain length rather than a vh expression, and that difference
+     is the whole reason this is a separate block. Oche view owns the screen and
+     solves u against the height it has; this page SCROLLS, so height is not a
+     constraint to divide up and a vh unit would only make the pad shrink when
+     the window got short. Board View is the knob that means "how far away am I"
+     here, so it sets u directly - one number per step instead of five. */
   .cricket-board {
-    margin: 14px 0;
+    --ck-u: 24px;
+    width: calc(var(--ck-u) * 12.5);
+    max-width: 100%;
+    margin: 14px auto;
     border: 1px solid var(--panel-rule);
     border-radius: 10px;
     overflow: hidden;
@@ -1230,11 +1256,11 @@
 
   .ck-header {
     background: var(--panel-raise-2);
-    padding: 8px 0;
+    padding: calc(var(--ck-u) * 0.34) 0;
   }
   .ck-col { text-align: center; padding: 0 6px; min-width: 0; }
   .ck-name {
-    font-size: 12px;
+    font-size: calc(var(--ck-u) * 0.5);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -1244,30 +1270,48 @@
     white-space: nowrap;
   }
   .ck-col.active .ck-name { opacity: 1; color: var(--danger); }
-  .ck-points { font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .ck-points { font-size: calc(var(--ck-u) * 1.1); font-weight: 700; line-height: 1.1; }
 
   /* Marks are chalked the way they are on a real board: / then X then a
      circled X once the number is closed. */
   .ck-mark {
     flex: 1;
     text-align: center;
-    font-size: 22px;
+    font-size: calc(var(--ck-u) * 0.95);
     line-height: 1;
-    min-height: 30px;
+    min-height: calc(var(--ck-u) * 1.25);
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .ck-mark.closed { color: var(--danger); }
+  /* The single mark, brought back to the size of the other two. U+2571 spans
+     its full em box where U+2715 and U+2297 do not, so at a shared font-size
+     the first mark on a number drew noticeably longer than the X it becomes.
+     A TRANSFORM RATHER THAN A FONT-SIZE, for two reasons. The mark's size is
+     set in two places - once here and once in oche view, each off its own
+     --ck-u - so a corrected font-size would have to be written twice and kept
+     in step; scale() rides whatever either of them resolved to. And a transform
+     does not affect layout, which matters more than it looks: the oche pad's
+     height is a measured multiple of --ck-u (15.58u), and .ck-mark is what sets
+     the row height, so shrinking it for real would move the number the whole
+     pad is solved against.
+     `em` was the first attempt and is wrong here - it resolves against the
+     PARENT's font-size, which is the row's 16px, so the mark came out at 11px.
+     Scoped through .cricket-board so it outranks .oche-mode .ck-mark, which is
+     also two classes and sits further down the file - at equal specificity that
+     one wins on source order and the correction silently did nothing in the one
+     view where the marks are big enough for it to matter. */
+  .cricket-board .ck-mark[data-marks="1"] { transform: scale(0.72); }
 
   .ck-controls {
     display: flex;
     align-items: stretch;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: calc(var(--ck-u) * 0.17);
+    padding: calc(var(--ck-u) * 0.17) calc(var(--ck-u) * 0.34);
   }
 
-  .ck-num, .ck-mod, .ck-miss {
+  .ck-num, .ck-mod {
     font-family: inherit;
     font-weight: 700;
     border-radius: 6px;
@@ -1275,20 +1319,20 @@
     cursor: pointer;
     transition: filter 0.1s ease;
   }
-  .ck-num:active, .ck-mod:active, .ck-miss:active { filter: brightness(0.85); }
+  .ck-num:active, .ck-mod:active { filter: brightness(0.85); }
 
   /* The number itself is the big target - a single is the most common dart. */
   .ck-num {
-    min-width: 62px;
-    padding: 8px 0;
-    font-size: 22px;
+    min-width: calc(var(--ck-u) * 2.6);
+    padding: calc(var(--ck-u) * 0.34) 0;
+    font-size: calc(var(--ck-u) * 0.92);
     background: var(--danger);
     color: var(--on-solid);
   }
   .ck-mod {
-    min-width: 34px;
-    padding: 8px 0;
-    font-size: 14px;
+    min-width: calc(var(--ck-u) * 1.42);
+    padding: calc(var(--ck-u) * 0.34) 0;
+    font-size: calc(var(--ck-u) * 0.58);
     background: var(--danger-solid);
     color: var(--on-solid);
   }
@@ -1298,24 +1342,45 @@
     cursor: not-allowed;
   }
 
-  .ck-miss {
-    padding: 7px 22px;
-    font-size: 14px;
-    background: var(--panel-raise-3);
-    color: var(--on-panel);
-    border-color: var(--panel-border);
+  /* THE FORMAT COMES BEFORE THE OPPONENT. The lobby was first on the page and
+     the format picker sat in the panel below it, so the two things a challenge
+     is made of - what you are playing and who you are playing - were a scroll
+     apart, and nothing on the lobby said which format a challenge would use.
+     The answer is that it uses the one in the picker, which is exactly the
+     thing that was not visible while you were looking at the lobby.
+
+     Reordered rather than moved, and that is not laziness: the picker cannot
+     live INSIDE the lobby panel, because the lobby is hidden entirely for
+     guests and for any build without an accounts API, and it is the invite-code
+     path underneath - the only no-account way to play - that would lose its
+     format controls. One panel has to serve both, so it sits above both.
+
+     order rather than rewriting the markup because online.js shows and hides
+     #online-setup-panel from six places; moving the element would mean keeping
+     all of them right for no gain the reader can see. */
+  #online-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
   }
-  .ck-footer { background: var(--panel-raise-1); padding: 6px 0; }
+  /* Above the lobby, below the notice that says why you are back on this
+     screen - which is about the LAST match and belongs at the top. */
+  #online-setup-notice { order: -2; }
+  #online-setup-panel { order: -1; }
 
   /* A number every player has closed is dead - nothing more can be scored on
      it, so the whole row including its buttons drops back. */
   .ck-row.dead { opacity: 0.38; }
   .ck-row.dead .ck-num, .ck-row.dead .ck-mod { background: var(--panel-raise-5); }
 
+  /* One number, where this was three separately-tuned overrides that could not
+     agree with each other. 12.5u at 20px is 250px, which fits a 320px phone
+     with its panel padding and leaves the mark columns intact - the failure the
+     oche pad had at this end too, and for the same reason: the pad's width is a
+     single constraint, so it has to be divided once rather than guessed at in
+     pieces. */
   @media (max-width: 420px) {
-    .ck-num { min-width: 52px; font-size: 19px; }
-    .ck-mod { min-width: 28px; }
-    .ck-points { font-size: 22px; }
+    .cricket-board { --ck-u: 20px; }
   }
 
   /* ---- Medley / match ---- */
@@ -2138,6 +2203,29 @@
   .person-row:last-child { border-bottom: none; }
   .person-name { font-weight: 600; }
   .person-sub { font-size: 12px; opacity: 0.65; }
+  /* Their averages, under the status line. Quieter than the status and set in
+     tabular figures so a column of them lines up and can be compared down the
+     list rather than read one row at a time - which is the entire reason they
+     are here and not only on the card. Empty until the profile arrives, and
+     empty forever for anyone who keeps their record private, so it must collapse
+     to nothing rather than reserve a blank line. */
+  .person-stats {
+    font-size: 12px;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+  }
+  .person-stats:empty { display: none; }
+  /* The "who can challenge you in here" note, on the room title. Quieter and
+     un-uppercased against the section heading it rides on, because it is a
+     sentence rather than a label. */
+  .room-scope-note {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.6;
+  }
   .person-actions { display: flex; gap: 6px; }
   .person-actions button {
     padding: 6px 11px;
@@ -2839,10 +2927,31 @@
   .oche-mode {
     position: fixed;
     inset: 0;
+    /* THE DARTS STRIP'S GEOMETRY, IN ONE PLACE. It is absolutely positioned, so
+       it reserves no space - and anything that wants to sit clear of it has to
+       restate its height. Two copies of "how tall is a dart slot" is one that
+       drifts, and the copy that drifts is the reservation, which fails by
+       printing the score through the darts rather than by looking wrong on its
+       own. Both numbers below are read by the slot itself, by the strip's
+       offset, and by the reservation. */
+    --darts-top: 1.6vh;
+    --dart-slot-h: clamp(48px, 9vh, 120px);
+    /* THE PANEL'S OWN HEIGHT HAS TO BE dvh TOO, not just what is inside it.
+       `inset: 0` pins the bottom to the bottom of the LAYOUT viewport, which on
+       a phone is the one with the URL bar hidden - so the panel ended below the
+       visible area and took the control bar with it. End turn, Score and Exit
+       were sliced in half by the bottom of the screen while everything inside
+       the panel measured correctly, because the contents were already sized in
+       dvh and the box holding them was not.
+       top, bottom and height cannot all three apply: height wins and the wrong
+       bottom is ignored, which is exactly what is wanted here. */
+    height: 100vh;
+    height: 100dvh;
     z-index: 200;
     margin: 0;
     border-radius: 0;
     padding: 2.5vh 3vw;
+    padding: 2.5dvh 3vw;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -2947,7 +3056,7 @@
   #online-game-panel.oche-mode #online-turn-darts,
   #game-panel.oche-mode #turn-darts {
     position: absolute;
-    top: 1.6vh;
+    top: var(--darts-top);
     left: 50%;
     transform: translateX(-50%);
     margin: 0;
@@ -3125,12 +3234,16 @@
      need to know whose turn it is - but its 2vh margin and 3.2vh type were
      sized for the x01 stage, where a 34vh number sits underneath and a couple
      of vh either way is invisible. Here they come straight off the pad. */
+  /* No bottom margin in here. The label is the only thing in .game-top, which
+     centres it - and a margin on one side of a centred item shifts it by half,
+     which is exactly the equidistance being asked for. The 2vh it inherits is
+     for x01, where the label has the score above it and needs separating from
+     what follows. */
   #online-game-panel.oche-mode.cricket-stage #online-turn-label,
   #game-panel.oche-mode.cricket-stage #turn-label {
     font-size: clamp(14px, 2.4vh, 30px);
     font-size: clamp(14px, 2.4dvh, 30px);
-    margin-bottom: 0.8vh;
-    margin-bottom: 0.8dvh;
+    margin-bottom: 0;
   }
 
   @media (min-width: 900px), (orientation: landscape) {
@@ -3180,10 +3293,16 @@
   #online-game-panel.oche-mode {
     position: fixed;
     inset: 0;
+    /* Same dvh height as .oche-mode above - and it has to be repeated for the
+       same reason everything else in this block is: .immersive declares its own
+       geometry at 1,1,0 and a class-only rule never reaches it. */
+    height: 100vh;
+    height: 100dvh;
     z-index: 200;
     margin: 0;
     border-radius: 0;
     padding: 2.5vh 3vw;
+    padding: 2.5dvh 3vw;
     overflow: hidden;
     --stage-h: 0px;
     /* THESE THREE ARE THE ONES THAT KEPT ESCAPING.
@@ -3317,7 +3436,7 @@
   }
   .oche-mode .dart-slot {
     width: clamp(64px, 12vw, 190px);
-    height: clamp(48px, 9vh, 120px);
+    height: var(--dart-slot-h);
     font-size: clamp(20px, 4.4vh, 56px);
     border-radius: 1.2vh;
   }
@@ -3353,14 +3472,20 @@
      regressions were reported.
 
      Expressed as a unit the arithmetic is one line, and it was measured rather
-     than guessed: the pad is nine rows - seven numbers, a header and the Miss
-     footer - and comes out at 17.07u + 21px. The constant is the nine row
-     borders and the padding that does not scale. The layout above and below
-     leaves the pad about 78vh, so solving for u gives the line below.
-     RE-MEASURE THE MULTIPLIER IF A ROW'S CONTENTS CHANGE HEIGHT. It was 16.95
+     than guessed: the pad is eight rows - seven numbers and a header - and
+     comes out at 15.58u + 10.5px, the header being the tall one at 2.07u
+     against the numbers' 1.93u. The constant is the row borders and the padding
+     that does not scale. The layout above and below leaves the pad about 78vh,
+     so solving for u gives the line below.
+     RE-MEASURE THE MULTIPLIER IF A ROW'S CONTENTS CHANGE HEIGHT, and measure it
+     rather than deriving it - this has moved three times now. It was 16.95
      until the marks were enlarged to nearly a full row, at which point they -
-     not the buttons - became what sets the row height, and the total moved with
-     them.
+     not the buttons - became what sets the row height; 17.07 after that; and
+     15.58 once the Miss footer went, which is a whole row back and is why the
+     marks are bigger than they were for free.
+     One trap when re-measuring: the pad carries max-height 84vh, so a test unit
+     large enough to hit it reports a clipped height and yields a slope that is
+     far too shallow. Measure the ROWS and add them up, or stay well under it.
 
      SUBTRACTING THE CONSTANT IS THE WHOLE POINT, and it is why this is not
      simply `4vh`. 21px is 1.8% of a desktop viewport and 5.4% of a landscape
@@ -3370,12 +3495,20 @@
      same FRACTION of the screen on every device, which is the rule: oche view
      is the same picture everywhere, at whatever size the screen happens to be.
 
-     There is deliberately no vw term and no pixel cap. A row is only about
-     5.5u wide against the 92vw the board is given, so width never runs out
-     first even on a 320px phone - a vw term could only make the pad smaller
-     than it needs to be. A cap would break the proportion at the top end for
-     the same reason the constant broke it at the bottom: a big screen across a
-     room should get a big pad. */
+     THE vw TERM IS BACK, and removing it was a mistake worth recording. The
+     reasoning was that a row is only ~5.5u of buttons against 92vw, so width
+     never runs out first - which is true of every DESKTOP aspect ratio and
+     false of a portrait phone. There, height is abundant and width is scarce:
+     u came out large, the pad's 12.5u exceeded the 92vw cap, and the cap took
+     the difference out of the only elastic part of the row - the two mark
+     columns - which collapsed to nothing. The buttons still looked right, so
+     the pad looked fine while showing NO MARKS AT ALL, on a board whose marks
+     are the entire score.
+     6.8vw is 12.5u fitting inside 85vw, leaving the margins the score tiles
+     sit in. min() takes whichever of height and width runs out first, which is
+     the actual question and is now asked in both orientations.
+     A pixel cap is still deliberately absent: a big screen across a room
+     should get a big pad. */
   .oche-mode .cricket-board {
     /* vh first, dvh second - a browser without dvh ignores the line it cannot
        parse and keeps the vh one.
@@ -3387,8 +3520,8 @@
        That is the whole "right on one end, wrong on the other" failure again,
        arriving through the unit rather than through a constant. dvh is the
        height that is actually visible right now. */
-    --ck-u: calc((78vh - 24px) / 17.1);
-    --ck-u: calc((78dvh - 24px) / 17.1);
+    --ck-u: min(calc((78vh - 11px) / 15.6), 6.8vw);
+    --ck-u: min(calc((78dvh - 11px) / 15.6), 6.8vw);
     display: block;
     /* WIDTH IS A MULTIPLE OF u TOO, and it has to be stated. The panel is a
        flex container, so the board shrink-wrapped to its minimum content
@@ -3416,8 +3549,18 @@
      is overriding is set on #online-game-panel.oche-mode. */
   #online-game-panel.oche-mode.cricket-stage,
   #game-panel.oche-mode.cricket-stage {
-    padding-top: 9vh;
-    padding-top: 9dvh;
+    /* EXACTLY the strip, computed from the strip's own two numbers rather than
+       guessed at. It was a flat 9vh, which is a shade under what the darts
+       actually occupy - 1.6vh of offset plus a slot that reaches 9vh on its own
+       - so the strip overhung the top of the flow by the difference.
+       That is invisible on the darts themselves, which are absolute and did not
+       move, and shows up instead in what sits below them: .game-top centres the
+       turn label in the band it is given, and the band started ABOVE the darts,
+       so the label was centred against a top edge the eye cannot see and came
+       out hard against the slots with all the air beneath it. Reserving the
+       real height makes the band the visible gap, and centring in it is then
+       centring between the darts and the pad. */
+    padding-top: calc(var(--darts-top) + var(--dart-slot-h));
     /* And the SAME reservation at the bottom, for the same reason. The control
        bar is absolute too, so the flow ran underneath it - and .game-top has
        flex-grow, so it swallowed every pixel the pad did not use and pushed
@@ -3451,10 +3594,6 @@
     min-width: calc(var(--ck-u) * 1.3);
     padding: calc(var(--ck-u) * 0.25) 0;
   }
-  .oche-mode .ck-miss {
-    font-size: calc(var(--ck-u) * 0.6);
-    padding: calc(var(--ck-u) * 0.22) calc(var(--ck-u) * 1.2);
-  }
   .oche-mode .ck-name { font-size: calc(var(--ck-u) * 0.45); }
   .oche-mode .ck-points { font-size: calc(var(--ck-u) * 1.05); }
   /* THE MARKS ARE THE SCORE, and at 0.9u they were the smallest thing on a pad
@@ -3473,7 +3612,6 @@
   .oche-mode .ck-mark { min-height: calc(var(--ck-u) * 1.2); }
   .oche-mode .ck-controls { gap: calc(var(--ck-u) * 0.12); padding: calc(var(--ck-u) * 0.1) calc(var(--ck-u) * 0.25); }
   .oche-mode .ck-header { padding: calc(var(--ck-u) * 0.18) 0; }
-  .oche-mode .ck-footer { padding: calc(var(--ck-u) * 0.14) 0; }
 
   .oche-mode #winner-banner,
   .oche-mode #online-winner-banner { font-size: clamp(18px, 3.4vh, 44px); }
@@ -3557,12 +3695,39 @@
      see the effect of is the one thing this panel must not do. */
   .oche-mode.oche-entry-open #big-score,
   .oche-mode.oche-entry-open #online-big-score { font-size: clamp(56px, 15vh, 170px); }
+  .oche-mode.oche-entry-open {
+    /* The strip shrinks with everything else when the pad takes the bottom
+       half. Declared here rather than on the slot so the reservation below
+       shrinks by exactly the same amount. */
+    --dart-slot-h: clamp(36px, 6vh, 74px);
+  }
   .oche-mode.oche-entry-open .dart-slot {
     width: clamp(48px, 8vw, 110px);
-    height: clamp(36px, 6vh, 74px);
     font-size: clamp(16px, 3vh, 34px);
   }
   .oche-mode.oche-entry-open .game-top { justify-content: flex-start; }
+  /* THE ONE PLACE THE DARTS STRIP HAS TO BE RESERVED, and the reason it is
+     scoped this tightly: with the pad closed the score is CENTRED in the space
+     below, which clears the strip on its own and looks right - padding there
+     would only push a correct layout down. Opening the pad top-aligns the score
+     (the rule above) so that it gives way to the keypad instead of being
+     covered, and top-aligned means starting at the panel's own 2.5dvh padding,
+     which is underneath the strip. The score printed through the three dart
+     slots.
+     Absolutely-positioned furniture reserves nothing - the same failure the
+     Cricket stage already pads for at both ends, arriving here through a
+     justify-content change rather than through a pad that grew.
+     On the panel rather than on .game-top because the online panel has no
+     .game-top at all: its score centres itself with margin-top:auto, which
+     resolves against the panel's padding box, so padding is the one lever that
+     moves both. Hence the IDs too - #online-game-panel.oche-mode sets the
+     shorthand padding at 1,1,0 and a class-only rule never reaches it.
+     Cricket is excluded because .cricket-stage makes its own, larger
+     reservation for the same strip and must not be given two. */
+  #game-panel.oche-mode.oche-entry-open:not(.cricket-stage),
+  #online-game-panel.oche-mode.oche-entry-open:not(.cricket-stage) {
+    padding-top: calc(var(--darts-top) + var(--dart-slot-h) + 1.2vh);
+  }
 
   /* Bottom right, not top right. At the top they sit on the player cards,
      which span the full width - and the corner nearest your hand is the
@@ -3571,9 +3736,65 @@
      Where the arcade machines put it: down the right-hand side, out of the
      score's way, big enough to read from the oche but never competing with the
      number you are actually throwing at.
-     Only ever visible in oche view. On the ordinary game screen the stats
-     pages already carry this, in far more detail. */
-  .oche-stat { display: none; }
+
+     IT IS ON THE ORDINARY GAME SCREEN TOO. It was oche-view only, on the
+     argument that the stats pages carry this in far more detail - which is true
+     and beside the point: they carry it AFTER the match, and the number worth
+     having while you are throwing is the one that moves. Nothing about it is
+     oche-specific; it was simply built there first, and the class name is now a
+     lie kept for the churn a rename would cost across two controllers, the
+     shared renderer and both panels' markup.
+
+     Two presentations of one element, and they are genuinely different jobs
+     rather than a size change. In oche view it is a slab in the corner of a
+     screen with nothing else on it. Here it is a caption line under the score,
+     on a page already carrying a board, a keypad and a throw log - so it reads
+     quietly and lets the score stay the thing being read. */
+  .oche-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Centred to match the online panel, which centres its turn label and darts
+     inline; the local panel's column is left-aligned and gets the default. */
+  #online-oche-stat { justify-content: center; }
+  .oche-stat-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+  .oche-stat-value {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 26px;
+    line-height: 1;
+  }
+  .oche-stat-second {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    opacity: 0.6;
+  }
+  /* Board View scales it with everything else, by an explicit rule per step
+     rather than a root font-size - the convention the rest of this section
+     follows. Without these the one number you are meant to read from two metres
+     away is the one that stayed at 26px.
+
+     :not(.oche-mode) IS LOAD-BEARING, and for the same reason :not(.immersive)
+     is. A Board View rule is three classes deep and the oche sizes below are
+     two, so without it these px sizes beat the vh ones INSIDE oche view - and
+     the failure is invisible on the desk setting, because that is the step with
+     no rule of its own. Oche view is already Board View's last step and sizes
+     itself off the viewport; it does not want a second opinion in pixels. */
+  [data-boardview="room"] .panel:not(.immersive):not(.oche-mode) .oche-stat-value { font-size: 34px; }
+  [data-boardview="across"] .panel:not(.immersive):not(.oche-mode) .oche-stat-value { font-size: 44px; }
+  [data-boardview="room"] .panel:not(.immersive):not(.oche-mode) .oche-stat-label { font-size: 13px; }
+  [data-boardview="across"] .panel:not(.immersive):not(.oche-mode) .oche-stat-label { font-size: 15px; }
+  [data-boardview="room"] .panel:not(.immersive):not(.oche-mode) .oche-stat-second { font-size: 15px; }
+  [data-boardview="across"] .panel:not(.immersive):not(.oche-mode) .oche-stat-second { font-size: 17px; }
   /* Top right, not the middle. Halfway down the screen it lands on whatever
      the camera is pointing at - a face, usually - and it is a number you
      glance at between visits, not one you read while throwing. The machines
@@ -3582,34 +3803,25 @@
     display: block;
     position: absolute;
     right: 2vw;
-    top: 1.6vh;
+    top: var(--darts-top);
     text-align: right;
     z-index: 3;
     pointer-events: none;
+    margin: 0;
   }
-  .oche-stat-label {
+  .oche-mode .oche-stat-label {
     display: block;
-    font-family: 'Inter', sans-serif;
     font-size: clamp(10px, 1.6vh, 16px);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
     opacity: 0.65;
   }
-  .oche-stat-second {
+  .oche-mode .oche-stat-second {
     display: block;
-    font-family: "Inter", sans-serif;
     font-size: clamp(10px, 1.5vh, 15px);
-    opacity: 0.6;
     margin-top: 0.2vh;
-    font-variant-numeric: tabular-nums;
   }
-  .oche-stat-value {
+  .oche-mode .oche-stat-value {
     display: block;
-    font-family: 'Oswald', sans-serif;
-    font-weight: 700;
     font-size: clamp(22px, 6vh, 64px);
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
   }
   /* Behind the score band it needs its own scrim, the same reasoning as the
      tile scores: the video underneath is an arbitrary room. */
@@ -3934,7 +4146,7 @@
 
     <div class="mode-tabs">
       <button id="tab-local" class="mode-tab active">Local Play</button>
-      <button id="tab-online" class="mode-tab">Online Challenge</button>
+      <button id="tab-online" class="mode-tab">Online Play</button>
       <button id="tab-account" class="mode-tab hidden">My Darts</button>
     </div>
 
@@ -4006,11 +4218,16 @@
             <div id="oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span><span class="oche-stat-second"></span></div>
             <div class="actions-row">
               <button id="undo-btn" data-undo class="btn-secondary btn-soft">Undo last dart</button>
+              <!-- Oche view has had this since it was built; the ordinary screen
+                   had only the board's physical button, so anyone without a
+                   Bluetooth board had no way to end a visit early - a bounce-out
+                   or a dart that missed the board entirely - without going
+                   fullscreen for it. -->
+              <button type="button" class="btn-secondary btn-soft js-end-turn">End turn</button>
               <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
               <!-- Cycles Desk / Room / Across the room. Here as well as in the
                    settings sheet because this is where you are standing when
                    you discover you need it. -->
-              <button type="button" id="online-undo-btn" data-undo class="av-btn hidden">↶ Undo last dart</button>
           <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
               <button type="button" class="boardview-btn js-oche" title="Fullscreen scoreboard for the oche">⛶ Oche view</button>
             </div>
@@ -4055,6 +4272,18 @@
 
           <div id="throw-log"></div>
         </div>
+
+        <!-- END GAME, the local twin of online's End match, in the same place at
+             the bottom of the panel and behind the same two taps.
+             Abandoning a local game was always possible - "New game" up in the
+             actions row does exactly this - but it does not READ as ending one,
+             so the reliable way to stop a match was to leave the tab and come
+             back, which works only because leaving is defined as abandoning. A
+             control whose name matches the intent is the whole change; both
+             call abandonGame and neither saves the half-played match. -->
+        <div class="end-match-row">
+          <button type="button" id="end-game-btn" class="end-match-btn">End game</button>
+        </div>
       </div>
     </div>
 
@@ -4070,7 +4299,11 @@
       <div id="lobby-panel" class="panel hidden">
         <div class="lobby-head">
           <div>
-            <div class="account-name">Lobby</div>
+            <!-- "Open Lobby", because it IS the open one - everybody signed in
+                 and not standing in a room. Naming it makes the Steel Tip and
+                 Soft Tip rooms below read as the two departures from it rather
+                 than as two of three places, which is what they are. -->
+            <div class="account-name">Open Lobby</div>
             <div class="account-sub" id="lobby-count">&nbsp;</div>
           </div>
           <div class="lobby-head-actions">
@@ -4122,8 +4355,12 @@
 
         <div class="account-section-title">Rooms</div>
         <p class="board-caveat">
-          A room is a place to wait and chat &mdash; &ldquo;501 Practice&rdquo;,
-          &ldquo;Cricket Only&rdquo; &mdash; not a match. Anyone in one can be challenged.
+          Rooms say what you want to play, and on what. Stand in one and only the
+          people in there with you can challenge you &mdash; tick
+          &ldquo;Open to challenges&rdquo; if you want the whole lobby to be able
+          to as well. Steel Tip and Soft Tip are about your board; the rest are a
+          game each. You can make your own, and those close when the last person
+          leaves.
         </p>
         <div id="lobby-rooms" class="people-list"></div>
         <div class="lobby-controls">
@@ -4133,6 +4370,13 @@
 
         <div id="lobby-room-view" class="hidden">
           <div class="account-section-title" id="room-title">Room</div>
+          <!-- WHO IS IN HERE, above the chat. Without this the room was chat and
+               a Leave button: you joined Steel Tip to find a steel-tip opponent,
+               saw nobody, and had to catch a name going past in the chat and
+               then hunt for that same person back in the main list to challenge
+               them. A room whose whole purpose is finding an opponent has to
+               show you the opponents. -->
+          <div id="room-members" class="people-list"></div>
           <div id="chat-log" class="chat-log"></div>
           <div class="lobby-controls">
             <input type="text" id="chat-input" maxlength="300" placeholder="Say something">
@@ -4145,7 +4389,12 @@
       </div>
 
       <div id="online-setup-panel" class="panel">
-        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
+        <!-- "Match Settings", not "Online Challenge". The tab above already
+             says which mode this is, so repeating it named the panel after the
+             section rather than after what is in it - and what is in it is the
+             format every route out of here uses, whether you challenge someone
+             in the lobby below or share an invite code. -->
+        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Match Settings</h3>
         <div class="format-block">
           <div class="setup-row">
             <label for="online-format">Format</label>
@@ -4323,6 +4572,21 @@
         <div id="online-turn-darts" class="online-turn-darts"></div>
         <div id="online-checkout-hint" class="checkout-hint hidden"></div>
         <div id="online-oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span><span class="oche-stat-second"></span></div>
+
+        <!-- UNDO AND END TURN, IN THE ONLINE PANEL. #online-undo-btn used to sit
+             in #game-panel's actions row - the LOCAL panel - which is display:none
+             for the whole of an online match, so the button was never on screen.
+             Undo was fully built underneath it: the snapshot stacks, the `undo`
+             peer message, the rule that the window closes when the opponent
+             throws. All of it was unreachable, and oche view's Undo button was
+             hidden too, because it looks for [data-undo] INSIDE the active panel
+             and there was none here to find.
+             This row is .actions-row, which oche view already hides, so the
+             fullscreen control bar stays the only copy in there. -->
+        <div class="actions-row">
+          <button type="button" id="online-undo-btn" data-undo class="btn-secondary btn-soft hidden">↶ Undo dart</button>
+          <button type="button" class="btn-secondary btn-soft js-end-turn">End turn</button>
+        </div>
 
         <div class="dartboard-wrap">
           <div class="dartboard"></div>
