@@ -148,6 +148,11 @@ what the above does.
    sit in a flanking column. Clicking the mini dartboard and a real Bluetooth
    board both work too - all three inputs run through identical scoring code.
 
+   There is no Miss button on the pad. **End turn** is the one control that
+   means "that visit is over", and darts you never entered are recorded as
+   thrown and missed - so a visit where nothing found a target is still a round,
+   and you never tap Miss three times to say so.
+
    **Bull mode** applies to the whole match, whichever games it contains:
 
    | Mode | Outer bull | Inner bull |
@@ -213,10 +218,17 @@ what the above does.
      per-dart detail - entering a total always finalizes that whole turn
      immediately, and entering exactly enough to reach 0 is always treated as
      a valid double-out checkout.
-5. The board's physical button **ends your turn early** - useful if a dart
-   bounces out or misses the board and you don't want to wait for 3 registered
-   hits before it's the next player's turn. It doesn't undo anything; only a
-   bust reverts score.
+5. **End turn** ends your visit early - useful if a dart bounces out or misses
+   the board and you don't want to wait for 3 registered hits before it's the
+   next player's turn. It's a button on the game screen, in oche view, and on
+   the board itself (the physical button does the same thing). It doesn't undo
+   anything; only a bust reverts score. The darts you didn't enter are counted
+   as thrown and missed, so ending a visit early doesn't flatter your average.
+6. **Undo dart** and **End game** are on the game screen and in oche view too.
+   Everything oche view offers is reachable without going fullscreen for it.
+7. Your **running average** sits beside the score while you play, and names the
+   figure the game is actually scored on: PPD with a three-dart average under it
+   in x01 and Count Up, MPR in Cricket and Bermuda Triangle.
 
 ## Automatic camera scoring (OpenDartboard)
 
@@ -268,7 +280,7 @@ OpenDartboard reports the board going clean and this reads it as "visit over".
 
 ## Online 1v1 challenges
 
-The "Online Challenge" tab lets two people, each with their own board, play a
+The "Online Play" tab lets two people, each with their own board, play a
 remote 1v1 match. Gameplay runs over a **direct peer-to-peer WebRTC
 connection** - the signaling server is only involved in the initial handshake
 (helping the two browsers find each other and swap connection details), never
@@ -366,7 +378,7 @@ Leave it alone otherwise - clearing the box restores the automatic value.
 
 1. Start the app as above.
 2. Open **http://localhost:8000** in two separate browser tabs.
-3. In tab 1: go to "Online Challenge", click **Create Challenge**, note the
+3. In tab 1: go to "Online Play", click **Create Challenge**, note the
    code shown.
 4. In tab 2: enter that code, click **Join Challenge**.
 5. Both tabs should show "Connected" and the live scoreboard. Each tab can
@@ -443,21 +455,50 @@ delivery, so both sides stay in lockstep.
 
 ## The online lobby
 
-Signed in, the Online Challenge tab gains a **lobby**: everyone else who is
+Signed in, the Online Play tab gains a **lobby**: everyone else who is
 online, their status, and a Challenge button. Send one and they get a card with
 Accept and Decline; unanswered challenges expire. **Quick Match** puts you in a
 queue and pairs you with whoever has waited longest - deliberately not
 skill-based, because a queue that holds out for a good match is one nobody comes
 out of.
 
-**Rooms** are places to wait and chat - "501 Practice", "Cricket Only" - not
-matches. Anyone in one can be challenged. There is room chat and private
-whispers, and you can **block** someone, which is silent and stops them
-challenging you, whispering to you, seeing you in the lobby, or being paired
-with you by Quick Match.
+**Rooms** are places to wait and chat, not matches - anyone in one can be
+challenged. Some are always there:
 
-Tapping a player opens their card: their real record, so "am I in for a game
-here?" has an answer before you commit.
+| Room | For |
+| --- | --- |
+| Steel Tip / Soft Tip | Finding someone playing the same kind of board as you |
+| 501, Cricket, Count Up, Bermuda Triangle | Finding a game of one thing |
+
+The main list is the **open lobby** - everyone signed in who isn't standing in a
+room - so there's no "Open" room to join and nobody has to opt in to being
+findable. The standing rooms stay listed when empty, which is the point: walking
+into an empty Steel Tip room is how the second person finds the first. You can
+still create your own rooms, and those close when the last person leaves.
+
+**Standing in a room means only the people in there with you can challenge you.**
+A room already says what you'll play and on what, so a challenge out of the open
+lobby - carrying whatever format the challenger happened to have selected - is a
+question you've answered by walking in. Tick **Open to challenges** if you want
+the whole lobby to be able to ask anyway. It's a narrowing in one direction only:
+someone in a room can still challenge a player out in the open lobby, because
+that player hasn't expressed a preference to override. Everyone in a room is
+listed inside it with their rank, averages and a Challenge button, and out in the
+lobby they show as "In Steel Tip" rather than as someone you can't reach.
+
+Steel and soft tip are rooms rather than a match setting on purpose. Nothing this
+app scores differs between them, so it isn't something a host can pick *for* a
+match - it's a property of the board in your room, and what you actually want is
+to find someone with the same one.
+
+There is room chat and private whispers, and you can **block** someone, which is
+silent and stops them challenging you, whispering to you, seeing you in the
+lobby, or being paired with you by Quick Match.
+
+Every player in the lobby shows their rank and averages (three-dart in x01, MPR
+in Cricket) right on the row, so "am I in for a game here?" has an answer while
+you're reading the list. Tapping a player opens their full card. Anyone who has
+opted out of sharing their record shows nothing rather than a gap.
 
 **Invite codes still work exactly as before, and are not going away.** They are
 the only way to play without an account, the way to play someone who isn't in

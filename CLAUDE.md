@@ -234,19 +234,48 @@ caught, both of which produce a layout that is right at one end and wrong at the
 other:
 
 - **Fixed pixel constants break the proportion at the small end.** The Cricket
-  pad measures `16.95u + 21px` — the constant is nine row borders — which is 1.8%
-  of a desktop viewport and 5.4% of a landscape phone's. `--ck-u` therefore
-  subtracts it *before* dividing (`calc((70vh - 24px) / 17)`), which is what makes
-  the pad the same fraction of every screen. A plain `Nvh` fits one device and
-  overflows the other, and eight separately-tuned `clamp()`s — the thing this
-  replaced — cannot be right at both ends at once, because the constraint being
-  divided among them is a single one on the total height.
+  pad measures `15.58u + 10.5px` — the constant is the row borders — which is a
+  far larger share of a landscape phone's height than a desktop's. `--ck-u`
+  therefore subtracts it *before* dividing, which is what makes the pad the same
+  fraction of every screen. A plain `Nvh` fits one device and overflows the
+  other, and eight separately-tuned `clamp()`s — the thing this replaced —
+  cannot be right at both ends at once, because the constraint being divided
+  among them is a single one on the total height.
+  **RE-MEASURE the multiplier whenever a row's contents change height**; it has
+  moved three times (16.95 → 17.07 when the marks grew, → 15.58 when the Miss
+  footer went). Measure the ROWS and add them up: the pad carries `max-height:
+  84vh`, so a test unit large enough to hit it reports a clipped height and
+  yields a slope that is far too shallow.
+- **`min()` of height and width, not height alone.** The vw term was removed
+  once on the reasoning that a row is only ~5.5u of buttons against 92vw so
+  width never runs out first — true of every desktop aspect ratio and false of a
+  portrait phone, where height is abundant and width is scarce. There `u` came
+  out large, the pad's 12.5u exceeded the width cap, and the cap took the
+  difference out of the only elastic part of the row: the two mark columns,
+  which collapsed to nothing. The buttons still looked right, so the pad looked
+  fine while showing **no marks at all**, on a board whose marks are the score.
 - **Absolutely-positioned furniture reserves nothing.** The darts strip and the
   control bar are both absolute, so the flow runs underneath them unless padding
-  says otherwise; `.cricket-stage` reserves 9vh at *both* ends for exactly that.
-  `.game-top` has `flex-grow`, so it swallows whatever the pad leaves and pushes
-  the pad down onto the control bar however small the pad is made — which is why
-  an overlap there is not evidence the pad is too big.
+  says otherwise. The strip's geometry is therefore one pair of variables —
+  `--darts-top` and `--dart-slot-h` — read by the slot itself, by the strip's
+  offset AND by everything reserving room for it, because two copies of "how
+  tall is a dart slot" means the reservation is the one that drifts, and it
+  fails by printing the score through the darts rather than by looking wrong on
+  its own. `.cricket-stage` reserves exactly that at the top and 7vh at the
+  bottom. Getting the top reservation *nearly* right is its own bug: `.game-top`
+  centres the turn label in the band it is given, so a band starting above the
+  darts centred the label against an edge the eye cannot see.
+  `.game-top` also has `flex-grow`, so it swallows whatever the pad leaves and
+  pushes the pad down onto the control bar however small the pad is made — which
+  is why an overlap there is not evidence the pad is too big.
+- **The ordinary game screen has the same one-unit pad, on its own unit.**
+  `.cricket-board` sets `--ck-u` as a plain length and states `width: 12.5u`,
+  sharing oche view's shape so the pad reads the same on the sofa and at the
+  board. Sharing the *unit* would be wrong: this page scrolls, so height is not
+  a constraint to divide up, and Board View is what "how far away am I" means
+  here — it sets `u` directly, one number per step. Before this the pad had no
+  stated width at all, and `.ck-row` being `1fr auto 1fr` meant a desktop panel
+  fed five hundred pixels of slack straight into the mark columns.
 
 `cricket-stage` is set by **both** controllers (`game.js` and `online.js`). It
 was online-only for a while, and local play inherited the x01 stage underneath
@@ -300,6 +329,64 @@ never sees a dart, and a lobby outage cannot interrupt a match in progress.
 **Invite codes stay** — they are the only no-account path, the way to play someone
 outside your lobby, and the fallback when the lobby is down.
 
+**Match Settings sits ABOVE the lobby, and cannot be moved into it.** The format
+picker governs both routes out of the tab — a lobby challenge and an invite code
+alike — but the lobby panel does not render for guests or with `ACCOUNTS=off`,
+so putting the picker inside it would take the format controls away from the one
+path that has no account. It is ordered above rather than moved, with `order` on
+a flex `#online-mode`, because `online.js` shows and hides `#online-setup-panel`
+from six places and relocating the element would mean keeping all of them right
+for no visible gain. The panel is titled "Match Settings" and the tab "Online
+Play": the tab already says which mode you are in, so naming the panel after the
+section rather than its contents was what made the format feel unrelated to the
+challenge you were about to send.
+
+**Standing rooms are how tip type is expressed, and why it is not a format.**
+Steel and soft tip change nothing this app scores — same rules, same checkout
+ceiling, same bull — so tip type is not a property of a match, and a picker
+beside Bull would have the host declaring something they cannot enforce on the
+guest's board. It is a property of the board in your room, and what a player
+wants from it is to find someone with the same one: a place to stand. So
+`STANDING_ROOMS` in `server/lobby.js` seeds Steel Tip and Soft Tip, plus **one
+room per game mode** — which is why adding a game mode adds a room.
+
+Two things about them are load-bearing. **There is no "Open" room**: the lobby
+already is one, everybody signed in and not in a room is in it by definition, and
+minting a room for the default would make people join it or look like they were
+nowhere. And **standing rooms survive being empty**, which is the exception in
+`releaseRoom` — every other room is swept when the last person leaves, and
+sweeping these would delete Steel and Soft the moment the lobby emptied, so they
+would only exist once somebody had already managed to meet somebody else. An
+empty room is exactly the state a tip room has to survive.
+
+**A room narrows who may challenge you, and it is enforced on the handler as
+well as reported on the row.** `canBeChallengedBy(target, viewer)` is the single
+rule: in a room, only people standing in it with you, unless your status is
+`looking` ("Open to challenges"). The `challengeable` flag on each player row is
+that function, and so is the guard in the `challenge` message handler — a hidden
+button is a suggestion, and a message can be sent by something that never drew
+one. It is deliberately asymmetric: a player in a ROOM can still challenge a
+player in the open lobby, because the open one has expressed no preference to
+override. The room roster is filtered client-side from presence, which already
+carries every player's `roomId`, rather than sent with the room — a second copy
+of the membership is one that disagrees with the first.
+
+Note that "Open to challenges" was **write-only** before this: it set your status
+and was never set back from it, so the box and the server disagreed after a
+reconnect. That was cosmetic while it only meant "actively looking"; now that
+being in a room hangs off it, a stale tick is the difference between anyone being
+able to challenge you and nobody. `render` syncs it from your own presence entry.
+
+**Lobby rows carry the player's averages, fetched lazily by the client.** Not in
+the presence payload: presence is pushed to everyone on every change, so that
+would mean reading statistics for every person online and sending them all to
+everybody each time someone went idle. One request per visible player, answered
+from `stats_cache`, cached for the session. The permission check is simply
+*whether the server sent a headline at all* — it withholds figures for anyone
+opted out — and `lobbyui.js` deliberately does not read `shared` itself, because
+your own card is served in full whatever that flag says, so testing it there hid
+your own figures from you.
+
 Presence lives in `server/presence.js`, in memory, single-process, deliberately —
 and behind a small interface so that adding a second process later is that file
 plus a pub/sub bus rather than the protocol or the UI. Presence is per *person*,
@@ -344,6 +431,23 @@ need it, because its undo stack already survives the end of a visit, so the
 setting buys a countdown at the price of a pause: worth it alone at the board,
 a tax paid every visit in pass-and-play. It is skipped for bot seats, which
 never need a chance to undo and would otherwise add ten seconds a round.
+
+**A dart thrown DURING the hold belongs to the next visit, and both controllers
+now say so — differently, for the same reason.** Neither used to: the dart was
+appended to the visit that had already finished, so its marks were credited to a
+player who had stopped throwing, and in pass-and-play the next player's darts
+scored for their opponent. It surfaced as Cricket MPR reading 12 and 15 — marks
+over ROUNDS, against a ceiling of the nine marks three treble beds are worth —
+which is the only figure in the app with a ceiling low enough to make the bug
+visible. x01 has no equivalent, so it had been silently wrong there too.
+`game.js` COMMITS the hold and applies the dart to whoever is next, because in
+pass-and-play the next visit is at this same board and someone stepping up is
+the clearest possible statement that the last one is over. `online.js` REFUSES
+it, because the opponent throws at their own board and there is no next visit
+here to give it to; a fourth dart is a stray one, and undo is the honest answer.
+The refusal happens before the peer message is sent, so the two sides cannot
+disagree — and peer darts are still applied exactly as sent, which is what keeps
+an older build on the other end in step rather than desynced.
 
 **Both sides hold, and the thrower owns the clock.** Holding unilaterally is
 worse than not holding: the other side would believe it was their turn, throw,
@@ -538,9 +642,11 @@ it as the database grows rather than treating it as a constant.
   `online.js` (no new peer message - it rides `dart`); a case in `medley.js`'s
   `normalizeLeg` and `gameLabel`; an option in `medleybuilder.js` and both format
   pickers in `index.html`; a `stats/*.js` module registered in `statsengine.js`;
-  and both hand-maintained file lists. Bump `ENGINE_VERSION` if it changes what an
-  existing number MEANS. The stats page, dashboard, achievements screen and
-  leaderboard picker all iterate the registry, so they need no edit at all.
+  and both hand-maintained file lists; plus an entry in `STANDING_ROOMS` in
+  `server/lobby.js`, since there is one lobby room per game mode. Bump
+  `ENGINE_VERSION` if it changes what an existing number MEANS. The stats page,
+  dashboard, achievements screen and leaderboard picker all iterate the registry,
+  so they need no edit at all.
 - Solo (one-player) play is supported in every game mode and must keep working.
 - **Adding a preference** is: an entry in `prefs.js`'s `SCHEMA` (with its
   default and what counts as a legal value), a group in `PREF_GROUPS` so reset
@@ -556,6 +662,28 @@ it as the database grows rather than treating it as a constant.
   rounded down.
 - Quick Total is refused in Cricket and Bermuda. A bare turn total says nothing
   about which numbers were hit, and in Bermuda it cannot express a halving.
+- **A visit is three darts unless it checked out**, and `recorder.endTurn(seat)`
+  is where that is enforced. Darts nobody entered were still thrown, so ending a
+  turn sets `darts` to 3 rather than counting the throws — otherwise a visit of
+  60 and two misses read as a PPD of 60 against a ceiling of 60. It is carried
+  on `darts`, never as a fourth entry in `throws`: a dart with no segment would
+  put a phantom miss in the heatmap and in every per-dart statistic, which is
+  the same split quick totals already need. `endTurn` takes the SEAT because a
+  visit where all three missed registers nothing at all and leaves no open turn
+  to read it from — and that visit must still be recorded, or a player who
+  misses everything has the round dropped from their MPR denominator and their
+  average goes UP for missing. This is what lets Cricket's pad have no Miss
+  button: End turn already says the visit is over, which is the thing the player
+  was going to do anyway.
+- **The live average names its own figure.** `liveStats` returns a labelled
+  object with a null value before the first dart, and null ONLY when the game
+  offers no average at all. Returning null for both let the renderer fall back
+  to a hardcoded "PPD", which is the wrong number's name in Cricket. It splits
+  by what is being counted rather than by game: marks on a target (Cricket,
+  Bermuda) or points off darts (x01, Count Up), so a fifth game needs no third
+  branch. It is shown on the ordinary game screen as well as in oche view —
+  everything oche view offers is reachable without going fullscreen for it,
+  including Undo dart, End turn and End game.
 
 ## CI
 
