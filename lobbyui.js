@@ -1,7 +1,7 @@
 // lobbyui.js - drawing the lobby, and turning clicks into lobby messages.
 //
 // Wiring only; lobbyclient.js owns the connection and the state. The lobby is
-// shown INSIDE the Online Challenge tab, above the invite-code panel rather
+// shown INSIDE the Online Play tab, above the invite-code panel rather
 // than instead of it, which is the whole shape of the feature: the lobby is the
 // easy path when you are signed in and someone else is around, and codes remain
 // the path that always works.
@@ -36,6 +36,7 @@ const el = {
   roomName: document.getElementById("room-name"),
   roomCreate: document.getElementById("room-create-btn"),
   roomView: document.getElementById("lobby-room-view"),
+  roomMembers: document.getElementById("room-members"),
   roomTitle: document.getElementById("room-title"),
   chatLog: document.getElementById("chat-log"),
   chatInput: document.getElementById("chat-input"),
@@ -54,7 +55,7 @@ const el = {
 
 let latest = null;
 
-// The format currently selected on the Online Challenge panel. Sent with a
+// The format currently selected on the Match Settings panel. Sent with a
 // challenge so the guest's app knows what it is agreeing to - the host still
 // sends the authoritative match_config once connected, exactly as before.
 function selectedLegs() {
@@ -69,6 +70,86 @@ function setMessage(text, kind = "error") {
   el.message.textContent = text || "";
   el.message.classList.remove("error", "ok");
   if (text) el.message.classList.add(kind);
+}
+
+// The human name for a format key, taken from the picker that defines those
+// keys. A room carries "single-501"; the option in Match Settings already says
+// what that means, so reading it back is one list of format names instead of
+// two, and the one that would have gone stale is the copy over here.
+function formatLabel(key) {
+  if (!key) return "";
+  const option = el.format?.querySelector(`option[value="${CSS.escape(key)}"]`);
+  return option ? option.textContent.trim() : "";
+}
+
+// PROFILES FOR THE LIST, fetched once per player and kept.
+//
+// The record was always one tap away on the player card, which is the wrong
+// depth for the question it answers: "am I in for a game here?" is what you ask
+// while READING the list, and a card you have to open for each name in turn is
+// how you end up challenging whoever is nearest instead.
+//
+// Lazily from the client rather than in the lobby payload, and that is the
+// load-bearing choice. Presence is pushed to everyone on every change - someone
+// going idle would otherwise mean reading statistics for every person online and
+// sending them all to everybody. Here it is one request per player you can
+// actually see, answered from the same `stats_cache` the profile card uses, and
+// then never asked again.
+const profiles = new Map(); // userId -> profile, or a Promise while in flight
+
+// roomId -> name, refreshed on every render. Kept here so a player row can say
+// WHERE someone is standing: once being in a room means the open lobby cannot
+// challenge you, a row with no Challenge button has to explain itself, or it
+// reads as the app having lost the button.
+let roomNames = new Map();
+
+function profileFor(userId) {
+  if (profiles.has(userId)) return profiles.get(userId);
+  const pending = fetch(`/api/users/${userId}/profile`, { credentials: "same-origin" })
+    .then((r) => r.json())
+    .then(({ profile }) => {
+      profiles.set(userId, profile);
+      return profile;
+    })
+    // Cached as null so a player whose profile cannot be read is not asked for
+    // again on every lobby push for the rest of the session.
+    .catch(() => {
+      profiles.set(userId, null);
+      return null;
+    });
+  profiles.set(userId, pending);
+  return pending;
+}
+
+// The two figures this app scores people on, and nothing else. A lobby row has
+// room for one glance, so it gets the same numbers the rating is built from
+// rather than a card's worth of detail - see the note on averages in
+// statsengine.js for why these are the 80% ones.
+function fillPlayerStats(node, profile) {
+  node.textContent = "";
+  if (!profile) return;
+
+  // AN EMPTY HEADLINE IS THE SERVER SAYING NO. It withholds the figures for
+  // anyone who has opted out of sharing, so "did it send any?" is the whole
+  // permission check and this file does not get a second opinion about who may
+  // see what. Testing `shared` here instead was subtly wrong in one direction
+  // that matters: your OWN card is served in full whatever that flag says - the
+  // setting is about what other people see - so reading it would have hidden
+  // your figures from you.
+  const headline = profile.headline ?? [];
+  if (!headline.length) return;
+
+  const parts = [];
+  for (const [key, caption] of [["threeDart", "3DA"], ["mpr", "MPR"]]) {
+    const metric = headline.find((m) => m.key === key);
+    if (metric && Number(metric.value) > 0) {
+      parts.push(`${caption} ${Number(metric.value).toFixed(2)}`);
+    }
+  }
+  // Signed up but has not thrown enough for either average to mean anything.
+  // Worth saying rather than leaving blank: "no average yet" is real information
+  // about an opponent, and it is different from keeping them private.
+  node.textContent = parts.length ? parts.join(" · ") : "No average yet";
 }
 
 function statusLabel(status) {
@@ -105,8 +186,33 @@ function personRow(player) {
   sub.className = "person-sub";
   const dot = document.createElement("span");
   dot.className = `status-dot status-${player.status}`;
-  sub.append(dot, document.createTextNode(statusLabel(player.status)));
-  middle.append(name, sub);
+  // Where they are standing, when it is somewhere. This is what makes the
+  // missing Challenge button legible: "In Steel Tip" and no button says join
+  // them there, where an unexplained gap says the app is broken.
+  const where = player.roomId ? roomNames.get(player.roomId) : null;
+  const status = where && !player.isSelf
+    ? `In ${where}`
+    : statusLabel(player.status);
+  sub.append(dot, document.createTextNode(status));
+
+  // Their record, on the row. Filled in place when the profile arrives rather
+  // than by re-rendering the lobby: a push can replace these rows at any moment,
+  // and a late fetch writing into a node that has since been detached is
+  // harmless, where a re-render per profile would redraw the list N times.
+  const stats = document.createElement("div");
+  stats.className = "person-stats";
+  // The rank goes on the NAME, the same place the player card puts it, because
+  // it is the one thing that answers "am I in for a game here?" before any of
+  // the numbers do.
+  const show = (profile) => {
+    fillPlayerStats(stats, profile);
+    if (profile?.shared && profile.rating) name.appendChild(rankBadge(profile.rating));
+  };
+  const cached = profiles.get(player.userId);
+  if (cached && typeof cached.then !== "function") show(cached);
+  else profileFor(player.userId).then(show);
+
+  middle.append(name, sub, stats);
 
   const actions = document.createElement("div");
   actions.className = "person-actions";
@@ -396,6 +502,18 @@ function render(state) {
   const term = el.filter.value.trim().toLowerCase();
   const friendsOnly = el.scope.value === "friends";
 
+  // Before any row is built, since personRow reads it to say where someone is.
+  roomNames = new Map(state.rooms.map((r) => [r.id, r.name]));
+
+  // The switch was write-only: it SET your status and was never set back from
+  // it, so after a reconnect the box and the server disagreed - and now that
+  // being in a room hangs off this, a stale tick is the difference between
+  // "anyone can challenge me" and nobody being able to. The server's view of
+  // your own status is the one that decides.
+  const self = state.players.find((p) => p.isSelf);
+  const openToAll = self?.status === "looking";
+  if (el.looking) el.looking.checked = openToAll;
+
   // Friends first, then anyone actively looking, then everyone else. The point
   // of a lobby is finding someone to play right now, so the people most likely
   // to say yes are the ones at the top.
@@ -438,7 +556,19 @@ function render(state) {
       name.textContent = room.name;
       const sub = document.createElement("div");
       sub.className = "person-sub";
-      sub.textContent = `${room.members} in here`;
+      // An empty room used to be impossible - it was swept the moment the last
+      // person left - so "0 in here" is a state only the standing rooms can
+      // reach, and it is the state they exist for. Worded as an invitation
+      // rather than a count, because a permanent room reading "0 in here" looks
+      // broken rather than available.
+      const who = room.members === 0
+        ? "Nobody here yet - be the first"
+        : `${room.members} in here`;
+      // The room's format, named by the picker that owns those keys rather than
+      // by a lookup table here - two lists of format names is one that goes
+      // stale, and it would be this one.
+      const label = formatLabel(room.game);
+      sub.textContent = label ? `${label} · ${who}` : who;
       middle.append(name, sub);
 
       const actions = document.createElement("div");
@@ -503,7 +633,47 @@ function render(state) {
 
   el.roomView.classList.toggle("hidden", !state.room);
   if (state.room) {
+    // The roster, built from the SAME player objects the main list uses - so a
+    // row in here carries the same rank, averages and Challenge button, and
+    // "anyone in a room can be challenged" is finally true in the one place
+    // where you would go looking for it.
+    //
+    // Filtered client-side from presence rather than sent with the room: every
+    // player already arrives carrying their roomId, so the membership is
+    // knowledge the client has, and asking the server for a second copy is how
+    // the two end up disagreeing about who is in here.
+    //
+    // Deliberately NOT passed through the search box and Friends-only filter
+    // above. Those belong to the lobby list; a room is already a filter, and
+    // silently applying a second one would show an empty room to anyone who had
+    // left a name in the search box.
+    const members = state.players
+      .filter((p) => p.roomId === state.room.id)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+    // Says the rule where it applies, and names the way out of it. Standing in a
+    // room quietly stops the open lobby challenging you, and a rule nobody is
+    // told about reads as people ignoring you.
     el.roomTitle.textContent = state.room.name;
+    const note = document.createElement("span");
+    note.className = "room-scope-note";
+    note.textContent = el.looking?.checked
+      ? " · anyone in the lobby can challenge you"
+      : " · only people in here can challenge you";
+    el.roomTitle.appendChild(note);
+
+    el.roomMembers.innerHTML = "";
+    if (members.length <= 1) {
+      const empty = document.createElement("div");
+      empty.className = "people-empty";
+      // <= 1 rather than 0: you are in here yourself, so an otherwise empty room
+      // is a list of one, and "nobody else" is the honest way to say it.
+      empty.textContent = "Nobody else in here yet. Anyone who joins shows up here.";
+      el.roomMembers.appendChild(empty);
+    } else {
+      for (const player of members) el.roomMembers.appendChild(personRow(player));
+    }
+
     renderChat(state.messages);
   }
 }

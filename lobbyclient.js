@@ -12,7 +12,7 @@
 //
 // It is also entirely optional. No lobby - because the server has accounts
 // switched off, because you are signed out, or because the connection failed -
-// means the Online Challenge tab works exactly as it did before, with codes.
+// means the Online Play tab works exactly as it did before, with codes.
 
 const listeners = new Set();
 const matchReadyHandlers = new Set();
