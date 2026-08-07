@@ -19,10 +19,15 @@
 // The charts are also given a table view by the caller (see accountui.js), so
 // the numbers are readable without seeing the picture at all.
 
-const INK = "#1B1A14";
-const FELT = "#0F3D2E";
-const GRID = "rgba(27,26,20,0.12)";
-const MUTED = "rgba(27,26,20,0.55)";
+// Colours are CLASS NAMES, not literals, and the fill/stroke behind each one
+// lives with the rest of the design tokens in index.html. An SVG presentation
+// attribute cannot read a custom property, so a chart drawn with fill="#0F3D2E"
+// would need re-rendering on every theme change; as a class it just repaints.
+const GRID_CLASS = "chart-grid";
+const LABEL_CLASS = "chart-label";
+const SERIES_STROKE = "chart-series-stroke";
+const SERIES_FILL = "chart-series-fill";
+const SERIES_DOT = "chart-series-dot";
 
 // A fixed viewBox with a fluid width: the SVG scales to its container and the
 // geometry below can be written in one coordinate system.
@@ -67,12 +72,12 @@ function gridAndAxis(svg, max, formatValue) {
 
     svg.appendChild(svgEl("line", {
       x1: plot.x, x2: plot.x + plot.w, y1: y, y2: y,
-      stroke: GRID, "stroke-width": 1,
+      class: GRID_CLASS, "stroke-width": 1,
     }));
 
     const label = svgEl("text", {
       x: plot.x - 8, y: y + 4, "text-anchor": "end",
-      fill: MUTED, "font-size": 11, "font-family": "Inter, sans-serif",
+      class: LABEL_CLASS, "font-size": 11, "font-family": "Inter, sans-serif",
     });
     label.textContent = formatValue(value);
     svg.appendChild(label);
@@ -93,7 +98,7 @@ function xLabels(svg, points) {
       x: point.cx,
       y: H - 8,
       "text-anchor": index === 0 ? "start" : index === points.length - 1 ? "end" : "middle",
-      fill: MUTED, "font-size": 11, "font-family": "Inter, sans-serif",
+      class: LABEL_CLASS, "font-size": 11, "font-family": "Inter, sans-serif",
     });
     text.textContent = point.label;
     svg.appendChild(text);
@@ -166,7 +171,7 @@ export function lineChart(container, { data, format = (v) => String(v), empty = 
 
   svg.appendChild(svgEl("polyline", {
     points: points.map((p) => `${p.cx},${p.cy}`).join(" "),
-    fill: "none", stroke: FELT, "stroke-width": 2,
+    fill: "none", class: SERIES_STROKE, "stroke-width": 2,
     "stroke-linejoin": "round", "stroke-linecap": "round",
   }));
 
@@ -176,7 +181,7 @@ export function lineChart(container, { data, format = (v) => String(v), empty = 
     for (const point of points) {
       svg.appendChild(svgEl("circle", {
         cx: point.cx, cy: point.cy, r: 4,
-        fill: FELT, stroke: "#EFE6D2", "stroke-width": 2,
+        class: SERIES_DOT, "stroke-width": 2,
       }));
     }
   }
@@ -188,7 +193,7 @@ export function lineChart(container, { data, format = (v) => String(v), empty = 
   // pointing at a 4px dot on a phone is not a reasonable thing to ask.
   const tip = attachTooltip(container);
   const crosshair = svgEl("line", {
-    y1: plot.y, y2: plot.y + plot.h, stroke: GRID, "stroke-width": 1, opacity: 0,
+    y1: plot.y, y2: plot.y + plot.h, class: GRID_CLASS, "stroke-width": 1, opacity: 0,
   });
   svg.appendChild(crosshair);
 
@@ -253,7 +258,7 @@ export function barChart(container, { data, format = (v) => String(v), empty = "
       // Rounded at the data end only - the baseline end stays square, anchored
       // to the axis.
       rx: Math.min(4, barWidth / 2),
-      fill: FELT,
+      class: SERIES_FILL,
     });
 
     bar.addEventListener("pointerenter", () => {

@@ -57,8 +57,66 @@ export function createLobby() {
 
   // challengeId -> { id, from, to, legs, createdAt, timer }
   const challenges = new Map();
-  // roomId -> { id, name, game, createdBy, members:Set<userId>, history:[] }
+  // roomId -> { id, name, game, createdBy, members:Set<userId>, history:[],
+  //             standing:boolean }
   const rooms = new Map();
+
+  // THE TIP-TYPE ROOMS, and why they are rooms rather than a setting.
+  //
+  // Steel and soft tip change nothing this app scores - the rules, the checkout
+  // ceiling and the bull are identical - so tip type is not a property of a
+  // MATCH, and putting it in the format picker beside Bull would have the host
+  // declaring something they cannot enforce on the guest's board. It is a
+  // property of the board in your room, and what a player actually wants from
+  // it is to find someone with the same one. That is a place to stand, which
+  // the lobby already has.
+  //
+  // THERE IS NO "OPEN" ROOM, because the lobby already is one. Everybody signed
+  // in and not standing in a room is in the open lobby by definition, and
+  // minting a room for it would mean people had to JOIN the default - leaving
+  // anyone who did not looking like they were nowhere, and splitting the one
+  // list that is supposed to show you everybody. These two are the departures
+  // from the default, which is exactly what a room is for.
+  // TWO AXES, DELIBERATELY NOT CROSSED. The first two are about the board in
+  // your room, the rest about what you want to play, and they are independent -
+  // so the honest grid would be Steel/Soft x every game, which is a dozen rooms
+  // each holding a twelfth of the people and all reading as empty. A lobby's
+  // problem is finding anyone at all; splitting it finer is the opposite of the
+  // fix. Pick the axis you care about and challenge whoever is standing there.
+  //
+  // One room per game mode, so ADDING A GAME MODE ADDS A ROOM - it belongs on
+  // the checklist in CLAUDE.md beside the stats module and the format pickers.
+  // x01 gets a single room at 501 rather than one each for 301/501/701: the
+  // three are the same game at three lengths, and the format is agreed when the
+  // challenge is sent anyway.
+  //
+  // `game` carries a format key from the same picker Match Settings uses, so the
+  // client can label these rooms without a second table of its own.
+  const STANDING_ROOMS = [
+    { id: "r-steel", name: "Steel Tip", game: null },
+    { id: "r-soft", name: "Soft Tip", game: null },
+    { id: "r-501", name: "501", game: "single-501" },
+    { id: "r-cricket", name: "Cricket", game: "single-cricket" },
+    { id: "r-countup", name: "Count Up", game: "single-countup" },
+    { id: "r-bermuda", name: "Bermuda Triangle", game: "single-bermuda" },
+  ];
+
+  // Seeded at startup, and never removed. Everything else about them is an
+  // ordinary room: chat, membership, challenging whoever is in there with you.
+  for (const [order, def] of STANDING_ROOMS.entries()) {
+    rooms.set(def.id, {
+      id: def.id,
+      name: def.name,
+      game: def.game ?? null,
+      createdBy: null,
+      members: new Set(),
+      history: [],
+      // Two jobs. It exempts the room from the empty-room sweep below, and it
+      // sorts these to the top of the list ahead of whatever players have made.
+      standing: true,
+      order,
+    });
+  }
 
   // Quick Match: userIds waiting to be paired with whoever is next, in arrival
   // order. A Set rather than an array because the commonest operations are
@@ -107,7 +165,34 @@ export function createLobby() {
   // The lobby as one player sees it. Friends are marked rather than sorted here
   // - the client does the ordering, because it is a presentation choice and
   // this way the server sends one list rather than one per viewer.
+  // BEING IN A ROOM NARROWS WHO MAY ASK YOU.
+  //
+  // Standing in Steel Tip or in Cricket is already a statement about what you
+  // will play and on what, so a challenge out of the open lobby - which carries
+  // whatever format the challenger happens to have selected - is a question you
+  // have effectively already answered. Without this the rooms were a filter in
+  // one direction only: you could use them to find the right opponent, and still
+  // be found by everyone who had not bothered.
+  //
+  // "Open to challenges" is the opt-out, and it already existed - it is the same
+  // switch that used to mean only "I am actively looking". A player who ticks it
+  // is challengeable from anywhere, room or no room, which is what makes this a
+  // narrowing rather than a wall.
+  //
+  // Note it is deliberately about the TARGET's room, not a matching pair: a
+  // player in the open lobby is challengeable by someone standing in a room,
+  // because they have expressed no preference to be overridden.
+  function canBeChallengedBy(target, viewer) {
+    if (!target || !viewer) return false;
+    if (target.userId === viewer.userId) return false;
+    if (!isChallengeable(target.status)) return false;
+    if (!target.roomId) return true;
+    if (target.roomId === viewer.roomId) return true;
+    return target.status === STATUS.LOOKING;
+  }
+
   function lobbyFor(userId) {
+    const me = presence.get(userId);
     const friends = new Set(friendIds(userId));
     // Blocked in either direction means neither sees the other in the list. A
     // blocked player who is still visible and still challengeable is a block
@@ -122,7 +207,7 @@ export function createLobby() {
       roomId: entry.roomId,
       isFriend: friends.has(entry.userId),
       isSelf: entry.userId === userId,
-      challengeable: isChallengeable(entry.status) && entry.userId !== userId,
+      challengeable: canBeChallengedBy(entry, me),
     }));
   }
 
@@ -171,13 +256,24 @@ export function createLobby() {
   // Draw Night". A room is not a match: it is a group of people who can see
   // each other, chat, and challenge whoever is in there with them. That makes
   // the lobby feel like a venue rather than a queue.
+  // Standing rooms first and always in their declared order, so Steel / Soft /
+  // Open are in the same place every time you look; player-made rooms follow.
+  // Sorting here rather than in the client because every client would otherwise
+  // need the same opinion, and one of them would eventually disagree.
   function roomList() {
-    return [...rooms.values()].map((room) => ({
-      id: room.id,
-      name: room.name,
-      game: room.game,
-      members: room.members.size,
-    }));
+    return [...rooms.values()]
+      .sort((a, b) => {
+        if (a.standing && b.standing) return a.order - b.order;
+        if (a.standing !== b.standing) return a.standing ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      })
+      .map((room) => ({
+        id: room.id,
+        name: room.name,
+        game: room.game,
+        members: room.members.size,
+        standing: Boolean(room.standing),
+      }));
   }
 
   // Takes a player out of whatever room they were in. Split from the presence
@@ -191,9 +287,16 @@ export function createLobby() {
     room.members.delete(userId);
     // A room nobody is in stops existing, so the list shows places with people
     // in them rather than a graveyard of abandoned names.
-    if (room.members.size === 0) {
+    //
+    // EXCEPT the standing rooms, and the exception is the whole point of them:
+    // an empty room is exactly the state a tip-type room has to survive, since
+    // being able to go and stand in the empty Steel Tip room is how the second
+    // player ever finds the first. Sweeping them would delete Steel and Soft the
+    // moment the lobby emptied, and they would only exist once somebody had
+    // already managed to meet somebody else.
+    if (room.members.size === 0 && !room.standing) {
       rooms.delete(room.id);
-    } else {
+    } else if (room.members.size > 0) {
       roomSystemMessage(room, `${displayName ?? "Someone"} left`);
     }
 
@@ -428,7 +531,22 @@ export function createLobby() {
     socket.on("close", () => {
       const { wasLast, entry } = presence.detach(userId, socket);
       // Another tab or device is still connected - they have not left.
-      if (!wasLast) return;
+      //
+      // But a match has NOT survived, even though the person has. Presence is
+      // per player while a match is per device: the scoreboard, the peer
+      // connection and the darts were all on the socket that just went, and
+      // nothing migrates them to the phone in their pocket. Returning here
+      // without this left the player marked in_match forever - unchallengeable,
+      // with spectators watching a scoreboard that would never move again -
+      // because the only other thing that clears that status is a match_over
+      // the departed tab is no longer around to send.
+      if (!wasLast) {
+        if (entry?.status === STATUS.IN_MATCH) {
+          presence.update(userId, { status: STATUS.LOBBY });
+        }
+        endLiveMatchesFor(userId);
+        return;
+      }
 
       // Anything they had outstanding goes with them, so nobody is left
       // looking at a challenge from someone who has gone.
@@ -480,6 +598,16 @@ export function createLobby() {
         const me = presence.get(userId);
         if (!isChallengeable(me.status)) {
           return send(socket, { type: "error", message: "Finish your match first." });
+        }
+        // Enforced here as well as reported on the player row, because a hidden
+        // button is a suggestion and this is a rule: the client decides what to
+        // DRAW from `challengeable`, and a message can always be sent by
+        // something that never drew anything.
+        if (!canBeChallengedBy(target, me)) {
+          return send(socket, {
+            type: "error",
+            message: `${target.displayName} is in a room. Join them there to challenge them.`,
+          });
         }
 
         // If THEY have already challenged US, this is an acceptance. Two people

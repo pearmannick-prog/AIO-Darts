@@ -13,7 +13,10 @@ import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartb
 import {
   renderCricketBoard as renderCricketBoard_, wireCricketBoard,
 } from "./cricketboard.js";
-import { createMedleyBuilder } from "./medleybuilder.js";
+import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
+import { renderCheckoutHint, renderLiveAverage } from "./checkouthint.js";
+import { getPref, VISIT_HOLD_MS } from "./prefs.js";
+import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import {
   createMatch, currentGameType, currentLegConfig, recordLegWin, advanceLeg,
   startingPlayerForLeg, matchScoreText, legProgressText, gameLabel, normalizeLeg,
@@ -84,8 +87,11 @@ const el = {
   bigScore: document.getElementById("big-score"),
   turnLabel: document.getElementById("turn-label"),
   turnDarts: document.getElementById("turn-darts"),
+  checkoutHint: document.getElementById("checkout-hint"),
+  ocheStat: document.getElementById("oche-stat"),
   undoBtn: document.getElementById("undo-btn"),
   newGameBtn: document.getElementById("new-game-btn"),
+  endGameBtn: document.getElementById("end-game-btn"),
   manualSection: document.getElementById("manual-section"),
   manualPerdart: document.getElementById("manual-perdart"),
   manualQuickTotal: document.getElementById("manual-quicktotal"),
@@ -204,6 +210,10 @@ el.startGameBtn.addEventListener("click", () => {
     .map((input, i) => input.value.trim() || `Player ${i + 1}`);
 
   const legs = readMedleyLegs();
+  // Recorded on START rather than on finish: an abandoned game is still
+  // evidence of what you meant to play, and the point of the list is to save
+  // you setting it up again.
+  recordFormatUsed(legs);
   state.match = createMatch(legs, names.length);
   state.playerNames = names;
 
@@ -292,6 +302,37 @@ el.rematchBtn?.addEventListener("click", () => {
 
 el.newGameBtn.addEventListener("click", () => abandonGame());
 
+// End game, behind two taps - the same guard online.js puts on End match, for
+// the same reason: a modal is poor on a phone mid-match, but throwing away
+// someone's leg on one stray tap is worth guarding against, and the arming
+// lapses on its own rather than sitting primed for the rest of the game.
+//
+// "New game" beside the score does the same thing and keeps its name: it is the
+// change-the-format path, reached while thinking about the next match rather
+// than about stopping this one.
+let endGameArmTimeout = null;
+
+function disarmEndGame() {
+  clearTimeout(endGameArmTimeout);
+  if (!el.endGameBtn) return;
+  el.endGameBtn.dataset.armed = "0";
+  el.endGameBtn.textContent = "End game";
+  el.endGameBtn.classList.remove("armed");
+}
+
+el.endGameBtn?.addEventListener("click", () => {
+  if (el.endGameBtn.dataset.armed !== "1") {
+    el.endGameBtn.dataset.armed = "1";
+    el.endGameBtn.textContent = "Tap again to end";
+    el.endGameBtn.classList.add("armed");
+    clearTimeout(endGameArmTimeout);
+    endGameArmTimeout = setTimeout(disarmEndGame, 4000);
+    return;
+  }
+  disarmEndGame();
+  abandonGame();
+});
+
 // Leaving the Local Play tab ends the local game, the same way leaving an
 // online match ends that. A game running on a tab nobody is looking at is not
 // paused, it is abandoned - and leaving it there is what let a dead scoreboard
@@ -314,6 +355,10 @@ document.addEventListener("aio-query-local-match", (event) => {
 
 function abandonGame() {
   cancelBot();
+  // However the game ended, the button goes back to saying what it does - a
+  // primed "Tap again to end" left over from last time is one tap from
+  // throwing away the NEXT match.
+  disarmEndGame();
   // An abandoned match is not saved. Half a game would drag every average down
   // with darts that were never a real attempt at a finish - the same rule
   // online.js applies when a match is walked out of.
@@ -492,6 +537,7 @@ const medleyBuilder = createMedleyBuilder({
   addBtn: el.addLegBtn,
   preset: el.medleyPreset,
   bull: document.getElementById("bull-mode"),
+  chips: document.getElementById("format-chips"),
 });
 
 function readMedleyLegs() {
@@ -549,6 +595,10 @@ function finishLeg(winnerIndex) {
   // A one-leg match is over the moment the leg is - nothing to advance to.
   state.legOver = !state.match.over;
 
+  // The match, not the leg. Winning a leg of a best-of-five is not the moment
+  // for the sound that means it is finished.
+  if (state.match.over) cueWin();
+
   state.recorder?.endLeg(winnerIndex ?? null);
 
   // Only a finished match is saved. Abandoning one halfway (New Game) leaves
@@ -568,6 +618,26 @@ function finishLeg(winnerIndex) {
 
 function applyHit(rawSegment) {
   if (state.gameOver) return;
+
+  // A DART THROWN DURING THE HOLD BELONGS TO THE NEXT VISIT, NOT THE ONE THAT
+  // JUST ENDED. Without this it was appended to the completed visit, and the
+  // damage went well past a cosmetic one: the marks and points were credited to
+  // the player who had already finished, so in pass-and-play the next player's
+  // darts scored for their opponent. It surfaced as Cricket's MPR reading 12
+  // and 15 - marks divided by ROUNDS, and no round can hold more than the nine
+  // marks three treble beds are worth - which is the symptom that gives the
+  // whole thing away, because x01 has no equivalent ceiling to breach.
+  //
+  // Committing rather than ignoring, because the hold is a courtesy and not a
+  // lock: someone stepping up to the board is the clearest possible statement
+  // that the visit is over, and swallowing their dart to protect an undo window
+  // they did not ask for is the worse of the two failures. It is exactly what
+  // End turn does mid-hold - see endTurnEarly - reached by throwing instead of
+  // by pressing it.
+  if (hold) {
+    clearHold();
+    commitTurn();
+  }
 
   // One transform at the boundary, before any game logic sees the dart, so
   // full-bull applies identically to x01, Cricket and Count Up - and to
@@ -612,13 +682,16 @@ function applyHit(rawSegment) {
   });
 
   moveMarker(el.dartboardMarker, segment);
+  cueHit();
 
   if (isBust) {
+    cueBust();
     player.remaining = state.startOfTurnRemaining;
-    endTurn();
+    endTurn({ busted: true });
   } else {
     player.remaining = after;
     if (isWin) {
+      cueCheckout();
       finishLeg(state.currentPlayerIndex);
     } else if (state.dartsThisTurn.length >= 3) {
       endTurn();
@@ -984,9 +1057,65 @@ function maybeThrowForBot() {
   }, 700);
 }
 
-function endTurn() {
-  state.recorder?.endTurn();
+// ---------- The optional hold before the turn passes ----------
+//
+// The same idea online uses, and OPTIONAL here because the two modes need it
+// for different reasons. Online must hold: without it, undoing a dart the
+// opponent had already answered would mean rewinding their play too. Local
+// play has no such problem - the undo stack survives the end of a visit
+// already, so the darts are reachable either way - which leaves the hold
+// buying a countdown at the price of a pause. In pass-and-play that price is
+// paid every single visit, with the next player stood beside you waiting for
+// the darts, so it is off unless asked for.
+//
+// The duration comes from prefs.js, which both controllers already import -
+// game.js and online.js deliberately do not import each other, so that is the
+// one place both can see it. Somebody who plays both modes should feel the
+// same pause in each.
+let hold = null; // { until, timer, ticker }
+
+function clearHold() {
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  clearInterval(hold.ticker);
+  hold = null;
+}
+
+function holdSecondsLeft() {
+  if (!hold) return 0;
+  return Math.max(0, Math.ceil((hold.until - Date.now()) / 1000));
+}
+
+function endTurn(opts = {}) {
+  // A computer opponent never needs a chance to undo, and holding after its
+  // visit would add ten seconds to every round of a practice game.
+  const thrower = state.bots[state.currentPlayerIndex];
+  if (!getPref("localHold") || thrower || state.gameOver) {
+    commitTurn(opts);
+    return;
+  }
+  clearHold();
+  hold = {
+    until: Date.now() + VISIT_HOLD_MS,
+    timer: setTimeout(() => { commitTurn(opts); render(); }, VISIT_HOLD_MS),
+    // Redraws the countdown. render() is cheap and already runs on every dart.
+    ticker: setInterval(() => render(), 1000),
+  };
+  render();
+}
+
+function commitTurn({ busted = false } = {}) {
+  // The caller announces the VISIT, so the total is taken before the darts are
+  // cleared - and not at all on a bust, where cueBust has already said what
+  // happened and a number would be a lie.
+  if (!busted) {
+    callScore(state.dartsThisTurn.reduce((sum, s) => sum + (s?.value || 0), 0));
+  }
+  // The seat is passed BEFORE currentPlayerIndex moves below - the visit being
+  // closed is the one that has just been thrown, not the one about to start.
+  state.recorder?.endTurn(state.currentPlayerIndex);
   state.dartsThisTurn = [];
+  clearHold();
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   // Cricket players have no `remaining` - there's nothing to revert to,
   // since it has no bust rule.
@@ -996,11 +1125,29 @@ function endTurn() {
   }
 }
 
+// Oche view's End turn. An event rather than a shared button, so ocheview.js
+// need not know which controller is running - see the matching listener in
+// online.js.
+document.addEventListener("aio-end-turn", () => {
+  if (!state.players.length || state.gameOver) return;
+  endTurnEarly();
+  render();
+});
+
 function endTurnEarly() {
   // Manually finalize the current turn (e.g. via the board's physical
   // button) without waiting for 3 registered darts, and without reverting
   // any score - only a bust does that.
   if (state.gameOver) return;
+  // Mid-hold this means "stop waiting, hand over now" - the visit is already
+  // complete and its snapshot was taken when its last dart landed, so pushing
+  // another would make the first undo do nothing.
+  if (hold) {
+    clearHold();
+    commitTurn();
+    render();
+    return;
+  }
   undoStack.push(snapshot());
   endTurn();
   render();
@@ -1009,6 +1156,9 @@ function endTurnEarly() {
 function undo() {
   cancelBot();
   if (undoStack.length === 0) return;
+  // The visit is no longer finished, so nothing should still be counting down
+  // towards handing it over.
+  clearHold();
   restore(undoStack.pop());
   render();
 }
@@ -1045,6 +1195,16 @@ function render() {
 
   const current = state.players[state.currentPlayerIndex];
   el.bigScore.textContent = scoreOf(current);
+  renderLiveAverage(el.ocheStat, state.recorder?.liveStats(state.currentPlayerIndex));
+  renderCheckoutHint(el.checkoutHint, {
+    // x01 only: Cricket has no "remaining", Count Up counts upwards, and
+    // Bermuda's target is fixed by the round, so there is nothing to suggest.
+    on: state.gameType === "x01" && !state.gameOver,
+    remaining: current?.remaining,
+    dartsLeft: 3 - state.dartsThisTurn.length,
+    rules: state.legConfig?.rules,
+    bull: state.legConfig?.bull,
+  });
 
   if (state.gameOver) {
     // Count Up can end level, in which case there's no winner to name.
@@ -1070,6 +1230,15 @@ function render() {
     el.turnLabel.textContent = `${current.name}'s turn`;
   }
 
+  // The hold, said plainly. A silent pause reads as the app having frozen, and
+  // the one thing worth saying - that there is still time to take a dart back -
+  // would go unnoticed. Written after the branches above so it wins whatever
+  // the game type wanted to say.
+  const heldFor = holdSecondsLeft();
+  if (heldFor > 0) {
+    el.turnLabel.textContent = `Visit over - ${heldFor}s to undo · End turn to skip`;
+  }
+
   renderMatchBar();
   maybeThrowForBot();
 
@@ -1077,6 +1246,13 @@ function render() {
   // because a turn total says nothing about which numbers were hit.
   el.cricketBoard?.classList.toggle("hidden", !cricket);
   el.manualSection?.classList.toggle("cricket-mode", cricket);
+  // Oche view needs to know Cricket is on the stage: the darts thrown are
+  // absolutely positioned there, so they reserve no space, and the mark pad
+  // centred itself straight underneath them. The reservation is keyed on this
+  // class. online.js has set it since the mode was built; local play never
+  // did, so the darts sat on top of the top two rows of the pad - which is
+  // where the numbers you have already closed are.
+  el.gamePanel?.classList.toggle("cricket-stage", cricket);
   if (cricket) renderCricketBoard();
 
   el.turnDarts.innerHTML = "";

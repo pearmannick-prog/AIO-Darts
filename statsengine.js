@@ -54,7 +54,13 @@ const modules = [x01Stats, cricketStats, countupStats, bermudaStats];
 //    lookups - the thresholds are identical, only the averages differ.
 // 7: practice matches - those against a computer opponent - are excluded from
 //    the real statistics and reported separately.
-export const ENGINE_VERSION = 7;
+// 8: ending a turn now counts the darts that were never entered as thrown and
+//    missed, so a visit is three darts unless it checked out. Every average
+//    with darts in its denominator moves - a visit of 60 and two misses used to
+//    read as a PPD of 60 rather than 20 - and Cricket gained the rounds where
+//    all three darts missed, which previously left no record at all and so were
+//    dropped from the MPR denominator entirely.
+export const ENGINE_VERSION = 8;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);

@@ -24,6 +24,7 @@ import {
 import { createRecorder } from "./matchrecorder.js";
 import { recordMatch, getState as accountState } from "./accountstore.js";
 import { onMatchReady, reportMatchOver, pushMatchState } from "./lobbyclient.js";
+import { getPref, setPref, VISIT_HOLD_MS } from "./prefs.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
   checkCountUpWin, isLegComplete, describeCountUpResult, formatAverage,
@@ -34,7 +35,9 @@ import {
   startingPlayerForLeg, legProgressText, normalizeLeg, matchScoreText,
 } from "./medley.js";
 import { renderCricketBoard, wireCricketBoard } from "./cricketboard.js";
-import { createMedleyBuilder } from "./medleybuilder.js";
+import { createMedleyBuilder, recordFormatUsed } from "./medleybuilder.js";
+import { renderCheckoutHint, renderLiveAverage } from "./checkouthint.js";
+import { cueHit, cueBust, cueCheckout, cueWin, callScore } from "./audio.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo, hideMarker } from "./dartboard.js";
 
@@ -115,6 +118,9 @@ const el = {
   remoteTile: document.getElementById("online-remote-tile"),
   turnLabel: document.getElementById("online-turn-label"),
   turnDarts: document.getElementById("online-turn-darts"),
+  checkoutHint: document.getElementById("online-checkout-hint"),
+  ocheStat: document.getElementById("online-oche-stat"),
+  undoBtn: document.getElementById("online-undo-btn"),
   winnerBanner: document.getElementById("online-winner-banner"),
 
 
@@ -133,6 +139,8 @@ const el = {
   remoteTile2: document.getElementById("online-remote-tile-2"),
   localVideo2: document.getElementById("online-local-video-2"),
   remoteVideo2: document.getElementById("online-remote-video-2"),
+  oppMuteBtn: document.getElementById("online-opp-mute-btn"),
+  oppHideBtn: document.getElementById("online-opp-hide-btn"),
   avViewBtn: document.getElementById("online-av-view-btn"),
   avStopBtn: document.getElementById("online-av-stop-btn"),
 
@@ -327,7 +335,61 @@ function switchTab(which, { ask = true } = {}) {
     tab?.classList.toggle("active", name === which);
     panel?.classList.toggle("hidden", name !== which);
   }
+
+  // Remembered for the "where I left off" landing option. Written on every
+  // switch rather than on unload: there is no reliable unload on mobile, where
+  // the app is most often closed by being swiped away.
+  setPref("lastTab", which);
 }
+
+// ---------- Where the app opens ----------
+//
+// A player who only ever plays local darts currently walks past a lobby they
+// never use, every single launch; someone who mostly reads their statistics
+// wants My Darts. One setting, felt every time the app opens.
+//
+// Two traps, both load-bearing:
+//
+//   ask:false - switchTab asks before leaving a match in progress. On boot
+//               there cannot be one, and a confirm dialog during startup would
+//               be baffling.
+//   the account tab does not exist yet - it stays hidden until accountui.js has
+//               confirmed there is an accounts API behind it, which is a round
+//               trip away. Landing on it has to WAIT for that, and give up
+//               gracefully when the answer is no: on the Android build, or with
+//               ACCOUNTS=off, that tab never appears at all and the preference
+//               must not strand anyone on a blank screen.
+function applyLandingPreference() {
+  const choice = getPref("landing");
+  const target = choice === "last" ? getPref("lastTab") : choice;
+  if (!target || target === "local") return; // already where we start
+
+  if (target !== "account") {
+    switchTab(target, { ask: false });
+    return;
+  }
+
+  const tab = el.tabAccount;
+  if (!tab) return;
+  if (!tab.classList.contains("hidden")) {
+    switchTab("account", { ask: false });
+    return;
+  }
+
+  // Wait for the accounts check, but not forever, and never once the player
+  // has started doing something - landing is a preference about the FIRST
+  // moment, not a licence to move them later.
+  const observer = new MutationObserver(() => {
+    if (tab.classList.contains("hidden")) return;
+    observer.disconnect();
+    clearTimeout(giveUp);
+    if (currentMode === "local") switchTab("account", { ask: false });
+  });
+  observer.observe(tab, { attributes: true, attributeFilter: ["class"] });
+  const giveUp = setTimeout(() => observer.disconnect(), 5000);
+}
+
+applyLandingPreference();
 
 // ---------- Manual entry buttons (generated once) ----------
 function manualSegmentFromRing(section, ringType) {
@@ -377,6 +439,7 @@ const onlineMedleyBuilder = createMedleyBuilder({
   addBtn: el.addLegBtn,
   preset: el.formatSelect,
   bull: document.getElementById("online-bull-mode"),
+  chips: document.getElementById("online-format-chips"),
 });
 
 function selectedOnlineLegs() {
@@ -747,10 +810,22 @@ el.createBtn.addEventListener("click", async () => {
   // an empty one and fills it in below.
   showWaitingPanel("create");
 
+  // GETTING TO THE SERVER IS BOUNDED HERE TOO, even though waiting for an
+  // opponent is not. The two were conflated, and create was excluded from the
+  // watchdog entirely - one phase too early. Waiting indefinitely for a friend
+  // to use the code is the feature; waiting indefinitely for the server to
+  // answer is a dead end, because PeerLink's socket open has no timeout of its
+  // own, so a socket that neither opens nor errors leaves "Connecting to the
+  // signaling server…" on screen for as long as the player is willing to look
+  // at it. The clock is cancelled the moment the server answers - see
+  // onStatusChange.
+  startConnectWatchdog();
+
   try {
     const code = await peerLink.createChallenge();
     el.codeDisplay.textContent = code;
   } catch (err) {
+    stopConnectWatchdog();
     alert(`Couldn't create a challenge: ${err.message}`);
     hideWaitingPanel();
     el.setupPanel.classList.remove("hidden");
@@ -909,19 +984,51 @@ function startConnectWatchdog(phase = "signaling") {
     // on a code that will never be used. The diagnosis goes in teardown's
     // notice, not the status line - teardownMatch hides the waiting panel the
     // status line lives on, so anything written there is never read.
-    teardownMatch(
-      signaling
-        ? `Couldn't reach the signaling server (${currentSignalingUrl()}). ` +
-          "It may be starting up, or blocked by a network in between - try again."
-        : "Reached the server, but the other player never joined. They may have " +
-          "closed the app, or their connection couldn't be established."
-    );
+    const notice = signaling
+      ? `Couldn't reach the signaling server (${currentSignalingUrl()}). ` +
+        "It may be starting up, or blocked by a network in between - try again."
+      : "Reached the server, but the other player never joined. They may have " +
+        "closed the app, or their connection couldn't be established.";
+
+    teardownMatch(notice);
+
+    // Tear down first, then find out whether that message was true. The player
+    // gets their tab back immediately either way; the wording catches up.
+    if (signaling) refineSignalingNotice(notice);
   }, signaling ? SIGNALING_TIMEOUT_MS : PEER_TIMEOUT_MS);
 }
 
 function stopConnectWatchdog() {
   clearTimeout(connectTimer);
   connectTimer = null;
+}
+
+// "Couldn't reach the signaling server" is a guess, and on a gated test build
+// it is the wrong one: the server is up and has refused the socket for want of
+// the site password, which the browser reports as an indistinguishable socket
+// error. Being told the server is down sends you looking at the server.
+//
+// /healthz is the one thing the gate NEVER blocks - it exists so Render can
+// tell whether the service is alive - which makes it exactly the right probe.
+// If it answers, the server is running and the fault is between us and its
+// socket, not the server itself.
+//
+// The teardown has already happened by the time this resolves; all this does is
+// replace the text, and only if the player is still looking at the notice it
+// wrote. Anything else means they have moved on and the message is stale.
+async function refineSignalingNotice(shown) {
+  try {
+    const res = await fetch("/healthz", { cache: "no-store" });
+    if (!res.ok) return;
+  } catch {
+    // Genuinely unreachable - the original message was right after all.
+    return;
+  }
+  if (el.setupNotice.textContent !== shown) return;
+  el.setupNotice.textContent =
+    `This server is up, but the signaling socket wouldn't open (${currentSignalingUrl()}). ` +
+    "On a test build the usual cause is the site password having lapsed on this device - " +
+    "reload the page, enter it again, and try once more.";
 }
 
 // ---------- Starting from the lobby ----------
@@ -1043,6 +1150,30 @@ el.endMatchBtn.addEventListener("click", () => {
   teardownMatch("You ended the match.");
 });
 
+// How long an opponent may be missing before the match is called off.
+//
+// A judgement, not a constant with a right answer. ICE blips are usually over
+// in two or three seconds; a phone changing wifi for mobile data can take ten.
+// Past about fifteen the connection has almost never come back, and by then
+// both players have walked to the board and back wondering what is happening -
+// so this is long enough to survive a handover and short enough that nobody is
+// left staring at a frozen scoreboard.
+const PEER_LOST_GRACE_MS = 15000;
+let peerLostTimer = null;
+
+function startPeerLostGrace() {
+  if (peerLostTimer) return; // already counting; a second drop is the same drop
+  peerLostTimer = setTimeout(() => {
+    peerLostTimer = null;
+    if (online.active) teardownMatch("Opponent disconnected. The match has ended.");
+  }, PEER_LOST_GRACE_MS);
+}
+
+function stopPeerLostGrace() {
+  clearTimeout(peerLostTimer);
+  peerLostTimer = null;
+}
+
 function disarmEndMatch() {
   clearTimeout(endArmTimeout);
   el.endMatchBtn.dataset.armed = "0";
@@ -1052,6 +1183,10 @@ function disarmEndMatch() {
 
 function teardownMatch(message) {
   disarmEndMatch();
+  clearHold();
+  // Before anything else: closing the peer link below fires the status handler
+  // again, and a timer left running would tear down whatever comes next.
+  stopPeerLostGrace();
   // close() stops the local camera and mic tracks as well as the connection -
   // see the comment at the top of webrtc.js's close().
   peerLink?.close();
@@ -1075,7 +1210,18 @@ function teardownMatch(message) {
 
   // The lobby cannot see the darts, so it only knows a match is over because
   // it is told. Purely a hint - a disconnect resolves the same state anyway.
-  reportMatchOver();
+  //
+  // Wrapped because everything below this line is the part that hands the tab
+  // back: hiding the waiting panel, restoring setup, showing why. An optional
+  // notification to a server that may not even be connected must never be able
+  // to abort that - a throw here would strand the player on whichever panel
+  // they were on, which is the same class of failure as the stuck "in match"
+  // state and looks identical to the player.
+  try {
+    reportMatchOver();
+  } catch (err) {
+    console.warn("Couldn't tell the lobby the match ended.", err);
+  }
 
   resetAv();
 
@@ -1140,13 +1286,19 @@ function wirePeerLink() {
     el.statusLabel.textContent = statusText(status);
     updateWaitingNote(status);
 
-    // Reaching the server ends the signaling phase and starts the peer one, so
-    // a slow container wake-up isn't charged against the opponent's clock.
-    // Create is excluded on purpose: waiting there is the feature, and the code
-    // may sit unshared for minutes.
+    // Reaching the server ends the signaling phase. What happens next depends
+    // on which side you are:
+    //
+    //   create - the clock STOPS. Waiting here is the feature, and the code may
+    //            sit unshared for minutes. But it has to stop rather than never
+    //            have been started, or "the server never answered" is a state
+    //            with no way out of it - see the note on the create handler.
+    //   others - the clock RESTARTS on the peer phase, so a slow container
+    //            wake-up isn't charged against the opponent's budget.
     if ((status === "waiting-for-opponent" || status === "joining")
-        && waitingMode && waitingMode !== "create" && !online.active) {
-      startConnectWatchdog("peer");
+        && waitingMode && !online.active) {
+      if (waitingMode === "create") stopConnectWatchdog();
+      else startConnectWatchdog("peer");
     }
 
     if (status === "connected" && !online.active) {
@@ -1162,9 +1314,39 @@ function wirePeerLink() {
         sendHelloUntilStarted();
       }
     }
+    // A blip. Say so, and start counting - but do NOT end the match, because
+    // ICE reports this for a wifi handover that is usually over in seconds.
+    if (status === "peer-lost" && online.active) {
+      startPeerLostGrace();
+    }
+
+    if (status === "peer-recovered") {
+      stopPeerLostGrace();
+      if (online.active) el.statusLabel.textContent = "Opponent is back.";
+    }
+
+    // Terminal. THE MATCH IS OVER, AND SAYING SO IS THE WHOLE FIX.
+    //
+    // This used to set a label and nothing else, which left the game panel up,
+    // online.active true, and - because teardownMatch is what sends
+    // reportMatchOver - the lobby showing the player as still playing forever.
+    // The match was dead and every part of the app except the label believed it
+    // was live, so they could not be challenged again until they toggled
+    // "looking for a game" by hand.
+    //
+    // online.active guards re-entry: teardownMatch closes the peer link, whose
+    // channel-close fires this handler again a moment later.
     if (status === "disconnected" || status === "room-full") {
+      stopPeerLostGrace();
       if (online.active) {
-        el.statusLabel.textContent = "Opponent disconnected.";
+        // Both sides stay connected after a match ends, so that a rematch is a
+        // handshake rather than a reconnection - which means "they left" and
+        // "they left mid-leg" are different events and deserve different words.
+        // A finished match is already saved; an abandoned one was never going
+        // to be.
+        teardownMatch(online.gameOver
+          ? "Opponent left after the match ended."
+          : "Opponent disconnected. The match has ended.");
       }
     }
   };
@@ -1175,6 +1357,10 @@ function wirePeerLink() {
       if (peerLink.role !== "host" || online.active) return;
       setOpponentName(msg.name);
       const legs = selectedOnlineLegs();
+      // Only the HOST records this. The guest adopts whatever format it is
+      // sent, so remembering it would fill their recents with other people's
+      // choices rather than their own.
+      recordFormatUsed(legs);
       // The host's own name goes back with the config, so both sides end up
       // knowing each other without a message of their own.
       peerLink.sendGameMessage({ type: "match_config", legs, name: myDisplayName() });
@@ -1233,10 +1419,23 @@ function wirePeerLink() {
     if (msg.type === "dart") {
       applyThrow("opp", msg.segment);
     } else if (msg.type === "end_turn") {
-      if (online.activeSide === "opp") {
-        endTurn("opp");
+      // They have finished - either their hold ran out or they cut it short.
+      // Either way the wait is over and the backstop timer is no longer needed.
+      if (hold && hold.side === "opp") {
+        commitAndRender("opp", hold.opts);
+      } else if (online.activeSide === "opp") {
+        commitTurn("opp");
         renderOnline();
       }
+    } else if (msg.type === "undo") {
+      // They took a dart back. Roll our copy of it back too, or the two
+      // scoreboards disagree from here on. An empty stack means the visit has
+      // already ended on this side, which is the same "within the visit" rule
+      // their own button enforces - so there is nothing to do rather than
+      // something to guess at.
+      if (!undoStacks.opp.length) return;
+      onlineRestore(undoStacks.opp.pop());
+      renderOnline();
     } else if (msg.type === "quick_total") {
       applyQuickTotalThrow("opp", msg.value);
     } else if (msg.type === "next_leg") {
@@ -1423,6 +1622,8 @@ function statusText(status) {
     case "waiting-for-opponent": return `Waiting for opponent… (via ${currentSignalingUrl()})`;
     case "joining": return "Joining challenge…";
     case "connected": return "Connected - good luck!";
+    case "peer-lost": return "Opponent's connection dropped - waiting…";
+    case "peer-recovered": return "Opponent is back.";
     case "disconnected": return "Disconnected.";
     case "room-full": return "That challenge code is already in use.";
     default: return "";
@@ -1520,6 +1721,12 @@ function startOnlineLeg() {
   online.opp = buildOnlinePlayer("Opponent", leg);
   online.me.dartsThisTurn = [];
   online.opp.dartsThisTurn = [];
+  // Undo must never reach back into a finished leg - the same rule game.js
+  // applies locally, and here it would also be rewinding a leg the other side
+  // has already banked.
+  undoStacks.me = [];
+  undoStacks.opp = [];
+  clearHold();
 
   // Throw alternates each leg, and both sides compute it from the same
   // absolute index so they never disagree about whose turn it is.
@@ -1558,6 +1765,10 @@ function finishOnlineLeg(side) {
     : (side === "me" ? online.myIndex : online.oppIndex);
   recordLegWin(online.match, winnerIndex);
   online.legOver = !online.match.over;
+
+  // The match, not the leg, and only when you won it. A fanfare for losing is
+  // not a feature.
+  if (online.match.over && online.iWon) cueWin();
 
   online.recorder?.endLeg(winnerIndex);
   broadcastMatchState();
@@ -1618,6 +1829,13 @@ const av = {
   remoteVideo: false,
   remoteVideo2: false, // ...and their second camera, if they added one
   remoteBlocked: false, // the browser refused to autoplay it (see playRemote)
+  // MY decision about THEIR media, applied entirely on this machine. Named
+  // opp* rather than anything with "blocked" in it because av.remoteBlocked
+  // above already means "autoplay was refused", and those two states have
+  // nothing to do with each other - one is the browser's doing and one is
+  // mine. Not persisted: a new opponent starts from scratch.
+  oppMuted: false,  // I have silenced their microphone
+  oppHidden: false, // I have cut their cameras
   second: false, // this player added a second camera (the board view)
   cameras: [], // videoinput devices, only trustworthy after permission
   facingMode: null, // what the active camera says it is: "user"/"environment"/null
@@ -1651,6 +1869,34 @@ el.avViewBtn.addEventListener("click", () => {
   renderAv();
 });
 
+// Silencing and cutting the opponent's feeds. Both are instant, both are local,
+// and neither tells them - see setRemoteEnabled in webrtc.js for why that
+// silence is the point rather than an omission.
+el.undoBtn?.addEventListener("click", () => undoOwnDart());
+
+// Ending a visit early - a bounce-out, a dart that missed the board entirely.
+// The board's physical button already does this; oche view needs a way to say
+// it too, and announces rather than calls so ocheview.js stays ignorant of both
+// controllers (the same reason "aio-mode-left" is an event).
+document.addEventListener("aio-end-turn", () => {
+  if (!online.active || online.gameOver) return;
+  if (online.activeSide !== "me") return;
+  onLocalEndTurn();
+});
+
+el.oppMuteBtn?.addEventListener("click", () => {
+  av.oppMuted = !av.oppMuted;
+  renderAv();
+});
+
+el.oppHideBtn?.addEventListener("click", () => {
+  av.oppHidden = !av.oppHidden;
+  // If their camera was on the stage, blocking it must not leave the stage
+  // showing a tile that is no longer allowed on screen.
+  if (av.oppHidden && av.stage === "opponent") av.stage = "self";
+  renderAv();
+});
+
 // A feed is live when there is a picture in it right now - not merely when the
 // camera exists. Everything downstream keys off this: whether immersive earns
 // its keep, which tiles are on screen, and what the big view can cycle to.
@@ -1658,8 +1904,10 @@ function isFeedLive(feed) {
   switch (feed) {
     // The opponent's tiles are blocked together: remoteBlocked means this
     // browser refused to start playback, which stops both their pictures.
-    case "opponent": return av.remoteVideo && !av.remoteBlocked;
-    case "opponent2": return av.remoteVideo2 && !av.remoteBlocked;
+    // oppHidden is my own decision and outranks everything - if I have cut
+    // their cameras, no path through this function may put one back on screen.
+    case "opponent": return av.remoteVideo && !av.remoteBlocked && !av.oppHidden;
+    case "opponent2": return av.remoteVideo2 && !av.remoteBlocked && !av.oppHidden;
     // av.cam covers both of ours - "camera off" turns off every camera this
     // player is sending, or it isn't off (see setMediaEnabled in webrtc.js).
     case "self": return av.on && av.cam;
@@ -1879,6 +2127,10 @@ function resetAv() {
   av.remoteAudio = false;
   av.remoteVideo = false;
   av.remoteVideo2 = false;
+  // A new opponent is a new decision. Carrying a block over to whoever you
+  // played next would silence a stranger who had done nothing.
+  av.oppMuted = false;
+  av.oppHidden = false;
   av.remoteBlocked = false;
   av.cameras = [];
   av.facingMode = null;
@@ -2022,8 +2274,26 @@ function renderAv() {
   // Order matters: "they aren't sending video" outranks "your browser blocked
   // playback", because when both are true, tapping would play nothing and the
   // prompt would be a lie.
-  const blocked = av.remoteVideo && av.remoteBlocked;
-  const remoteVisible = av.remoteVideo && !av.remoteBlocked;
+  // Enforced on the tracks themselves, not just in the layout. A hidden
+  // <video> still decodes a live picture and a muted one still receives the
+  // audio; disabling the receiver's track is what actually stops it. Applied
+  // on every render so it survives a reconnect, a camera being switched on, or
+  // anything else that hands us new tracks.
+  peerLink?.setRemoteEnabled({ audio: !av.oppMuted, video: !av.oppHidden });
+  // Belt and braces: the element carries their audio, and muting it costs
+  // nothing if the track disable already did the job.
+  el.remoteVideo.muted = av.oppMuted;
+  el.oppMuteBtn.textContent = av.oppMuted ? "🔇 Opponent muted" : "🔉 Mute opponent";
+  el.oppMuteBtn.classList.toggle("off", av.oppMuted);
+  el.oppHideBtn.textContent = av.oppHidden ? "🚫 Camera blocked" : "👁 Block camera";
+  el.oppHideBtn.classList.toggle("off", av.oppHidden);
+  // Only worth offering once there is something of theirs to silence.
+  const anyRemote = av.remoteAudio || av.remoteVideo || av.remoteVideo2;
+  el.oppMuteBtn.classList.toggle("hidden", !anyRemote && !av.oppMuted);
+  el.oppHideBtn.classList.toggle("hidden", !anyRemote && !av.oppHidden);
+
+  const blocked = av.remoteVideo && av.remoteBlocked && !av.oppHidden;
+  const remoteVisible = av.remoteVideo && !av.remoteBlocked && !av.oppHidden;
   // Switching into or out of immersive changes which score elements are on
   // screen, so the game render has to follow. Safe from recursion:
   // renderOnline never calls back into here.
@@ -2031,7 +2301,12 @@ function renderAv() {
 
   el.remotePlaceholder.classList.toggle("hidden", remoteVisible);
   el.remotePlaceholder.classList.toggle("tappable", blocked);
-  if (blocked) {
+  if (av.oppHidden) {
+    // Says whose doing it is. A tile that simply went dark would read as the
+    // opponent having turned their camera off, and the way back would not be
+    // obvious.
+    el.remotePlaceholder.textContent = "You blocked this camera";
+  } else if (blocked) {
     el.remotePlaceholder.textContent = "▶ Tap to play opponent's video";
   } else if (remoteActive) {
     // Sending something (their mic) but no picture - a choice, not an absence.
@@ -2049,6 +2324,30 @@ function onLocalHit(segment) {
     showNotice("Not your turn yet - wait for the opponent to finish.");
     return;
   }
+  // THE HOLD IS NOT A GAP TO THROW INTO. Your visit is complete and only the
+  // ten-second undo window is still running, so a dart arriving now was being
+  // appended to a visit that had already been scored - which credited the marks
+  // to the wrong round and pushed Cricket's MPR past the nine marks three treble
+  // beds are worth.
+  //
+  // Refused here rather than started as a new visit, which is where this parts
+  // company with local play, and the reason is the board rather than the rule.
+  // The rule is the same in both: a dart thrown after the visit belongs to the
+  // NEXT one. In pass-and-play the next visit is at this same board, so the
+  // dart is the next player's and is applied to them. Online the opponent
+  // throws at their own board, so there is no next visit here to give it to and
+  // a fourth dart is a stray one - a bounce-out re-thrown, or one knocked out
+  // while pulling. Undo is the honest answer to that, and is exactly what the
+  // ten seconds are open for.
+  //
+  // Before the send, so nothing reaches the peer and the two sides cannot
+  // disagree about what was thrown. Peer darts are still applied as sent: the
+  // thrower decides what counts as their visit, which is what keeps an older
+  // build on the other end in step rather than desynced.
+  if (hold && hold.side === "me") {
+    showNotice("That visit is over - undo a dart, or wait for the handover.");
+    return;
+  }
   peerLink?.sendGameMessage({ type: "dart", segment });
   applyThrow("me", segment);
 }
@@ -2061,8 +2360,15 @@ function onLocalEndTurn() {
     showNotice("Not your turn yet - wait for the opponent to finish.");
     return;
   }
+  // Mid-hold this cuts the wait short; otherwise it ends a visit early - a
+  // bounce-out, or a dart that missed the board. finishVisitNow sends the
+  // message itself, so it must not be sent twice.
+  if (hold && hold.side === "me") {
+    finishVisitNow();
+    return;
+  }
   peerLink?.sendGameMessage({ type: "end_turn" });
-  endTurn("me");
+  commitTurn("me");
   renderOnline();
 }
 
@@ -2091,6 +2397,12 @@ function applyQuickTotalThrow(side, totalValue) {
     console.warn(`Ignored an out-of-turn '${side}' turn total.`);
     return;
   }
+
+  // A quick total finalises the whole visit in one go, which makes it the
+  // easiest thing in the app to mistype - so it is the last thing that should
+  // be unundoable. Same window as a dart.
+  undoStacks[side === "me" ? "opp" : "me"] = [];
+  undoStacks[side].push(onlineSnapshot());
 
   const s = online[side];
   const remainingBefore = s.remaining;
@@ -2142,6 +2454,70 @@ function applyQuickTotalThrow(side, totalValue) {
   renderOnline();
 }
 
+// ---------- Undo, online ----------
+//
+// YOUR OWN DARTS, INSIDE THE VISIT YOU ARE THROWING. That limit is not
+// timidity, it is what keeps the determinism guarantee intact. Both browsers
+// run the same pure rules in lockstep and there is no authoritative server, so
+// a dart rolled back on one side alone is simply two different matches from
+// then on. Reaching back past the end of a visit - or into darts the opponent
+// has already answered - means rewinding THEIR play too, and there is no
+// honest way to do that without asking them.
+//
+// So the rewind is a snapshot, exactly as local play does it, and it is
+// mirrored: whoever threw the dart rolls back their own copy and tells the
+// peer, who rolls back their copy of the same dart. Two stacks per machine,
+// because each side has to be able to service the other's undo:
+//
+//   undoStacks.me  - my darts, so I can undo them
+//   undoStacks.opp - their darts, so I can apply the undo they send me
+//
+// Both are pushed in the same order for the same dart on both machines, so
+// popping one on each keeps them in step.
+const undoStacks = { me: [], opp: [] };
+
+function onlineSnapshot() {
+  return {
+    ...JSON.parse(JSON.stringify({
+      me: online.me,
+      opp: online.opp,
+      log: online.log,
+      activeSide: online.activeSide,
+      gameOver: online.gameOver,
+      legOver: online.legOver,
+      iWon: online.iWon,
+    })),
+    // Rides in the same snapshot rather than a second stack, for the reason
+    // game.js gives: one undo, one rewind, always the same one.
+    recorder: online.recorder?.capture() ?? null,
+  };
+}
+
+function onlineRestore(snap) {
+  const { recorder, ...rest } = snap;
+  Object.assign(online, rest);
+  online.recorder?.restore(recorder);
+  // The visit is no longer finished, so nothing should still be counting down
+  // towards handing it over. Both sides do this, which is what stops the
+  // backstop timer on the receiving side from ending a turn that was undone.
+  clearHold();
+}
+
+function canUndoOwnDart() {
+  // An empty stack IS the "within this visit" rule: endTurn clears it, so
+  // anything left in it was thrown during the visit still in progress.
+  return Boolean(online.active) && !online.gameOver && undoStacks.me.length > 0;
+}
+
+function undoOwnDart() {
+  if (!canUndoOwnDart()) return;
+  onlineRestore(undoStacks.me.pop());
+  // Told, not asked. The peer has no say in whether my misread dart counted,
+  // and a round trip would leave the two scoreboards disagreeing in between.
+  peerLink?.sendGameMessage({ type: "undo" });
+  renderOnline();
+}
+
 function applyThrow(side, rawSegment) {
   if (online.gameOver) return;
 
@@ -2156,6 +2532,18 @@ function applyThrow(side, rawSegment) {
     console.warn(`Ignored an out-of-turn '${side}' throw.`);
     return;
   }
+
+  // THROWING CLOSES THE OTHER PLAYER'S WINDOW. This is the boundary, rather
+  // than the end of their visit: a dart of theirs can be taken back right up
+  // until you answer it, which covers the case that actually happens - three
+  // darts land, the third was misread, and it is noticed a second later.
+  // Once you have thrown, rewinding their dart would mean rewinding yours too,
+  // and there is no honest way to do that without asking you.
+  undoStacks[side === "me" ? "opp" : "me"] = [];
+  // Before anything is mutated, and before the per-game branches below, so
+  // every mode is undoable by the same one line rather than each remembering
+  // to do it.
+  undoStacks[side].push(onlineSnapshot());
 
   if (online.gameType === "cricket") return applyCricketThrowOnline(side, segment);
   if (online.gameType === "countup") return applyCountUpThrowOnline(side, segment);
@@ -2193,9 +2581,18 @@ function applyThrow(side, rawSegment) {
     scored: ignored || isBust ? 0 : segment.value,
   });
 
+  // Only your own darts make a noise. A sound for every throw your opponent
+  // takes, on a connection where you may also have their microphone open, is
+  // a room nobody wants to be in.
+  if (side === "me") {
+    cueHit();
+    if (isBust) cueBust();
+    else if (isWin) cueCheckout();
+  }
+
   if (isBust) {
     s.remaining = s.startOfTurn;
-    endTurn(side);
+    endTurn(side, { busted: true });
   } else {
     s.remaining = after;
     if (isWin) {
@@ -2367,9 +2764,109 @@ function broadcastMatchState() {
   });
 }
 
-function endTurn(side) {
+// ---------- The hold before the turn passes ----------
+//
+// A completed visit does NOT hand over immediately. It sits for ten seconds
+// first, during which the darts are still undoable, and either player can cut
+// that short with End turn.
+//
+// This is what makes undo actually reach the case it was built for. A misread
+// is noticed as the third dart lands or on the walk to the board - after the
+// visit is technically over - and without the hold the only way to allow that
+// was to leave the window open until the opponent threw, which raised the
+// question of what happens when they already have. The hold removes the
+// question entirely: while it is running it is still your turn, so they
+// CANNOT have thrown, and there is nothing to reconcile.
+//
+// BOTH SIDES HOLD, driven by the thrower. Holding unilaterally would be worse
+// than not holding at all: the opponent would believe it was their turn, throw
+// into a match that still thinks it is yours, and have the dart rejected as
+// out of turn. So the thrower owns the clock and announces the end with the
+// `end_turn` message that already exists in the protocol; the receiver waits
+// for it, with a grace period as a backstop in case it never comes.
+// VISIT_HOLD_MS is shared, from prefs.js - the pause should feel the same in
+// both modes, and the two controllers cannot import each other.
+//
+// THIS ONE IS NOT SHARED, deliberately. It is how long a receiver waits for an
+// `end_turn` that never arrived - a peer on an older build, or a message lost
+// on a channel that should not lose them - so it is protocol tolerance, not
+// comfort. Sharing it would mean that shortening the hold to make
+// pass-and-play feel snappier also shortened how much of a network hiccup an
+// online match can absorb: a correctness change arriving from a cosmetic edit,
+// with nothing in the diff to say so. Ending a turn late beats a match that
+// sits still forever.
+const PEER_HOLD_GRACE_MS = 8000;
+
+let hold = null; // { side, opts, until, timer, ticker }
+
+function clearHold() {
+  if (!hold) return;
+  clearTimeout(hold.timer);
+  clearInterval(hold.ticker);
+  hold = null;
+}
+
+export function holdSecondsLeft() {
+  if (!hold || hold.side !== "me") return 0;
+  return Math.max(0, Math.ceil((hold.until - Date.now()) / 1000));
+}
+
+function beginHold(side, opts) {
+  clearHold();
+  const mine = side === "me";
+  hold = {
+    side,
+    opts,
+    until: Date.now() + VISIT_HOLD_MS,
+    timer: setTimeout(
+      () => (mine ? finishVisitNow() : commitAndRender(side, opts)),
+      mine ? VISIT_HOLD_MS : VISIT_HOLD_MS + PEER_HOLD_GRACE_MS
+    ),
+    // Only the thrower counts down on screen; the other side simply has not
+    // been handed the turn yet, which is the truth and needs no clock.
+    ticker: mine ? setInterval(() => renderOnline(), 1000) : null,
+  };
+}
+
+function commitAndRender(side, opts) {
+  clearHold();
+  commitTurn(side, opts);
+  renderOnline();
+}
+
+// Manual End turn, the board's physical button, or the hold expiring.
+function finishVisitNow() {
+  if (!hold) return;
+  const { side, opts } = hold;
+  clearHold();
+  if (side === "me") peerLink?.sendGameMessage({ type: "end_turn" });
+  commitTurn(side, opts);
+  renderOnline();
+}
+
+// Every visit-completing path calls this. It starts the hold rather than
+// handing over, so no call site has to know the hold exists.
+function endTurn(side, opts = {}) {
+  beginHold(side, opts);
+  renderOnline();
+}
+
+function commitTurn(side, { busted = false } = {}) {
   const s = online[side];
-  online.recorder?.endTurn();
+  // Your own visit only, and not on a bust - cueBust has already said what
+  // happened, and a total would be a lie.
+  if (side === "me" && !busted) {
+    callScore(s.dartsThisTurn.reduce((sum, d) => sum + (d?.value || 0), 0));
+  }
+  // Whose visit is ending, so darts that were thrown but never registered are
+  // counted against the right player - and so a visit where all three missed is
+  // still recorded, which is a visit that leaves nothing at all behind.
+  online.recorder?.endTurn(seatOf(side));
+  // Deliberately NOT clearing the undo stack here. A misread is usually
+  // spotted as the third dart lands or on the walk to the board, which is
+  // after the visit has technically ended - locking it at that moment would
+  // make the fix unreachable exactly when it is wanted. The window closes when
+  // the OPPONENT throws instead; see applyThrow.
   s.dartsThisTurn = [];
   // Cricket has no bust, so there's no start-of-turn value to revert to.
   // Only x01 has a start-of-turn score to revert a bust to.
@@ -2437,6 +2934,24 @@ function renderOnline() {
     el.bigScore.textContent = (countup || bermuda) ? thrower.total : thrower.remaining;
   }
 
+  // Only ever for your OWN score. Telling you how your opponent gets out is
+  // not help, it is a scoreboard reading their mind, and it would be showing
+  // during their visit when you have nothing to throw at anyway.
+  // Offered only while there is something to take back. Shown rather than
+  // disabled-and-greyed, because a permanently visible undo on a scoreboard
+  // invites a tap that does nothing.
+  el.undoBtn?.classList.toggle("hidden", !canUndoOwnDart());
+
+  // My own seat only. The opponent's average is not mine to put on screen.
+  renderLiveAverage(el.ocheStat, online.recorder?.liveStats(online.myIndex));
+  renderCheckoutHint(el.checkoutHint, {
+    on: !cricket && !countup && !bermuda && !online.gameOver && myTurn,
+    remaining: online.me?.remaining,
+    dartsLeft: 3 - (online.me?.dartsThisTurn?.length || 0),
+    rules: online.legConfig?.rules,
+    bull: online.legConfig?.bull,
+  });
+
   renderOnlineMatchBar();
 
   if (online.gameOver) {
@@ -2464,6 +2979,14 @@ function renderOnline() {
       `${who} · round ${Math.min(p.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(p)}`;
   } else {
     el.turnLabel.textContent = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+  }
+
+  // The hold, said plainly. Without a countdown a ten second pause reads as
+  // the app having frozen, and the whole point of it - that there is still
+  // time to take a dart back - would go unnoticed.
+  const left = holdSecondsLeft();
+  if (left > 0) {
+    el.turnLabel.textContent = `Visit over - ${left}s to undo · End turn to skip`;
   }
 
   el.turnDarts.innerHTML = "";

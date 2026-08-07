@@ -55,11 +55,16 @@ export function buildDartboardSVG() {
   // slot matches the ring-to-segmentId scheme used everywhere else in the
   // app (see manualSegmentFromRing in game.js / online.js and granboard.js's
   // SegmentID): 0=inner single, 1=triple, 2=outer single, 3=double.
+  // Colours are CLASSES, not fill attributes. An SVG presentation attribute
+  // cannot read a custom property, so a board painted with fill="#B7302A"
+  // would have to be torn down and rebuilt every time someone changed theme.
+  // As classes the browser just repaints, and the colourblind-safe palette
+  // becomes a few overridden custom properties rather than a second renderer.
   const bands = [
-    { key: "innerSingle", slot: 0, from: RING_BOUNDS.bull, to: RING_BOUNDS.innerSingle, colors: ["#EFE6D2", "#1B1A14"] },
-    { key: "triple", slot: 1, from: RING_BOUNDS.innerSingle, to: RING_BOUNDS.triple, colors: ["#B7302A", "#2F7A4D"] },
-    { key: "outerSingle", slot: 2, from: RING_BOUNDS.triple, to: RING_BOUNDS.outerSingle, colors: ["#EFE6D2", "#1B1A14"] },
-    { key: "double", slot: 3, from: RING_BOUNDS.outerSingle, to: RING_BOUNDS.double, colors: ["#B7302A", "#2F7A4D"] },
+    { key: "innerSingle", slot: 0, from: RING_BOUNDS.bull, to: RING_BOUNDS.innerSingle, classes: ["db-light", "db-dark"] },
+    { key: "triple", slot: 1, from: RING_BOUNDS.innerSingle, to: RING_BOUNDS.triple, classes: ["db-red", "db-green"] },
+    { key: "outerSingle", slot: 2, from: RING_BOUNDS.triple, to: RING_BOUNDS.outerSingle, classes: ["db-light", "db-dark"] },
+    { key: "double", slot: 3, from: RING_BOUNDS.outerSingle, to: RING_BOUNDS.double, classes: ["db-red", "db-green"] },
   ];
 
   let wedges = "";
@@ -69,28 +74,28 @@ export function buildDartboardSVG() {
     const center = -90 + i * 18;
     const start = center - 9;
     const end = center + 9;
-    const color = (i, colors) => colors[i % 2];
+    const bandClass = (i, classes) => classes[i % 2];
     const boardNumber = BOARD_ORDER[i];
 
     for (const band of bands) {
       const path = wedgeBandPath(cx, cy, band.from * R, band.to * R, start, end);
       const segmentId = (boardNumber - 1) * 4 + band.slot;
-      wedges += `<path class="dartboard-segment" data-segment-id="${segmentId}" ` +
-                `d="${path}" fill="${color(i, band.colors)}" stroke="#0d0c09" stroke-width="0.4"/>`;
+      wedges += `<path class="dartboard-segment db-wire ${bandClass(i, band.classes)}" ` +
+                `data-segment-id="${segmentId}" d="${path}" stroke-width="0.4"/>`;
     }
 
     const labelPos = polarToCartesian(cx, cy, R * 1.12, center);
-    numbers += `<text x="${labelPos.x}" y="${labelPos.y}" fill="#EFE6D2" font-family="Oswald, sans-serif" ` +
+    numbers += `<text class="db-number" x="${labelPos.x}" y="${labelPos.y}" font-family="Oswald, sans-serif" ` +
                `font-size="9" font-weight="600" text-anchor="middle" dominant-baseline="middle">${boardNumber}</text>`;
   }
 
   return `
     <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="${cx}" cy="${cy}" r="98" fill="#0F3D2E"/>
-      <circle cx="${cx}" cy="${cy}" r="${R + 3}" fill="#111"/>
+      <circle class="db-surround" cx="${cx}" cy="${cy}" r="98"/>
+      <circle class="db-ring" cx="${cx}" cy="${cy}" r="${R + 3}"/>
       ${wedges}
-      <circle class="dartboard-segment" data-segment-id="${SegmentID.BULL}" cx="${cx}" cy="${cy}" r="${RING_BOUNDS.bull * R}" fill="#2F7A4D" stroke="#0d0c09" stroke-width="0.4"/>
-      <circle class="dartboard-segment" data-segment-id="${SegmentID.DBL_BULL}" cx="${cx}" cy="${cy}" r="${RING_BOUNDS.doubleBull * R}" fill="#B7302A" stroke="#0d0c09" stroke-width="0.4"/>
+      <circle class="dartboard-segment db-green db-wire" data-segment-id="${SegmentID.BULL}" cx="${cx}" cy="${cy}" r="${RING_BOUNDS.bull * R}" stroke-width="0.4"/>
+      <circle class="dartboard-segment db-red db-wire" data-segment-id="${SegmentID.DBL_BULL}" cx="${cx}" cy="${cy}" r="${RING_BOUNDS.doubleBull * R}" stroke-width="0.4"/>
       ${numbers}
     </svg>
   `;

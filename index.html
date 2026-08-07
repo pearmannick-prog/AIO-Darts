@@ -11,7 +11,38 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* ---------------------------------------------------------------------
+     DESIGN TOKENS
+
+     Two layers, and the split is the whole point. The eight SEED colours are
+     the brand. Everything below them is a ROLE - "the border on a panel",
+     "a raised surface over the chrome" - expressed in terms of a seed.
+     Rules elsewhere in this file may only refer to roles.
+
+     That is what makes a theme a small data object rather than a rewrite: a
+     theme overrides seeds and a handful of roles, and every screen follows.
+     Add a new hard-coded colour to a rule further down and it will be the one
+     thing that doesn't change when someone picks a dark theme.
+
+     Note the app is ALREADY half dark. The page chrome is felt green with
+     cream text; the panels sitting on it are paper with ink text. So there
+     are two overlay scales, not one: --chrome-* lightens (cream over dark),
+     --panel-* darkens (ink over light).
+
+     Deliberately NOT tokenised: rgba(0,0,0,...) shadows and scrims. They are
+     depth rather than colour, they read correctly over any palette, and
+     giving them theme knobs would be thirty more values for no gain.
+     --------------------------------------------------------------------- */
   :root {
+    /* Tells the browser which way round the page is, so the parts it draws
+       ITSELF follow - the option list of a <select>, scrollbars, spinners,
+       date pickers. Without it a dark theme styles the closed select but the
+       popup keeps the system's white background and inherits the theme's light
+       text, which is white on white and unreadable. No amount of styling the
+       <select> fixes that, because none of it reaches the popup. */
+    color-scheme: light;
+
+    /* ---- Seeds ---- */
     --felt: #0F3D2E;
     --felt-light: #16513D;
     --cream: #EFE6D2;
@@ -20,6 +51,94 @@
     --green-ring: #2F7A4D;
     --gold: #C7A24A;
     --paper: #F7F3E8;
+
+    /* ---- Chrome: the page itself, which is dark ---- */
+    --chrome-bg: var(--felt);
+    --chrome-bg-hi: var(--felt-light);
+    --on-chrome: var(--cream);
+    --on-chrome-soft: rgba(239,230,210,0.85);
+    --on-chrome-dim: rgba(239,230,210,0.75);
+    --on-chrome-muted: rgba(239,230,210,0.65);
+    --chrome-raise-1: rgba(239,230,210,0.08);
+    --chrome-raise-2: rgba(239,230,210,0.12);
+    --chrome-raise-3: rgba(239,230,210,0.2);
+    --chrome-raise-hover: rgba(239,230,210,0.16);
+    --chrome-border: rgba(239,230,210,0.3);
+    --chrome-border-soft: rgba(239,230,210,0.18);
+    --chrome-border-hi: rgba(239,230,210,0.4);
+
+    /* ---- Panels: the cards on top of it, which are light ---- */
+    /* Panels are cream, not paper. --paper is the lighter tone used for a few
+       insets and for text on the felt; keeping them distinct matters because a
+       dark theme has to move them independently. */
+    --panel-bg: var(--cream);
+    --panel-bg-alt: var(--paper);
+    --on-panel: var(--ink);
+    --chart-series: var(--felt);
+    /* The brand dark used as a FILL on a light panel - a solid button, a badge,
+       the active manual-entry key. Distinct from --chrome-bg even though both
+       are felt today, because a dark theme has to darken the page while making
+       these fills LIGHTER to stay visible. */
+    --fill-strong: var(--felt);
+    --on-fill-strong: var(--cream);
+    --on-panel-muted: #9c9377;
+    --on-panel-dim: rgba(27,26,20,0.55);
+    --on-panel-faint: rgba(27,26,20,0.35);
+    --panel-raise-1: rgba(27,26,20,0.04);
+    --panel-raise-2: rgba(27,26,20,0.06);
+    --panel-raise-3: rgba(27,26,20,0.08);
+    --panel-raise-4: rgba(27,26,20,0.12);
+    --panel-raise-5: rgba(27,26,20,0.25);
+    --panel-raise-6: rgba(27,26,20,0.3);
+    --panel-hairline: rgba(27,26,20,0.1);
+    --panel-rule: rgba(27,26,20,0.15);
+    --panel-border: #cfc4a3;
+    --field-bg: #fff;
+    --field-ghost: rgba(255,255,255,0.35);
+    --on-solid: #fff;
+    --dot-idle: #7a7a6a;
+
+    /* ---- The video/immersive world, which is near-black ---- */
+    --video-bg: #12110c;
+    --video-bg-deep: #0c0b07;
+    --video-bg-hover: #1d1b13;
+    --video-border: rgba(12,11,7,0.85);
+    --video-raise: rgba(12,11,7,0.5);
+    --video-raise-hi: rgba(12,11,7,0.55);
+    --overlay-backdrop: rgba(11,32,24,0.72);
+
+    /* ---- Meaning, not decoration ---- */
+    --accent: var(--gold);
+    /* Text that sits ON an accent fill. Its own token because the accent is
+       user-choosable: ink reads on gold and amber, and is unreadable on plum
+       or oche red. Each swatch below declares which one it needs. */
+    --on-accent: var(--ink);
+    /* Derived from whatever --accent currently is, so choosing a new accent
+       does not leave a gold wash behind it. The literal is the fallback for
+       anything without color-mix; it is the default accent's wash, so the only
+       browsers that see it are ones showing the default anyway. */
+    --accent-wash: rgba(199,162,74,0.22);
+    --accent-wash: color-mix(in srgb, var(--accent) 22%, transparent);
+    --danger: var(--red);
+    --danger-wash: rgba(183,48,42,0.12);
+    --danger-solid: rgba(183,48,42,0.85);
+    --positive: var(--green-ring);
+    --positive-wash: rgba(47,122,77,0.15);
+    --felt-wash: rgba(15,61,46,0.08);
+
+    /* ---- The dartboard itself ----
+       Read by the CSS rules below rather than baked into dartboard.js's SVG
+       as fill attributes, so changing a theme - or switching to the
+       colourblind-safe palette - repaints the board with no re-render. */
+    --board-light: var(--cream);
+    --board-dark: var(--ink);
+    --board-red: var(--red);
+    --board-green: var(--green-ring);
+    --board-wire: #0d0c09;
+    --board-ring: #111;
+    --board-surround: var(--felt);
+    --board-number: var(--cream);
+    --board-marker: var(--paper);
   }
 
   * { box-sizing: border-box; }
@@ -27,9 +146,9 @@
   body {
     margin: 0;
     font-family: 'Inter', sans-serif;
-    background: var(--felt);
-    background-image: radial-gradient(circle at 50% -10%, var(--felt-light), var(--felt) 60%);
-    color: var(--cream);
+    background: var(--chrome-bg);
+    background-image: radial-gradient(circle at 50% -10%, var(--chrome-bg-hi), var(--chrome-bg) 60%);
+    color: var(--on-chrome);
     min-height: 100vh;
   }
 
@@ -59,7 +178,7 @@
   #support-link a {
     font-size: 11px;
     letter-spacing: 0.03em;
-    color: var(--cream);
+    color: var(--on-chrome);
     opacity: 0.45;
     text-decoration: none;
   }
@@ -85,18 +204,18 @@
     height: 40px;
     border-radius: 50%;
     background: conic-gradient(
-      var(--cream) 0deg 18deg, var(--red) 18deg 36deg,
-      var(--cream) 36deg 54deg, var(--green-ring) 54deg 72deg,
-      var(--cream) 72deg 90deg, var(--red) 90deg 108deg,
-      var(--cream) 108deg 126deg, var(--green-ring) 126deg 144deg,
-      var(--cream) 144deg 162deg, var(--red) 162deg 180deg,
-      var(--cream) 180deg 198deg, var(--green-ring) 198deg 216deg,
-      var(--cream) 216deg 234deg, var(--red) 234deg 252deg,
-      var(--cream) 252deg 270deg, var(--green-ring) 270deg 288deg,
-      var(--cream) 288deg 306deg, var(--red) 306deg 324deg,
-      var(--cream) 324deg 342deg, var(--green-ring) 342deg 360deg
+      var(--board-light) 0deg 18deg, var(--board-red) 18deg 36deg,
+      var(--board-light) 36deg 54deg, var(--board-green) 54deg 72deg,
+      var(--board-light) 72deg 90deg, var(--board-red) 90deg 108deg,
+      var(--board-light) 108deg 126deg, var(--board-green) 126deg 144deg,
+      var(--board-light) 144deg 162deg, var(--board-red) 162deg 180deg,
+      var(--board-light) 180deg 198deg, var(--board-green) 198deg 216deg,
+      var(--board-light) 216deg 234deg, var(--board-red) 234deg 252deg,
+      var(--board-light) 252deg 270deg, var(--board-green) 270deg 288deg,
+      var(--board-light) 288deg 306deg, var(--board-red) 306deg 324deg,
+      var(--board-light) 324deg 342deg, var(--board-green) 342deg 360deg
     );
-    box-shadow: 0 0 0 3px var(--ink) inset;
+    box-shadow: 0 0 0 3px var(--board-dark) inset;
     flex-shrink: 0;
   }
 
@@ -119,13 +238,13 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #7a7a6a;
+    background: var(--dot-idle);
     display: inline-block;
   }
 
   .conn-dot.connected {
-    background: var(--green-ring);
-    box-shadow: 0 0 8px var(--green-ring);
+    background: var(--positive);
+    box-shadow: 0 0 8px var(--positive);
   }
 
   #connection-label {
@@ -136,9 +255,9 @@
   /* Mode tabs */
   .mode-tabs { display: flex; gap: 8px; margin-bottom: 18px; }
   .mode-tab {
-    background: rgba(239,230,210,0.1);
-    color: var(--cream);
-    border: 1px solid rgba(239,230,210,0.3);
+    background: var(--chrome-raise-1);
+    color: var(--on-chrome);
+    border: 1px solid var(--chrome-border);
     padding: 10px 18px;
     border-radius: 8px 8px 0 0;
     font-family: 'Oswald', sans-serif;
@@ -147,9 +266,9 @@
     font-size: 14px;
   }
   .mode-tab.active {
-    background: var(--cream);
-    color: var(--ink);
-    border-color: var(--cream);
+    background: var(--panel-bg);
+    color: var(--on-panel);
+    border-color: var(--on-chrome);
   }
 
   /* Online mode */
@@ -158,8 +277,8 @@
     font-size: 15px;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
     width: 100%;
     max-width: 320px;
   }
@@ -167,7 +286,7 @@
   .signaling-settings {
     margin-top: 20px;
     padding-top: 14px;
-    border-top: 1px solid rgba(27,26,20,0.12);
+    border-top: 1px solid var(--panel-raise-4);
   }
   .signaling-settings summary {
     cursor: pointer;
@@ -186,7 +305,7 @@
     font-size: 40px;
     font-weight: 700;
     letter-spacing: 0.08em;
-    background: rgba(27,26,20,0.06);
+    background: var(--panel-raise-2);
     border-radius: 10px;
     padding: 16px;
     text-align: center;
@@ -199,14 +318,14 @@
     gap: 16px;
   }
   .online-score-box {
-    background: rgba(27,26,20,0.05);
+    background: var(--panel-raise-2);
     border-radius: 12px;
     padding: 16px;
     text-align: center;
   }
   .online-score-box.active-turn {
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
   }
   .online-score-label { font-size: 13px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.04em; }
   .online-score-value { font-family: 'Oswald', sans-serif; font-size: 56px; font-weight: 700; line-height: 1.1; }
@@ -231,7 +350,7 @@
   .video-tile {
     position: relative;
     aspect-ratio: 4 / 3;
-    background: #12110c;
+    background: var(--video-bg);
     border-radius: 10px;
     overflow: hidden;
   }
@@ -259,7 +378,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--cream);
+    color: var(--on-chrome);
     background: rgba(0,0,0,0.5);
     padding: 2px 7px;
     border-radius: 5px;
@@ -273,25 +392,25 @@
     padding: 10px;
     text-align: center;
     font-size: 13px;
-    color: rgba(239,230,210,0.65);
-    background: #12110c;
+    color: var(--on-chrome-muted);
+    background: var(--video-bg);
   }
   .video-tile-placeholder.hidden { display: none; }
   /* Only the autoplay-blocked state is actually clickable, so only that state
      advertises itself as clickable. */
   .video-tile-placeholder.tappable {
     cursor: pointer;
-    color: var(--cream);
+    color: var(--on-chrome);
     font-weight: 600;
   }
-  .video-tile-placeholder.tappable:hover { background: #1d1b13; }
+  .video-tile-placeholder.tappable:hover { background: var(--video-bg-hover); }
 
   /* Kept away from the scoring controls, and never gold or cream like the
      buttons you press every turn - this is the one that ends things. */
   .end-match-row {
     margin-top: 18px;
     padding-top: 14px;
-    border-top: 1px solid rgba(27,26,20,0.15);
+    border-top: 1px solid var(--panel-rule);
     display: flex;
     justify-content: flex-end;
   }
@@ -299,14 +418,14 @@
     font-size: 13px;
     padding: 8px 14px;
     background: transparent;
-    color: var(--red);
-    border: 1px solid var(--red);
+    color: var(--danger);
+    border: 1px solid var(--danger);
   }
-  .end-match-btn:hover { background: rgba(183,48,42,0.08); }
+  .end-match-btn:hover { background: var(--danger-wash); }
   /* Armed = one more tap actually does it, so it stops looking optional. */
   .end-match-btn.armed {
-    background: var(--red);
-    color: var(--cream);
+    background: var(--danger);
+    color: var(--on-chrome);
   }
 
   /* Device check (setup panel) */
@@ -315,10 +434,10 @@
      looked like different kinds of thing purely because one carried its own
      border and the other had none. */
   #settings-body > details {
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     border-radius: 10px;
     padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.35);
+    background: var(--field-ghost);
   }
   #settings-body > details > summary {
     cursor: pointer;
@@ -333,7 +452,7 @@
     width: 100%;
     max-width: 320px;
     aspect-ratio: 4 / 3;
-    background: #12110c;
+    background: var(--video-bg);
     border-radius: 10px;
     overflow: hidden;
     margin-bottom: 10px;
@@ -364,37 +483,37 @@
     min-width: 0;
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
     font-family: 'Inter', sans-serif;
     font-size: 14px;
   }
   .mic-meter {
     flex: 1 1 160px;
     height: 10px;
-    background: rgba(27,26,20,0.12);
+    background: var(--panel-raise-4);
     border-radius: 5px;
     overflow: hidden;
   }
   .mic-meter-fill {
     height: 100%;
     width: 0%;
-    background: var(--green-ring);
+    background: var(--positive);
     /* Rises instantly, falls smoothly - a meter that decays as fast as speech
        does just flickers and tells you nothing. */
     transition: width 0.08s linear;
   }
   .device-check-error {
     font-size: 13px;
-    color: var(--red);
+    color: var(--danger);
     font-weight: 600;
     margin: 4px 0 0;
   }
   .device-check-error.hidden { display: none; }
 
   .setup-notice {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
     border-radius: 10px;
     padding: 10px 14px;
     margin-bottom: 14px;
@@ -426,20 +545,20 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: rgba(239,230,210,0.85);
+    color: var(--on-chrome-soft);
   }
   .tile-score-value {
     font-family: 'Oswald', sans-serif;
     font-weight: 700;
     font-size: 34px;
     line-height: 1;
-    color: var(--cream);
+    color: var(--on-chrome);
     text-shadow: 0 2px 8px rgba(0,0,0,0.7);
   }
   /* Whose turn it is has to be readable at a glance from the oche, so it's a
      ring around the whole tile rather than a subtle colour change. */
-  .video-tile.active-turn { box-shadow: 0 0 0 3px var(--gold) inset; }
-  .video-tile.active-turn .tile-score-value { color: var(--gold); }
+  .video-tile.active-turn { box-shadow: 0 0 0 3px var(--accent) inset; }
+  .video-tile.active-turn .tile-score-value { color: var(--accent); }
 
   /* ---- Immersive layout ----------------------------------------------
      The stage is the top band of the panel: full-bleed video with the scoring
@@ -505,7 +624,7 @@
     position: absolute;
     top: 0; left: 0; right: 0;
     height: var(--stage-h);
-    background: #0c0b07;
+    background: var(--video-bg-deep);
     z-index: 0;
   }
   /* Which feed is big and which is the thumbnail is decided by JS putting
@@ -571,7 +690,7 @@
     width: 50%;
     left: 50%;
     /* A seam, so two similarly-lit rooms don't read as one wide picture. */
-    border-left: 1px solid rgba(12,11,7,0.85);
+    border-left: 1px solid var(--video-border);
   }
   .immersive #online-video-strip { position: static; display: block; margin: 0; }
   .immersive .video-tile.as-stage .tile-score { display: none; }
@@ -614,9 +733,9 @@
   .immersive #online-match-bar {
     top: 14px; left: auto; right: 14px;
     transform: none;
-    background: rgba(12,11,7,0.5);
-    color: var(--cream);
-    border: 1px solid rgba(239,230,210,0.2);
+    background: var(--video-raise);
+    color: var(--on-chrome);
+    border: 1px solid var(--chrome-raise-3);
     white-space: nowrap;
   }
 
@@ -648,7 +767,7 @@
     font-weight: 700;
     font-size: clamp(64px, 13vw, 132px);
     line-height: 1;
-    color: var(--gold);
+    color: var(--accent);
     /* Heavier than a cream figure needed. Gold has less contrast against a
        bright room than cream does, and this sits on arbitrary video. */
     text-shadow: 0 4px 10px rgba(0,0,0,0.9), 0 6px 26px rgba(0,0,0,0.75);
@@ -661,7 +780,7 @@
     margin: 0;
     font-size: 13px;
     text-align: right;
-    color: rgba(239,230,210,0.92);
+    color: var(--on-chrome-soft);
     text-shadow: 0 2px 8px rgba(0,0,0,0.8);
   }
 
@@ -715,13 +834,13 @@
   }
   .immersive .online-score-box { background: none; padding: 0; }
   .immersive .online-score-box.active-turn { background: none; }
-  .immersive .online-score-label { color: rgba(239,230,210,0.75); }
+  .immersive .online-score-label { color: var(--on-chrome-dim); }
   .immersive .online-score-value {
-    color: var(--cream);
+    color: var(--on-chrome);
     font-size: 40px;
     text-shadow: 0 3px 12px rgba(0,0,0,0.8);
   }
-  .immersive .online-score-box.active-turn .online-score-value { color: var(--gold); }
+  .immersive .online-score-box.active-turn .online-score-value { color: var(--accent); }
 
   /* The three darts of this turn run across the top centre, above the big
      number - a status strip along the top edge, the way an arcade cabinet
@@ -750,9 +869,9 @@
     transform: none;
   }
   .immersive .dart-slot {
-    background: rgba(12,11,7,0.5);
-    border-color: rgba(239,230,210,0.4);
-    color: var(--cream);
+    background: var(--video-raise);
+    border-color: var(--chrome-border-hi);
+    color: var(--on-chrome);
   }
 
   /* Cricket's mark pad IS the display, so it sits on the stage. */
@@ -762,19 +881,19 @@
     width: min(400px, 62%);
     max-height: calc(var(--stage-h) - 150px);
     overflow-y: auto;
-    background: rgba(12,11,7,0.55);
-    border: 1px solid rgba(239,230,210,0.18);
+    background: var(--video-raise-hi);
+    border: 1px solid var(--chrome-border-soft);
     border-radius: 12px;
-    color: var(--cream);
+    color: var(--on-chrome);
   }
-  .immersive .ck-row { border-bottom-color: rgba(239,230,210,0.16); }
+  .immersive .ck-row { border-bottom-color: var(--chrome-border-soft); }
   /* The pad's own name/points header says exactly what the score bar under it
      says. On the stage that's two copies of the same numbers a few inches
      apart, and dropping it buys back the height that was forcing the pad to
      scroll. */
   .immersive .ck-header { display: none; }
-  .immersive .ck-name, .immersive .ck-points { color: var(--cream); }
-  .immersive .ck-mark { color: var(--cream); }
+  .immersive .ck-name, .immersive .ck-points { color: var(--on-chrome); }
+  .immersive .ck-mark { color: var(--on-chrome); }
 
   /* --- below the stage: ordinary cream surface, ordinary controls --- */
   .immersive #online-status-label,
@@ -841,18 +960,18 @@
   .av-btn {
     font-size: 13px;
     padding: 8px 12px;
-    background: rgba(27,26,20,0.06);
-    color: var(--ink);
-    border: 1px solid #cfc4a3;
+    background: var(--panel-raise-2);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
   }
-  .av-btn:hover { background: rgba(27,26,20,0.12); }
+  .av-btn:hover { background: var(--panel-raise-4); }
   /* Muted / camera-off is shown in red rather than as a pressed state, because
      "am I currently muted" has to be answerable at a glance from across a
      room, mid-throw. */
   .av-btn.off {
-    background: var(--red);
-    border-color: var(--red);
-    color: var(--cream);
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--on-chrome);
   }
 
   /* Two tiles side by side on a phone are too small to see a dart land in.
@@ -864,7 +983,7 @@
   #online-manual-section {
     margin-top: 10px;
     padding-top: 16px;
-    border-top: 1px solid rgba(27,26,20,0.15);
+    border-top: 1px solid var(--panel-rule);
   }
   #online-manual-section h3 {
     font-family: 'Oswald', sans-serif;
@@ -896,21 +1015,21 @@
   button:active { transform: translateY(1px); }
 
   .btn-primary {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .btn-primary:hover { filter: brightness(1.08); }
 
   .btn-secondary {
-    background: rgba(239, 230, 210, 0.12);
-    color: var(--cream);
-    border: 1px solid rgba(239, 230, 210, 0.35);
+    background: var(--chrome-raise-2);
+    color: var(--on-chrome);
+    border: 1px solid var(--chrome-border);
   }
-  .btn-secondary:hover { background: rgba(239, 230, 210, 0.2); }
+  .btn-secondary:hover { background: var(--chrome-raise-3); }
 
   .panel {
-    background: var(--cream);
-    color: var(--ink);
+    background: var(--panel-bg);
+    color: var(--on-panel);
     border-radius: 16px;
     padding: 24px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.25);
@@ -928,9 +1047,9 @@
     font-size: 13px;
     padding: 9px 8px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
   }
   @media (max-width: 560px) { .player-kind { max-width: 120px; font-size: 12px; } }
 
@@ -941,21 +1060,21 @@
     font-size: 15px;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
   }
   .player-remove {
     background: none;
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     border-radius: 8px;
-    color: var(--paper);
+    color: var(--panel-bg-alt);
     opacity: 0.55;
     cursor: pointer;
     font-size: 18px;
     line-height: 1;
     padding: 9px 13px;
   }
-  .player-remove:hover { opacity: 1; color: var(--gold); }
+  .player-remove:hover { opacity: 1; color: var(--accent); }
   /* Two players is the minimum for a match, so there's nothing to remove. */
   #player-inputs.at-minimum .player-remove { visibility: hidden; }
   .setup-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
@@ -985,12 +1104,12 @@
     flex-direction: column;
     padding: 8px 14px;
     border-radius: 10px;
-    background: rgba(27,26,20,0.06);
+    background: var(--panel-raise-2);
     min-width: 90px;
   }
   .player-tab.active {
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
   }
   .player-tab-name { font-size: 12px; opacity: 0.8; }
   .player-tab-score { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 600; }
@@ -1009,19 +1128,19 @@
     width: 64px;
     height: 48px;
     border-radius: 8px;
-    border: 2px dashed #cfc4a3;
+    border: 2px dashed var(--panel-border);
     display: flex;
     align-items: center;
     justify-content: center;
     font-family: 'Oswald', sans-serif;
     font-size: 18px;
-    color: #9c9377;
+    color: var(--on-panel-muted);
   }
   .dart-slot.filled {
     border-style: solid;
-    border-color: var(--felt);
-    background: rgba(15,61,46,0.06);
-    color: var(--ink);
+    border-color: var(--fill-strong);
+    background: var(--felt-wash);
+    color: var(--on-panel);
   }
 
   .actions-row { display: flex; gap: 10px; margin-bottom: 8px; }
@@ -1029,8 +1148,8 @@
   #winner-banner {
     font-family: 'Oswald', sans-serif;
     font-size: 20px;
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
     padding: 10px 16px;
     border-radius: 8px;
     margin-bottom: 16px;
@@ -1063,17 +1182,57 @@
   .dartboard-segment:hover {
     filter: brightness(1.35);
   }
+  /* The board's own colours. dartboard.js emits these as CLASSES rather than
+     fill="#B7302A" attributes, for one reason: a presentation attribute cannot
+     read a custom property, so a themed board would have to be re-rendered on
+     every change. As CSS it just repaints - which is also the hook the
+     colourblind-safe palette needs, since red/green is the worst possible
+     pairing and it is the board's own scheme. */
+  .db-light { fill: var(--board-light); }
+  .db-dark { fill: var(--board-dark); }
+  .db-red { fill: var(--board-red); }
+  .db-green { fill: var(--board-green); }
+  .db-wire { stroke: var(--board-wire); }
+  .db-surround { fill: var(--board-surround); }
+  .db-ring { fill: var(--board-ring); }
+  .db-number { fill: var(--board-number); }
   /* ---- Cricket (DartConnect-style board) ---- */
   /* Targets run down the centre with D/T either side; each player's marks sit
      in a flanking column, so two players read as a familiar left-vs-right
      board. Every button here produces the same segment ID a real board hit or
      a click on the dartboard would, so all three inputs share one code path. */
+  /* THE PAD HAS ONE SIZE KNOB HERE TOO: --ck-u, exactly as in oche view, and
+     every measurement below is a multiple of it.
+
+     It used to be a dozen independent pixel values in a box with no width, and
+     the box is the part that was wrong. .ck-row is `1fr auto 1fr` - buttons in
+     the middle, marks either side - so on a desktop panel the pad stretched to
+     812px, the buttons stayed the 140px their pixel sizes asked for, and the
+     two mark columns swallowed five hundred pixels of slack between them. The
+     result read as a strip of tiny buttons marooned in the middle of a very
+     wide card, and it got WORSE the bigger the window, which is the opposite of
+     what every other panel on this screen does.
+
+     Stating the width as 12.5u is what fixes it, and it is the same 12.5u the
+     oche pad uses - the buttons are about 7u and three marks a side need about
+     2.75u each. Sharing the number is the point: the pad is then the same SHAPE
+     at the oche and on the sofa, and only the unit differs.
+
+     The unit is a plain length rather than a vh expression, and that difference
+     is the whole reason this is a separate block. Oche view owns the screen and
+     solves u against the height it has; this page SCROLLS, so height is not a
+     constraint to divide up and a vh unit would only make the pad shrink when
+     the window got short. Board View is the knob that means "how far away am I"
+     here, so it sets u directly - one number per step instead of five. */
   .cricket-board {
-    margin: 14px 0;
-    border: 1px solid rgba(27,26,20,0.15);
+    --ck-u: 24px;
+    width: calc(var(--ck-u) * 12.5);
+    max-width: 100%;
+    margin: 14px auto;
+    border: 1px solid var(--panel-rule);
     border-radius: 10px;
     overflow: hidden;
-    background: rgba(27,26,20,0.03);
+    background: var(--panel-raise-1);
     font-variant-numeric: tabular-nums;
     user-select: none;
   }
@@ -1083,7 +1242,7 @@
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    border-bottom: 1px solid rgba(27,26,20,0.08);
+    border-bottom: 1px solid var(--panel-raise-3);
   }
   .ck-row:last-child { border-bottom: none; }
 
@@ -1096,12 +1255,12 @@
   }
 
   .ck-header {
-    background: rgba(27,26,20,0.07);
-    padding: 8px 0;
+    background: var(--panel-raise-2);
+    padding: calc(var(--ck-u) * 0.34) 0;
   }
   .ck-col { text-align: center; padding: 0 6px; min-width: 0; }
   .ck-name {
-    font-size: 12px;
+    font-size: calc(var(--ck-u) * 0.5);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -1110,31 +1269,49 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .ck-col.active .ck-name { opacity: 1; color: var(--red); }
-  .ck-points { font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .ck-col.active .ck-name { opacity: 1; color: var(--danger); }
+  .ck-points { font-size: calc(var(--ck-u) * 1.1); font-weight: 700; line-height: 1.1; }
 
   /* Marks are chalked the way they are on a real board: / then X then a
      circled X once the number is closed. */
   .ck-mark {
     flex: 1;
     text-align: center;
-    font-size: 22px;
+    font-size: calc(var(--ck-u) * 0.95);
     line-height: 1;
-    min-height: 30px;
+    min-height: calc(var(--ck-u) * 1.25);
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  .ck-mark.closed { color: var(--red); }
+  .ck-mark.closed { color: var(--danger); }
+  /* The single mark, brought back to the size of the other two. U+2571 spans
+     its full em box where U+2715 and U+2297 do not, so at a shared font-size
+     the first mark on a number drew noticeably longer than the X it becomes.
+     A TRANSFORM RATHER THAN A FONT-SIZE, for two reasons. The mark's size is
+     set in two places - once here and once in oche view, each off its own
+     --ck-u - so a corrected font-size would have to be written twice and kept
+     in step; scale() rides whatever either of them resolved to. And a transform
+     does not affect layout, which matters more than it looks: the oche pad's
+     height is a measured multiple of --ck-u (15.58u), and .ck-mark is what sets
+     the row height, so shrinking it for real would move the number the whole
+     pad is solved against.
+     `em` was the first attempt and is wrong here - it resolves against the
+     PARENT's font-size, which is the row's 16px, so the mark came out at 11px.
+     Scoped through .cricket-board so it outranks .oche-mode .ck-mark, which is
+     also two classes and sits further down the file - at equal specificity that
+     one wins on source order and the correction silently did nothing in the one
+     view where the marks are big enough for it to matter. */
+  .cricket-board .ck-mark[data-marks="1"] { transform: scale(0.72); }
 
   .ck-controls {
     display: flex;
     align-items: stretch;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: calc(var(--ck-u) * 0.17);
+    padding: calc(var(--ck-u) * 0.17) calc(var(--ck-u) * 0.34);
   }
 
-  .ck-num, .ck-mod, .ck-miss {
+  .ck-num, .ck-mod {
     font-family: inherit;
     font-weight: 700;
     border-radius: 6px;
@@ -1142,47 +1319,68 @@
     cursor: pointer;
     transition: filter 0.1s ease;
   }
-  .ck-num:active, .ck-mod:active, .ck-miss:active { filter: brightness(0.85); }
+  .ck-num:active, .ck-mod:active { filter: brightness(0.85); }
 
   /* The number itself is the big target - a single is the most common dart. */
   .ck-num {
-    min-width: 62px;
-    padding: 8px 0;
-    font-size: 22px;
-    background: var(--red);
-    color: #fff;
+    min-width: calc(var(--ck-u) * 2.6);
+    padding: calc(var(--ck-u) * 0.34) 0;
+    font-size: calc(var(--ck-u) * 0.92);
+    background: var(--danger);
+    color: var(--on-solid);
   }
   .ck-mod {
-    min-width: 34px;
-    padding: 8px 0;
-    font-size: 14px;
-    background: rgba(183,48,42,0.85);
-    color: #fff;
+    min-width: calc(var(--ck-u) * 1.42);
+    padding: calc(var(--ck-u) * 0.34) 0;
+    font-size: calc(var(--ck-u) * 0.58);
+    background: var(--danger-solid);
+    color: var(--on-solid);
   }
   .ck-mod.ck-disabled, .ck-mod:disabled {
-    background: rgba(27,26,20,0.12);
-    color: rgba(27,26,20,0.35);
+    background: var(--panel-raise-4);
+    color: var(--on-panel-faint);
     cursor: not-allowed;
   }
 
-  .ck-miss {
-    padding: 7px 22px;
-    font-size: 14px;
-    background: rgba(27,26,20,0.08);
-    color: var(--ink);
-    border-color: #cfc4a3;
+  /* THE FORMAT COMES BEFORE THE OPPONENT. The lobby was first on the page and
+     the format picker sat in the panel below it, so the two things a challenge
+     is made of - what you are playing and who you are playing - were a scroll
+     apart, and nothing on the lobby said which format a challenge would use.
+     The answer is that it uses the one in the picker, which is exactly the
+     thing that was not visible while you were looking at the lobby.
+
+     Reordered rather than moved, and that is not laziness: the picker cannot
+     live INSIDE the lobby panel, because the lobby is hidden entirely for
+     guests and for any build without an accounts API, and it is the invite-code
+     path underneath - the only no-account way to play - that would lose its
+     format controls. One panel has to serve both, so it sits above both.
+
+     order rather than rewriting the markup because online.js shows and hides
+     #online-setup-panel from six places; moving the element would mean keeping
+     all of them right for no gain the reader can see. */
+  #online-mode {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
   }
-  .ck-footer { background: rgba(27,26,20,0.04); padding: 6px 0; }
+  /* Above the lobby, below the notice that says why you are back on this
+     screen - which is about the LAST match and belongs at the top. */
+  #online-setup-notice { order: -2; }
+  #online-setup-panel { order: -1; }
 
   /* A number every player has closed is dead - nothing more can be scored on
      it, so the whole row including its buttons drops back. */
   .ck-row.dead { opacity: 0.38; }
-  .ck-row.dead .ck-num, .ck-row.dead .ck-mod { background: rgba(27,26,20,0.25); }
+  .ck-row.dead .ck-num, .ck-row.dead .ck-mod { background: var(--panel-raise-5); }
 
+  /* One number, where this was three separately-tuned overrides that could not
+     agree with each other. 12.5u at 20px is 250px, which fits a 320px phone
+     with its panel padding and leaves the mark columns intact - the failure the
+     oche pad had at this end too, and for the same reason: the pad's width is a
+     single constraint, so it has to be divided once rather than guessed at in
+     pieces. */
   @media (max-width: 420px) {
-    .ck-num { min-width: 52px; font-size: 19px; }
-    .ck-mod { min-width: 28px; }
-    .ck-points { font-size: 22px; }
+    .cricket-board { --ck-u: 20px; }
   }
 
   /* ---- Medley / match ---- */
@@ -1209,7 +1407,7 @@
     .leg-row {
       gap: 6px;
       padding-bottom: 8px;
-      border-bottom: 1px solid rgba(27,26,20,0.08);
+      border-bottom: 1px solid var(--panel-raise-3);
     }
     .leg-row .leg-label { flex: 1 0 100%; min-width: 0; }
     .leg-row .leg-game { flex: 1 1 90px; }
@@ -1229,28 +1427,28 @@
     flex: 1;
     padding: 7px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: rgba(27,26,20,0.04);
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
   }
   .leg-remove {
     background: none;
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     border-radius: 6px;
-    color: var(--ink);
+    color: var(--on-panel);
     opacity: 0.6;
     cursor: pointer;
     padding: 6px 10px;
     line-height: 1;
   }
-  .leg-remove:hover { opacity: 1; color: var(--red); }
+  .leg-remove:hover { opacity: 1; color: var(--danger); }
   /* A single leg is just a normal game - nothing to remove. */
   .medley-legs.single .leg-remove { visibility: hidden; }
 
   .add-leg-btn {
-    background: rgba(27,26,20,0.08);
-    color: var(--ink);
-    border: 1px solid #cfc4a3;
+    background: var(--panel-raise-3);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
     margin-bottom: 14px;
   }
 
@@ -1263,7 +1461,7 @@
     padding: 8px 12px;
     margin-bottom: 12px;
     border-radius: 8px;
-    background: rgba(27,26,20,0.07);
+    background: var(--panel-raise-2);
     font-size: 13px;
   }
   .match-bar.hidden { display: none; }
@@ -1290,9 +1488,9 @@
   .setup-row select {
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: rgba(27,26,20,0.04);
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
   }
 
   /* Quick Total is a 501 concept - a turn total tells you nothing about
@@ -1316,8 +1514,8 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: var(--red);
-    border: 2px solid var(--paper);
+    background: var(--danger);
+    border: 2px solid var(--board-marker);
     transform: translate(-50%, -50%);
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
     transition: left 0.15s ease, top 0.15s ease;
@@ -1341,7 +1539,7 @@
     align-items: start;
     margin-top: 24px;
     padding-top: 20px;
-    border-top: 1px solid rgba(27,26,20,0.15);
+    border-top: 1px solid var(--panel-rule);
   }
   @media (max-width: 640px) {
     .entry-and-log { grid-template-columns: 1fr; gap: 0; }
@@ -1361,21 +1559,21 @@
   .manual-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   #manual-sections { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 12px; }
   .manual-section-btn {
-    background: #fff;
-    border: 1px solid #cfc4a3;
-    color: var(--ink);
+    background: var(--field-bg);
+    border: 1px solid var(--panel-border);
+    color: var(--on-panel);
     padding: 8px 0;
     border-radius: 6px;
     font-weight: 600;
   }
-  .manual-section-btn:hover { background: var(--felt); color: var(--cream); }
+  .manual-section-btn:hover { background: var(--fill-strong); color: var(--on-fill-strong); }
 
   /* Manual entry mode sub-tabs (Per-Dart vs Quick Total) */
   .entry-mode-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
   .entry-mode-tab {
-    background: #fff;
-    border: 1px solid #cfc4a3;
-    color: var(--ink);
+    background: var(--field-bg);
+    border: 1px solid var(--panel-border);
+    color: var(--on-panel);
     padding: 8px 16px;
     border-radius: 6px;
     font-family: 'Oswald', sans-serif;
@@ -1384,9 +1582,9 @@
     font-size: 13px;
   }
   .entry-mode-tab.active {
-    background: var(--felt);
-    color: var(--cream);
-    border-color: var(--felt);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
+    border-color: var(--fill-strong);
   }
 
   /* Quick-total (DartConnect-style) keypad */
@@ -1398,7 +1596,7 @@
     font-size: 40px;
     font-weight: 700;
     text-align: center;
-    background: rgba(27,26,20,0.06);
+    background: var(--panel-raise-2);
     border-radius: 8px;
     padding: 10px;
     margin-bottom: 10px;
@@ -1410,8 +1608,8 @@
     margin-bottom: 10px;
   }
   .quick-shortcut-btn {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
     border: none;
     border-radius: 6px;
     padding: 10px 0;
@@ -1426,9 +1624,9 @@
     margin-bottom: 10px;
   }
   .quick-digit-btn, .quick-back-btn, .quick-enter-btn {
-    background: #fff;
-    border: 1px solid #cfc4a3;
-    color: var(--ink);
+    background: var(--field-bg);
+    border: 1px solid var(--panel-border);
+    color: var(--on-panel);
     border-radius: 6px;
     padding: 14px 0;
     font-family: 'Oswald', sans-serif;
@@ -1436,12 +1634,12 @@
     font-weight: 600;
   }
   .quick-digit-btn.quick-zero { grid-column: span 1; }
-  .quick-back-btn { background: rgba(183,48,42,0.12); }
-  .quick-enter-btn { background: rgba(47,122,77,0.15); }
+  .quick-back-btn { background: var(--danger-wash); }
+  .quick-enter-btn { background: var(--positive-wash); }
   .quick-miss-btn {
     width: 100%;
-    background: var(--red);
-    color: var(--cream);
+    background: var(--danger);
+    color: var(--on-chrome);
     border: none;
     border-radius: 6px;
     padding: 12px 0;
@@ -1452,7 +1650,7 @@
   select#manual-ring {
     padding: 8px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
+    border: 1px solid var(--panel-border);
     font-family: 'Inter', sans-serif;
   }
 
@@ -1477,9 +1675,9 @@
     grid-template-columns: 1fr 1.4fr 0.8fr;
     gap: 8px;
     padding: 6px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.08);
+    border-bottom: 1px solid var(--panel-raise-3);
   }
-  .log-row.bust { color: var(--red); font-weight: 600; }
+  .log-row.bust { color: var(--danger); font-weight: 600; }
 
   /* ---------------------------------------------------------------------
      Accounts
@@ -1495,25 +1693,25 @@
     gap: 8px;
     padding: 5px 10px 5px 6px;
     border-radius: 999px;
-    border: 1px solid rgba(239, 230, 210, 0.3);
-    background: rgba(239, 230, 210, 0.08);
-    color: var(--cream);
+    border: 1px solid var(--chrome-border);
+    background: var(--chrome-raise-1);
+    color: var(--on-chrome);
     font-family: 'Inter', sans-serif;
     font-size: 13px;
     cursor: pointer;
   }
-  header .account-chip:hover { background: rgba(239, 230, 210, 0.16); }
+  header .account-chip:hover { background: var(--chrome-raise-hover); }
   .account-chip-avatar {
     width: 24px;
     height: 24px;
     border-radius: 50%;
     object-fit: cover;
-    background: var(--felt-light);
+    background: var(--chrome-bg-hi);
     display: grid;
     place-items: center;
     font-family: 'Oswald', sans-serif;
     font-size: 12px;
-    color: var(--gold);
+    color: var(--accent);
     overflow: hidden;
     flex: none;
   }
@@ -1525,15 +1723,15 @@
     flex: 1;
     padding: 9px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: rgba(27,26,20,0.04);
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
     font-family: 'Oswald', sans-serif;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     cursor: pointer;
   }
-  .auth-tab.active { background: var(--gold); border-color: var(--gold); }
+  .auth-tab.active { background: var(--accent); border-color: var(--accent); }
 
   .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
   .field label { font-weight: 600; font-size: 13px; }
@@ -1542,9 +1740,9 @@
     font-size: 15px;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
     width: 100%;
   }
   .field .hint { font-size: 12px; opacity: 0.65; }
@@ -1561,8 +1759,8 @@
     font-size: 13px;
     display: none;
   }
-  .form-message.error { display: block; background: rgba(183,48,42,0.12); color: var(--red); }
-  .form-message.ok { display: block; background: rgba(47,122,77,0.14); color: var(--green-ring); }
+  .form-message.error { display: block; background: var(--danger-wash); color: var(--danger); }
+  .form-message.ok { display: block; background: var(--positive-wash); color: var(--positive); }
 
   .account-header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
   .account-avatar {
@@ -1570,8 +1768,8 @@
     height: 56px;
     border-radius: 50%;
     object-fit: cover;
-    background: var(--felt);
-    color: var(--gold);
+    background: var(--fill-strong);
+    color: var(--accent);
     display: grid;
     place-items: center;
     font-family: 'Oswald', sans-serif;
@@ -1589,7 +1787,7 @@
     font-size: 15px;
     margin: 22px 0 10px;
     padding-top: 16px;
-    border-top: 1px solid rgba(27,26,20,0.12);
+    border-top: 1px solid var(--panel-raise-4);
   }
   /* The rematch row sits under the winner banner: a button, then whatever the
      handshake has to say, then Accept/Decline when it is this player's move.
@@ -1615,9 +1813,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(239, 230, 210, 0.08);
-    border: 1px solid rgba(239, 230, 210, 0.3);
-    color: var(--cream);
+    background: var(--chrome-raise-1);
+    border: 1px solid var(--chrome-border);
+    color: var(--on-chrome);
     border-radius: 999px;
     width: 34px;
     height: 34px;
@@ -1630,12 +1828,12 @@
     cursor: pointer;
   }
   .settings-btn > span { display: block; transform: translateY(0.5px); }
-  .settings-btn:hover { background: rgba(239, 230, 210, 0.16); }
+  .settings-btn:hover { background: var(--chrome-raise-hover); }
 
   .settings-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(11, 32, 24, 0.72);
+    background: var(--overlay-backdrop);
     z-index: 60; /* above the immersive video stage */
     display: flex;
     align-items: flex-start;
@@ -1644,8 +1842,8 @@
     overflow-y: auto;
   }
   .settings-sheet {
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--panel-bg-alt);
+    color: var(--on-panel);
     border-radius: 14px;
     width: min(560px, 100%);
     padding: 18px 20px 22px;
@@ -1668,7 +1866,7 @@
     border: none;
     font-size: 26px;
     line-height: 1;
-    color: var(--ink);
+    color: var(--on-panel);
     opacity: 0.6;
     cursor: pointer;
     padding: 0 4px;
@@ -1687,7 +1885,7 @@
     background: none;
     border: none;
     padding: 4px 2px;
-    color: var(--ink);
+    color: var(--on-panel);
     opacity: 0.7;
     font-family: 'Inter', sans-serif;
     font-size: 13px;
@@ -1696,16 +1894,25 @@
   }
   .link-btn:hover { opacity: 1; }
   .btn-ink {
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
   }
   .btn-ink:hover { filter: brightness(1.15); }
   .btn-quiet {
     background: transparent;
-    color: var(--ink);
-    border: 1px solid #cfc4a3;
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
   }
-  .btn-quiet:hover { background: rgba(27,26,20,0.06); }
+  .btn-quiet:hover { background: var(--panel-raise-2); }
+  /* The secondary button as it appears ON a light panel rather than on the
+     dark page. This was fourteen copies of the same inline style attribute,
+     which is exactly the kind of thing no theme can ever reach. Must stay
+     after .btn-secondary to win on source order. */
+  .btn-soft {
+    background: var(--panel-raise-3);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
+  }
 
   .checkbox-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
   .checkbox-row input { margin-top: 3px; flex: none; }
@@ -1724,15 +1931,15 @@
   .account-nav-btn {
     padding: 7px 14px;
     border-radius: 999px;
-    border: 1px solid rgba(239, 230, 210, 0.3);
-    background: rgba(239, 230, 210, 0.08);
-    color: var(--cream);
+    border: 1px solid var(--chrome-border);
+    background: var(--chrome-raise-1);
+    color: var(--on-chrome);
     font-family: 'Inter', sans-serif;
     font-size: 13px;
     white-space: nowrap;
     cursor: pointer;
   }
-  .account-nav-btn.active { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+  .account-nav-btn.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
   .account-section-head {
     display: flex;
@@ -1752,7 +1959,7 @@
     gap: 12px;
     align-items: center;
     padding: 12px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .history-row:last-child { border-bottom: none; }
   /* The result is the first thing read off a row, so it is a shape and a
@@ -1764,10 +1971,10 @@
     text-align: center;
     padding: 4px 0;
     border-radius: 6px;
-    background: rgba(27,26,20,0.08);
+    background: var(--panel-raise-3);
   }
-  .history-result.win { background: rgba(47,122,77,0.18); color: var(--green-ring); }
-  .history-result.loss { background: rgba(183,48,42,0.12); color: var(--red); }
+  .history-result.win { background: var(--positive-wash); color: var(--positive); }
+  .history-result.loss { background: var(--danger-wash); color: var(--danger); }
   .history-opponent { font-weight: 600; }
   .history-detail { font-size: 12px; opacity: 0.7; margin-top: 2px; }
   .history-score { font-family: 'Oswald', sans-serif; font-size: 20px; text-align: right; }
@@ -1787,7 +1994,7 @@
     margin-bottom: 4px;
   }
   .stat-tile {
-    background: rgba(27,26,20,0.045);
+    background: var(--panel-raise-1);
     border-radius: 10px;
     padding: 12px 14px;
   }
@@ -1795,7 +2002,7 @@
     font-family: 'Oswald', sans-serif;
     font-size: 26px;
     line-height: 1.1;
-    color: var(--felt);
+    color: var(--fill-strong);
   }
   .stat-label { font-size: 12px; opacity: 0.7; margin-top: 3px; }
   /* Definitions that are choices rather than facts (checkout %, white horses)
@@ -1814,9 +2021,9 @@
   .trend-controls select {
     padding: 6px 10px;
     border-radius: 6px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
   }
 
   .chart-block { margin-bottom: 22px; }
@@ -1829,13 +2036,23 @@
   }
   .chart { position: relative; }
   .chart svg { width: 100%; height: 200px; display: block; overflow: visible; }
+  /* The marks themselves. charts.js emits these class names instead of fill
+     and stroke attributes, for the same reason dartboard.js does: an SVG
+     presentation attribute cannot read a custom property, so a themed chart
+     would otherwise have to be redrawn rather than repainted. Single-series
+     by design - see the long note at the top of charts.js. */
+  .chart-grid { stroke: var(--panel-raise-4); }
+  .chart-label { fill: var(--on-panel-dim); }
+  .chart-series-stroke { stroke: var(--chart-series); }
+  .chart-series-fill { fill: var(--chart-series); }
+  .chart-series-dot { fill: var(--chart-series); stroke: var(--panel-bg); }
   .chart-empty { font-size: 13px; opacity: 0.6; margin: 4px 0 0; }
 
   .chart-tip {
     position: absolute;
     transform: translate(-50%, -130%);
-    background: var(--felt);
-    color: var(--cream);
+    background: var(--fill-strong);
+    color: var(--on-fill-strong);
     padding: 6px 9px;
     border-radius: 7px;
     font-size: 12px;
@@ -1851,13 +2068,13 @@
   .chart-table th, .chart-table td {
     text-align: left;
     padding: 5px 6px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .chart-table th { font-weight: 600; opacity: 0.7; }
   .chart-table td:last-child, .chart-table th:last-child { text-align: right; }
 
   .improved-note {
-    background: rgba(47,122,77,0.12);
+    background: var(--positive-wash);
     border-radius: 10px;
     padding: 12px 14px;
     font-size: 13px;
@@ -1875,8 +2092,8 @@
     gap: 8px;
     padding: 8px 12px;
     border-radius: 999px;
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
     font-size: 13px;
     font-weight: 600;
   }
@@ -1888,7 +2105,7 @@
     gap: 12px;
     align-items: center;
     padding: 11px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .achievement-row:last-child { border-bottom: none; }
   .achievement-mark {
@@ -1897,10 +2114,10 @@
     border-radius: 50%;
     display: grid;
     place-items: center;
-    background: rgba(27,26,20,0.09);
+    background: var(--panel-raise-3);
     font-size: 15px;
   }
-  .achievement-row.earned .achievement-mark { background: var(--gold); }
+  .achievement-row.earned .achievement-mark { background: var(--accent); }
   .achievement-name { font-weight: 600; }
   .achievement-desc { font-size: 12px; opacity: 0.7; margin-top: 2px; }
   .achievement-when { font-size: 12px; opacity: 0.6; text-align: right; }
@@ -1917,8 +2134,8 @@
   /* Shown when a match unlocks something. Deliberately in the game panel and
      not a modal - it appears next to the winner banner and never interrupts. */
   .unlock-toast {
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
     border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 14px;
@@ -1939,9 +2156,9 @@
     min-width: 0;
     padding: 8px 10px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
   }
 
   .board-row {
@@ -1950,19 +2167,19 @@
     gap: 10px;
     align-items: center;
     padding: 9px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .board-row:last-child { border-bottom: none; }
   /* The viewer's own row, wherever it appears. Marked with a background AND
      the word "You", never colour alone. */
-  .board-row.you { background: rgba(199,162,74,0.22); border-radius: 8px; }
+  .board-row.you { background: var(--accent-wash); border-radius: 8px; }
   .board-rank { font-family: 'Oswald', sans-serif; font-size: 16px; opacity: 0.75; }
   .board-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
   .board-you-tag { font-size: 11px; opacity: 0.7; margin-left: 6px; }
   .board-value { font-family: 'Oswald', sans-serif; font-size: 19px; }
   .board-avatar {
     width: 28px; height: 28px; border-radius: 50%;
-    background: var(--felt); color: var(--gold);
+    background: var(--fill-strong); color: var(--accent);
     display: grid; place-items: center; font-size: 11px;
     font-family: 'Oswald', sans-serif; overflow: hidden;
   }
@@ -1981,11 +2198,34 @@
     gap: 10px;
     align-items: center;
     padding: 9px 4px;
-    border-bottom: 1px solid rgba(27,26,20,0.1);
+    border-bottom: 1px solid var(--panel-hairline);
   }
   .person-row:last-child { border-bottom: none; }
   .person-name { font-weight: 600; }
   .person-sub { font-size: 12px; opacity: 0.65; }
+  /* Their averages, under the status line. Quieter than the status and set in
+     tabular figures so a column of them lines up and can be compared down the
+     list rather than read one row at a time - which is the entire reason they
+     are here and not only on the card. Empty until the profile arrives, and
+     empty forever for anyone who keeps their record private, so it must collapse
+     to nothing rather than reserve a blank line. */
+  .person-stats {
+    font-size: 12px;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+  }
+  .person-stats:empty { display: none; }
+  /* The "who can challenge you in here" note, on the room title. Quieter and
+     un-uppercased against the section heading it rides on, because it is a
+     sentence rather than a label. */
+  .room-scope-note {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.6;
+  }
   .person-actions { display: flex; gap: 6px; }
   .person-actions button {
     padding: 6px 11px;
@@ -2014,7 +2254,7 @@
     gap: 7px;
     padding: 4px 10px;
     border-radius: 8px;
-    background: rgba(27,26,20,0.08);
+    background: var(--panel-raise-3);
     font-family: 'Oswald', sans-serif;
   }
   .rank-badge .rank-letters {
@@ -2023,10 +2263,10 @@
     line-height: 1;
   }
   .rank-badge .rank-value { font-size: 13px; opacity: 0.75; }
-  .rank-badge.unranked .rank-letters { color: var(--ink); opacity: 0.45; font-size: 14px; }
+  .rank-badge.unranked .rank-letters { color: var(--on-panel); opacity: 0.45; font-size: 14px; }
 
   .watch-panel {
-    background: rgba(15,61,46,0.08);
+    background: var(--felt-wash);
     border-radius: 12px;
     padding: 14px 16px;
     margin: 14px 0;
@@ -2034,20 +2274,20 @@
   .watch-board { display: flex; gap: 12px; flex-wrap: wrap; }
   .watch-player {
     flex: 1 1 140px;
-    background: rgba(27,26,20,0.05);
+    background: var(--panel-raise-2);
     border-radius: 10px;
     padding: 10px 12px;
   }
   /* The player currently throwing. Marked with a ring AND the word, never the
      ring alone. */
-  .watch-player.throwing { outline: 2px solid var(--gold); }
+  .watch-player.throwing { outline: 2px solid var(--accent); }
   .watch-score { font-family: 'Oswald', sans-serif; font-size: 30px; line-height: 1.1; }
   .watch-name { font-size: 13px; font-weight: 600; }
   .watch-turn { font-size: 11px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.04em; }
 
   .rating-pair { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .rating-block {
-    background: rgba(27,26,20,0.045);
+    background: var(--panel-raise-1);
     border-radius: 10px;
     padding: 12px 14px;
     flex: 1 1 200px;
@@ -2056,7 +2296,7 @@
 
   .lobby-head-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .player-card {
-    background: rgba(27,26,20,0.05);
+    background: var(--panel-raise-2);
     border-radius: 12px;
     padding: 14px 16px;
     margin-bottom: 14px;
@@ -2069,7 +2309,7 @@
   }
   .player-card .stat-grid { margin-top: 12px; }
   /* The name is a button, so it has to look like one without shouting. */
-  .person-name.clickable { cursor: pointer; text-decoration: underline dotted rgba(27,26,20,0.35); }
+  .person-name.clickable { cursor: pointer; text-decoration: underline dotted var(--on-panel-faint); }
 
   .looking-toggle {
     display: inline-flex;
@@ -2090,9 +2330,9 @@
     min-width: 0;
     padding: 9px 11px;
     border-radius: 8px;
-    border: 1px solid #cfc4a3;
-    background: #fff;
-    color: var(--ink);
+    border: 1px solid var(--panel-border);
+    background: var(--field-bg);
+    color: var(--on-panel);
     font-family: 'Inter', sans-serif;
     font-size: 14px;
   }
@@ -2102,11 +2342,11 @@
   .status-dot {
     width: 8px; height: 8px; border-radius: 50%;
     display: inline-block; margin-right: 6px; flex: none;
-    background: rgba(27,26,20,0.3);
+    background: var(--panel-raise-6);
   }
-  .status-looking { background: var(--green-ring); }
-  .status-lobby, .status-online { background: var(--gold); }
-  .status-in_match { background: var(--red); }
+  .status-looking { background: var(--positive); }
+  .status-lobby, .status-online { background: var(--accent); }
+  .status-in_match { background: var(--danger); }
 
   /* A match owns the tab. The lobby, the rooms, the chat and the create/join
      panel are all "between matches" furniture, and leaving them under a live
@@ -2122,8 +2362,8 @@
     position: sticky;
     top: 0;
     z-index: 40;
-    background: var(--gold);
-    color: var(--ink);
+    background: var(--accent);
+    color: var(--on-accent);
     border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 14px;
@@ -2137,7 +2377,7 @@
   .challenge-alert .challenge-text { font-size: 15px; }
 
   .challenge-card {
-    background: rgba(199,162,74,0.22);
+    background: var(--accent-wash);
     border-radius: 10px;
     padding: 12px 14px;
     margin-bottom: 10px;
@@ -2154,24 +2394,24 @@
   .chat-log {
     max-height: 220px;
     overflow-y: auto;
-    border: 1px solid rgba(27,26,20,0.12);
+    border: 1px solid var(--panel-raise-4);
     border-radius: 10px;
     padding: 10px 12px;
     font-size: 13px;
-    background: rgba(27,26,20,0.03);
+    background: var(--panel-raise-1);
   }
   .chat-line { margin-bottom: 5px; word-break: break-word; }
   .chat-line .chat-who { font-weight: 600; }
   .chat-line.system { opacity: 0.6; font-style: italic; }
-  .chat-line.whisper .chat-who { color: var(--red); }
+  .chat-line.whisper .chat-who { color: var(--danger); }
   .chat-empty { opacity: 0.55; }
 
   /* Shown only on a deployment whose branch isn't main - see version.js. Uses
      the warning red rather than the brand gold precisely because it should not
      look like part of the design. */
   .env-banner {
-    background: var(--red);
-    color: #fff;
+    background: var(--danger);
+    color: var(--on-solid);
     text-align: center;
     padding: 7px 12px;
     font-size: 12px;
@@ -2181,7 +2421,1617 @@
     top: 0;
     z-index: 50;
   }
+  /* Belt and braces for the select popup. color-scheme above is the real fix
+     and handles this on its own in current Chrome, Firefox and Safari - but
+     some builds draw the option list from these properties instead, and an
+     unreadable format picker is worth two lines of insurance. */
+  select option {
+    background-color: var(--field-bg);
+    color: var(--on-panel);
+  }
+
+  /* ---- The Customize panel, at the top of the settings sheet ---- */
+  .customize-panel { margin-bottom: 18px; }
+  .cz-head { margin-bottom: 14px; }
+  .cz-title {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 16px;
+    margin: 0;
+  }
+  .cz-blurb { font-size: 12px; opacity: 0.7; margin: 2px 0 0; }
+
+  .cz-field { margin-bottom: 16px; }
+  .cz-label {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 12px;
+    opacity: 0.75;
+    margin-bottom: 6px;
+  }
+  .cz-hint { font-size: 11.5px; opacity: 0.6; margin-top: 5px; }
+  .cz-note { font-size: 12px; margin: 6px 0 0; min-height: 1em; }
+  .cz-note.warn { color: var(--danger); }
+  .cz-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .cz-segmented {
+    display: inline-flex;
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .cz-seg {
+    padding: 7px 16px;
+    background: none;
+    border: none;
+    border-right: 1px solid var(--panel-border);
+    color: var(--on-panel);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .cz-seg:last-child { border-right: none; }
+  .cz-seg.active { background: var(--accent); color: var(--on-accent); }
+
+  .cz-check { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 13px; cursor: pointer; }
+  .cz-check input { flex: none; }
+  .cz-sound-extras { margin-top: 8px; }
+  .cz-slider { width: 180px; display: block; margin-top: 8px; accent-color: var(--accent); }
+  .cz-swatches { display: flex; flex-wrap: wrap; gap: 9px; }
+  .cz-swatch {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--swatch, var(--accent));
+    border: 2px solid transparent;
+    box-shadow: 0 0 0 1px var(--panel-border) inset;
+    cursor: pointer;
+    padding: 0;
+    position: relative;
+  }
+  .cz-swatch.selected { border-color: var(--on-panel); }
+  /* The custom well shows a hue ring until a colour is chosen, so it reads as
+     "anything you like" rather than as a ninth preset. */
+  .cz-swatch-custom {
+    background: var(--swatch, conic-gradient(#c0392b, #e0902f, #c7a24a, #2f7a4d, #3d6bb8, #8e5ba6, #c0392b));
+  }
+  .cz-colour-input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  /* ---- Theme cards. Each one is a real scrap of scoreboard rendered IN the
+     theme it offers - see themePreview() in customize.js. A colour swatch
+     cannot answer the only question that matters about a darts theme, which is
+     whether the big number is readable. ---- */
+  .theme-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+    gap: 10px;
+  }
+  .theme-card {
+    border: 2px solid transparent;
+    box-shadow: 0 0 0 1px var(--panel-border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--chrome-bg);
+  }
+  .theme-card.selected { border-color: var(--accent); }
+  .theme-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .theme-card-stage {
+    position: relative;
+    height: 66px;
+    background: var(--panel-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .theme-card-board {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle,
+        var(--board-red) 0 18%,
+        var(--board-green) 18% 30%,
+        var(--board-light) 30% 62%,
+        var(--board-dark) 62% 78%,
+        var(--board-red) 78% 100%);
+    box-shadow: 0 0 0 1.5px var(--board-wire);
+  }
+  .theme-card-score {
+    font-family: 'Oswald', sans-serif;
+    font-size: 27px;
+    font-weight: 700;
+    color: var(--on-panel);
+    margin-left: 16px;
+  }
+  .theme-card-chip {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    font-size: 9.5px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .theme-card-name {
+    font-size: 11.5px;
+    text-align: center;
+    padding: 5px 4px;
+    color: var(--on-chrome);
+    background: var(--chrome-bg);
+  }
+
+  .cz-reset-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+  .cz-reset { font-size: 12px; padding: 6px 12px; }
+
+  /* =====================================================================
+     THEMES
+
+     Themes are CSS, not JavaScript. A theme applied from script has to wait
+     for script, which is the very flash the inline bootstrap below exists to
+     prevent - and it would have to re-run on every dynamically rendered
+     panel. As plain selectors the browser does the work, before first paint,
+     for free.
+
+     They are written as [data-theme=...] rather than :root[data-theme=...] on
+     purpose. Custom properties inherit, so scoping them to ANY element means
+     the theme picker can render a real, live preview simply by putting
+     data-theme on a card - the preview is the actual theme rather than a
+     drawing of it, and it cannot drift from the real thing.
+
+     WHAT DARK MODE ACTUALLY IS HERE. This app is already half dark: the page
+     chrome is felt green with cream text. So a dark theme is mostly about
+     flipping the PANELS - the light cards sitting on that chrome - which is
+     why each block below is short and mostly --panel-*. The overlay scale
+     inverts with them: ink-over-light becomes cream-over-dark.
+     ===================================================================== */
+
+  /* ---- The default theme's dark face ---- */
+  [data-mode="dark"] {
+    color-scheme: dark;
+    --chrome-bg: #0A1F17;
+    --chrome-bg-hi: #103026;
+
+    --panel-bg: #16251E;
+    --panel-bg-alt: #1B2D25;
+    --on-panel: #E8E2D2;
+    --on-panel-muted: #93A099;
+    --on-panel-dim: rgba(232,226,210,0.55);
+    --on-panel-faint: rgba(232,226,210,0.35);
+
+    /* The raise scale inverts: over a dark panel a "raised" surface is
+       lighter, not darker. Same steps, same names, opposite direction. */
+    --panel-raise-1: rgba(232,226,210,0.04);
+    --panel-raise-2: rgba(232,226,210,0.07);
+    --panel-raise-3: rgba(232,226,210,0.1);
+    --panel-raise-4: rgba(232,226,210,0.15);
+    --panel-raise-5: rgba(232,226,210,0.28);
+    --panel-raise-6: rgba(232,226,210,0.34);
+    --panel-hairline: rgba(232,226,210,0.12);
+    --panel-rule: rgba(232,226,210,0.18);
+    --panel-border: rgba(232,226,210,0.22);
+
+    --field-bg: #0D1A14;
+    --field-ghost: rgba(232,226,210,0.12);
+
+    /* This is why --fill-strong exists as its own token. It is the brand dark
+       used as a solid fill on a light panel; on a DARK panel it has to become
+       light or the button disappears into its own background. It moves in the
+       opposite direction to the page. */
+    --fill-strong: #E8E2D2;
+    --on-fill-strong: #14201A;
+
+    --chart-series: #6FBF8F;
+    --on-solid: #14201A;
+  }
+
+  /* ---- Oche Night: the lights-down, charcoal-and-gold one. Dark whatever
+     the mode says, because a theme called Oche Night with a light face would
+     be two different themes wearing one name. ---- */
+  /* Dark whatever the brightness setting says, so the native widgets are too. */
+  [data-theme="night"] {
+    color-scheme: dark;
+    --chrome-bg: #14140F;
+    --chrome-bg-hi: #1F1E17;
+    --on-chrome: #EDE7D8;
+    --on-chrome-soft: rgba(237,231,216,0.85);
+    --on-chrome-dim: rgba(237,231,216,0.75);
+    --on-chrome-muted: rgba(237,231,216,0.62);
+    --chrome-raise-1: rgba(237,231,216,0.07);
+    --chrome-raise-2: rgba(237,231,216,0.11);
+    --chrome-raise-3: rgba(237,231,216,0.18);
+    --chrome-raise-hover: rgba(237,231,216,0.15);
+    --chrome-border: rgba(237,231,216,0.24);
+    --chrome-border-soft: rgba(237,231,216,0.15);
+    --chrome-border-hi: rgba(237,231,216,0.34);
+
+    --panel-bg: #201F18;
+    --panel-bg-alt: #272620;
+    --on-panel: #EDE7D8;
+    --on-panel-muted: #9A9484;
+    --on-panel-dim: rgba(237,231,216,0.55);
+    --on-panel-faint: rgba(237,231,216,0.35);
+    --panel-raise-1: rgba(237,231,216,0.04);
+    --panel-raise-2: rgba(237,231,216,0.07);
+    --panel-raise-3: rgba(237,231,216,0.1);
+    --panel-raise-4: rgba(237,231,216,0.15);
+    --panel-raise-5: rgba(237,231,216,0.28);
+    --panel-raise-6: rgba(237,231,216,0.34);
+    --panel-hairline: rgba(237,231,216,0.12);
+    --panel-rule: rgba(237,231,216,0.18);
+    --panel-border: rgba(237,231,216,0.2);
+
+    --field-bg: #16150F;
+    --field-ghost: rgba(237,231,216,0.12);
+    --fill-strong: #EDE7D8;
+    --on-fill-strong: #1A1913;
+    --overlay-backdrop: rgba(10,10,7,0.78);
+    --chart-series: #D8B45E;
+    --on-solid: #1A1913;
+    --felt-wash: rgba(237,231,216,0.07);
+  }
+
+  /* ---- Broadcast: the televised look. Near-black, paper white, one red.
+     Deliberately the highest-contrast theme in the set - it is the one to
+     reach for when the screen is across the room and the light is bad, and
+     it doubles as the high-contrast option rather than being a separate
+     "accessibility mode" nobody finds. ---- */
+  [data-theme="broadcast"] {
+    color-scheme: dark;
+    --chrome-bg: #08090B;
+    --chrome-bg-hi: #121419;
+    --on-chrome: #FFFFFF;
+    --on-chrome-soft: rgba(255,255,255,0.92);
+    --on-chrome-dim: rgba(255,255,255,0.82);
+    --on-chrome-muted: rgba(255,255,255,0.7);
+    --chrome-raise-1: rgba(255,255,255,0.1);
+    --chrome-raise-2: rgba(255,255,255,0.16);
+    --chrome-raise-3: rgba(255,255,255,0.24);
+    --chrome-raise-hover: rgba(255,255,255,0.2);
+    --chrome-border: rgba(255,255,255,0.45);
+    --chrome-border-soft: rgba(255,255,255,0.28);
+    --chrome-border-hi: rgba(255,255,255,0.6);
+
+    --panel-bg: #16181D;
+    --panel-bg-alt: #1E2128;
+    --on-panel: #FFFFFF;
+    --on-panel-muted: #AEB4BF;
+    --on-panel-dim: rgba(255,255,255,0.72);
+    --on-panel-faint: rgba(255,255,255,0.5);
+    --panel-raise-1: rgba(255,255,255,0.05);
+    --panel-raise-2: rgba(255,255,255,0.09);
+    --panel-raise-3: rgba(255,255,255,0.14);
+    --panel-raise-4: rgba(255,255,255,0.2);
+    --panel-raise-5: rgba(255,255,255,0.34);
+    --panel-raise-6: rgba(255,255,255,0.42);
+    --panel-hairline: rgba(255,255,255,0.18);
+    --panel-rule: rgba(255,255,255,0.26);
+    --panel-border: rgba(255,255,255,0.38);
+
+    --field-bg: #0B0D10;
+    --field-ghost: rgba(255,255,255,0.14);
+    --fill-strong: #FFFFFF;
+    --on-fill-strong: #08090B;
+    --overlay-backdrop: rgba(4,5,6,0.82);
+    --danger: #FF4438;
+    --positive: #35D07F;
+    --chart-series: #FFFFFF;
+    --on-solid: #FFFFFF;
+    --felt-wash: rgba(255,255,255,0.08);
+  }
+
+  /* ---- High contrast, as an amplifier on whatever theme is chosen rather
+     than a fourth theme. Borders and dividers are what disappear first on a
+     dim screen or tired eyes, so they are what this strengthens. ---- */
+  [data-contrast="high"] {
+    --panel-border: var(--on-panel);
+    --panel-rule: var(--on-panel-dim);
+    --panel-hairline: var(--on-panel-faint);
+    --chrome-border: var(--on-chrome);
+    --on-panel-muted: var(--on-panel);
+    --on-chrome-muted: var(--on-chrome-soft);
+  }
+  [data-contrast="high"] *:focus-visible { outline-width: 3px; }
+
+  /* ---- Accent swatches. Curated rather than a colour wheel: a casual player
+     should not be able to make their own scoreboard unreadable, and every one
+     of these declares the text colour that survives on top of it. A custom
+     hex sets --accent from script and is contrast-checked there. ---- */
+  [data-accent="tungsten"] { --accent: #9BA7B0; --on-accent: #14181B; }
+  [data-accent="oche"]     { --accent: #C0392B; --on-accent: #FFFFFF; }
+  [data-accent="baize"]    { --accent: #2F7A4D; --on-accent: #FFFFFF; }
+  [data-accent="chalk"]    { --accent: #3D6BB8; --on-accent: #FFFFFF; }
+  [data-accent="amber"]    { --accent: #E0902F; --on-accent: #1B1A14; }
+  [data-accent="plum"]     { --accent: #8E5BA6; --on-accent: #FFFFFF; }
+  [data-accent="slate"]    { --accent: #5C7A8A; --on-accent: #FFFFFF; }
+
+  /* ---- Reduced motion. Defaults from the OS (see prefs.js) and can be set
+     explicitly, because wanting a still app is not the same decision as
+     wanting a still operating system. Near-zero rather than `none`: a
+     transition of 0s can cancel transitionend handlers, and 0.01ms cannot. ---- */
+  [data-motion="reduced"] *,
+  [data-motion="reduced"] *::before,
+  [data-motion="reduced"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* =====================================================================
+     BOARD VIEW - how far away you are standing.
+
+     The single most valuable setting in this app, and the one no generic
+     personalization checklist would produce. Every app this borrows from is
+     used at one distance; a darts app is used at two that could not be more
+     different. On the sofa you are 40cm from a phone reading statistics. At
+     the oche you are two and a half metres from the screen, standing, holding
+     three darts, glancing at it for about four seconds between throws.
+
+     The app has only ever served the sofa. This serves the oche.
+
+     Scoped to the GAME PANELS alone. The lobby, the stats screens and the
+     setup form are all read close up even by someone playing across the room,
+     and blowing them up would just mean more scrolling.
+
+     Nothing is ever REMOVED, only re-proportioned. It is tempting to drop the
+     keypad at the largest step - if you are throwing from the oche something
+     else is doing the scoring - but "something else" is a Bluetooth board or a
+     camera that may not be connected, and an unreachable keypad means a game
+     nobody can score. The throw log shrinks rather than being filtered,
+     because rows are unshifted newest-first and a height is honest about that
+     where a :nth-child rule would silently depend on it.
+     ===================================================================== */
+
+  [data-boardview="room"] #big-score { font-size: 132px; }
+  [data-boardview="across"] #big-score { font-size: 184px; }
+
+  [data-boardview="room"] #turn-label { font-size: 20px; }
+  [data-boardview="across"] #turn-label { font-size: 26px; }
+
+  [data-boardview="room"] .player-tab-score { font-size: 26px; }
+  [data-boardview="across"] .player-tab-score { font-size: 34px; }
+  [data-boardview="room"] .player-tab-name { font-size: 13px; }
+  [data-boardview="across"] .player-tab-name { font-size: 15px; }
+
+  /* BOARD VIEW MUST NOT REACH INSIDE THE IMMERSIVE VIDEO STAGE.
+
+     When a camera is on, the online panel switches to .immersive and lays its
+     scoreboard out at ABSOLUTE offsets computed against fixed type sizes - a
+     40px score, a dart strip pinned 14px from the top. Scaling the type
+     without moving the offsets does not enlarge that layout, it breaks it: the
+     scores drift out of their band and print over the video.
+
+     These rules and the immersive ones have identical specificity, so source
+     order alone decided it, and these come later. :not(.immersive) is what
+     makes the exclusion explicit rather than accidental. */
+  [data-boardview="room"] .panel:not(.immersive) .online-score-value { font-size: 76px; }
+  [data-boardview="across"] .panel:not(.immersive) .online-score-value { font-size: 108px; }
+  [data-boardview="room"] .panel:not(.immersive) .online-score-label { font-size: 15px; }
+  [data-boardview="across"] .panel:not(.immersive) .online-score-label { font-size: 17px; }
+
+  [data-boardview="room"] .panel:not(.immersive) .dart-slot { width: 76px; height: 56px; font-size: 21px; }
+  [data-boardview="across"] .panel:not(.immersive) .dart-slot { width: 92px; height: 66px; font-size: 25px; }
+
+  /* The score takes the room, and the board gives it up: at two metres nobody
+     is tapping a segment, they are throwing at the real one. */
+  [data-boardview="room"] .game-top { grid-template-columns: 1.7fr 1fr; }
+  [data-boardview="across"] .game-top { grid-template-columns: 2.4fr 1fr; }
+  [data-boardview="across"] .dartboard-wrap { max-width: 210px; }
+
+  [data-boardview="room"] #throw-log { max-height: 300px; font-size: 14px; }
+  [data-boardview="across"] #throw-log { max-height: 168px; font-size: 15px; }
+
+  [data-boardview="room"] .panel:not(.immersive) .match-bar { font-size: 15px; }
+  [data-boardview="across"] .panel:not(.immersive) .match-bar { font-size: 18px; }
+
+  /* LANDSCAPE ON A PHONE is the hardest case this mode has: roughly 390px of
+     height for a player row, a turn label, three dart slots and a score that is
+     supposed to be enormous. Sized off vh everywhere else, all of those shrink
+     together and none of them shrinks enough, so the score is what gives - it
+     is still by far the biggest thing on screen at 30vh, and it is the only
+     element with room to lose. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    .oche-mode { padding: 1.5vh 3vw; }
+    .oche-mode #big-score,
+    .oche-mode #online-big-score { font-size: clamp(60px, 30vh, 190px); }
+    .oche-mode .player-tab-score,
+    .oche-mode .online-score-value { font-size: clamp(22px, 11vh, 54px); }
+    .oche-mode .player-tab-name,
+    .oche-mode .online-score-label { font-size: clamp(10px, 4vh, 18px); }
+    .oche-mode #turn-label,
+    .oche-mode #online-turn-label { font-size: clamp(12px, 5vh, 22px); margin-bottom: 0.8vh; }
+    .oche-mode .dart-slot {
+      width: clamp(44px, 9vw, 96px);
+      height: clamp(28px, 11vh, 56px);
+      font-size: clamp(14px, 6vh, 28px);
+    }
+    .oche-mode #player-tabs,
+    .oche-mode .online-scoreboard { margin-bottom: 1vh; }
+    /* Half the screen for a keypad leaves nothing above it to score into. */
+    .oche-mode.oche-entry-open .entry-and-log,
+    .oche-mode.oche-entry-open #online-manual-section { height: 72vh; }
+
+    /* NO SEPARATE LANDSCAPE LAYOUT. There was one - video in a column down the
+       left, the panel padded to make room - and it was wrong twice over: it
+       made landscape a third design to maintain, and the centred score row
+       still flowed full-width underneath the absolutely-positioned column, so
+       "YOU 501" printed across the opponent's face.
+       Landscape gets the desktop treatment instead. A landscape phone reports
+       well under 900px wide, so the rules that matter are keyed on ORIENTATION
+       rather than width - see the score-on-camera block above. Only the type
+       sizes are tightened here, because 390px of height is genuinely short;
+       the layout itself is the same one. */
+    .oche-mode.immersive #big-score,
+    .oche-mode.immersive #online-big-score { font-size: clamp(56px, 28vh, 180px); }
+    /* A taller band here. Height is what landscape is short of, so a 24vh strip
+       leaves the cameras as postage stamps once they are no longer allowed to
+       stretch sideways to fill it. Only the variable changes - the tiles size
+       themselves from it. */
+    #online-game-panel.oche-mode #online-video-strip { --tile-h: min(34vh, 30vw); }
+    /* The pad needs NO size override here. It derives every dimension from
+       --ck-u, which is already viewport-relative, so a short landscape phone
+       shrinks it without a breakpoint saying so. What landscape does change is
+       the strip above it, which is smaller here and so reserves less. */
+    #online-game-panel.oche-mode.cricket-stage,
+    #game-panel.oche-mode.cricket-stage { padding-top: 7vh; padding-top: 7dvh; }
+  }
+
+  @media (max-width: 640px) {
+    /* A phone propped under the board is the commonest "across the room"
+       setup there is, and it is also the narrowest screen. The steps have to
+       come down or the score simply overflows its own panel. */
+    [data-boardview="room"] #big-score { font-size: 104px; }
+    [data-boardview="across"] #big-score { font-size: 128px; }
+    [data-boardview="across"] .dartboard-wrap { max-width: 100%; }
+    [data-boardview="room"] .panel:not(.immersive) .online-score-value { font-size: 62px; }
+    [data-boardview="across"] .panel:not(.immersive) .online-score-value { font-size: 78px; }
+  }
+
+  /* =====================================================================
+     OCHE VIEW - the arcade scoreboard.
+
+     Board View's last step, where the app stops being a page and becomes the
+     screen on the machine in the pub. See ocheview.js for why this restyles
+     the existing game panel instead of rendering a second scoreboard.
+
+     Everything here is sized in vh/vw rather than px. The whole point is to
+     fill whatever it is on - a 10" tablet under the board, a 40" TV, a phone
+     propped on a shelf - and a px score tuned for one of those is wrong on the
+     other two.
+     ===================================================================== */
+  .oche-mode {
+    position: fixed;
+    inset: 0;
+    /* THE DARTS STRIP'S GEOMETRY, IN ONE PLACE. It is absolutely positioned, so
+       it reserves no space - and anything that wants to sit clear of it has to
+       restate its height. Two copies of "how tall is a dart slot" is one that
+       drifts, and the copy that drifts is the reservation, which fails by
+       printing the score through the darts rather than by looking wrong on its
+       own. Both numbers below are read by the slot itself, by the strip's
+       offset, and by the reservation. */
+    --darts-top: 1.6vh;
+    --dart-slot-h: clamp(48px, 9vh, 120px);
+    /* THE PANEL'S OWN HEIGHT HAS TO BE dvh TOO, not just what is inside it.
+       `inset: 0` pins the bottom to the bottom of the LAYOUT viewport, which on
+       a phone is the one with the URL bar hidden - so the panel ended below the
+       visible area and took the control bar with it. End turn, Score and Exit
+       were sliced in half by the bottom of the screen while everything inside
+       the panel measured correctly, because the contents were already sized in
+       dvh and the box holding them was not.
+       top, bottom and height cannot all three apply: height wins and the wrong
+       bottom is ignored, which is exactly what is wanted here. */
+    height: 100vh;
+    height: 100dvh;
+    z-index: 200;
+    margin: 0;
+    border-radius: 0;
+    padding: 2.5vh 3vw;
+    padding: 2.5dvh 3vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-bg);
+  }
+  /* Fullscreen was granted: the element is already the whole screen, so the
+     fixed positioning above is redundant but harmless, and the padding still
+     applies. Kept as one rule so a refused request looks the same. */
+  .oche-mode:fullscreen { padding: 3vh 4vw; }
+
+  /* Browser furniture and everything that is not the score.
+     #online-status-label is an ID carrying an inline style, not a class - a
+     .online-status-label rule here matched nothing and left "Connected - good
+     luck!" sitting above the scoreboard. */
+  .oche-mode .actions-row,
+  .oche-mode .entry-and-log,
+  .oche-mode #online-manual-section,
+  .oche-mode .dartboard-wrap,
+  .oche-mode #online-av-row,
+  .oche-mode .setup-notice,
+  /* .end-match-row is a class and #online-throw-log is an id - they read alike
+     and are not. End match is also deliberately gone from in here: it is
+     destructive, and nobody should be able to hit it from two metres away when
+     Exit is right there and leads back to the panel that owns it. */
+  .oche-mode .end-match-row,
+  .oche-mode #online-throw-log,
+  .oche-mode #online-status-label { display: none; }
+
+  /* ---- Video in oche view ----
+     The cameras STAY. Hiding them was wrong: the reason you are playing online
+     rather than alone is on the other end of them, and a fullscreen scoreboard
+     that drops your opponent is a worse version of local play.
+     What changes is the emphasis. Immersive makes the camera the surface with
+     the score floating on it; here that is inverted - the score is why you
+     opened this mode, so the cameras become a band across the top and give up
+     the middle of the screen.
+     Scoped with the ID for the reason written beside --stage-h above: the
+     immersive tile rules are .immersive #online-video-strip > .video-tile,
+     three classes deep, and a class-only override loses to them. */
+  #online-game-panel.oche-mode #online-video-strip {
+    display: flex;
+    position: static;
+    flex: none;
+    /* Above the player row whatever the markup order happens to be. */
+    order: -1;
+    gap: 1vh;
+    /* THE STAGED CAMERA IS THE BACKGROUND, not a tile in a band. That is what
+       the immersive layout always did and what this mode spent several
+       iterations wrongly fighting: a scoreboard for the oche wants the picture
+       behind the number, not beside it. So the strip covers the whole panel and
+       sits at the back, and the score and turn label float over it.
+       Sized in one place: --tile-h is only the THUMBNAIL's height now, and is
+       left at the value that produced the corner tile as it stands. */
+    --tile-h: min(24vh, 34vw);
+    position: absolute;
+    inset: 0;
+    display: block;
+    height: auto;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    z-index: 0;
+  }
+  /* Full bleed, behind everything. */
+  #online-game-panel.oche-mode #online-video-strip > .video-tile.as-stage {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+  }
+  /* The scoring furniture has to be lifted above the video - a positioned
+     element paints over unpositioned flow content, so without this the score
+     would sit behind the picture.
+     Listed explicitly rather than as * with :not() exclusions. :not() carries
+     the specificity of its ARGUMENT, so :not(#online-video-strip) was quietly
+     worth an ID and made that rule (2,3,0) - which then beat every more
+     specific-looking override written afterwards, including the one meant to
+     move the darts. An explicit list has no hidden weight. */
+  #online-game-panel.oche-mode .online-scoreboard,
+  #online-game-panel.oche-mode #online-big-score,
+  #online-game-panel.oche-mode #online-turn-label,
+  #online-game-panel.oche-mode #online-cricket-board,
+  #online-game-panel.oche-mode .checkout-hint,
+  #online-game-panel.oche-mode #online-winner-banner {
+    position: relative;
+    z-index: 1;
+  }
+  /* With the band gone there is nothing pushing the score down the screen, so
+     it centres itself over the picture instead of sitting under the top edge. */
+  #online-game-panel.oche-mode.immersive { justify-content: center; }
+
+  /* THE THREE DARTS RUN ACROSS THE TOP CENTRE, which puts the whole top edge to
+     work: your camera in the left corner, this visit in the middle, the average
+     in the right corner - and the score alone in the centre of the screen with
+     nothing stacked under it.
+     Out of the flow, so the score stays centred on the picture rather than
+     being pushed down by them. ID-scoped because the z-index rule above sets
+     position: relative on flow children and would otherwise win. */
+  #online-game-panel.oche-mode #online-turn-darts,
+  #game-panel.oche-mode #turn-darts {
+    position: absolute;
+    top: var(--darts-top);
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    z-index: 2;
+  }
+
+  /* THE SMALL CAMERA GOES IN THE TOP-LEFT CORNER, out of the flow entirely, so
+     the main view keeps the middle of the band to itself rather than being
+     pushed off-centre by a second tile beside it.
+     The strip is position: static in here, so this resolves against the panel -
+     which is the fullscreen box - and lands in the corner of the screen rather
+     than the corner of the band. */
+  #online-game-panel.oche-mode #online-video-strip > .video-tile.as-thumb {
+    position: absolute;
+    top: 1.8vh;
+    left: 2vw;
+    height: calc(var(--tile-h) * 0.62);
+    width: calc(var(--tile-h) * 0.62 * 4 / 3);
+    z-index: 3;
+  }
+  /* THE TILES MUST NOT STRETCH.
+     flex: 1 1 0 made each one take half the band whatever shape the camera
+     actually was, so on a landscape phone a 24vh band became a 94px-tall,
+     425px-wide letterbox - and because both were forced to the same width
+     regardless of their source, two different cameras got cropped by different
+     amounts and stopped lining up.
+     Now the height is the band and the width comes from .video-tile's own
+     4:3 aspect-ratio, so both tiles are exactly as tall AND as wide as each
+     other whatever the two cameras happen to be. Identical boxes is what
+     "aligned" actually means here. */
+  /* BOTH DIMENSIONS ARE EXPLICIT, and that is the fix rather than a style
+     choice. width: auto plus a video at width: 100% is a cycle - the tile
+     waits on its content and the content waits on the tile - and aspect-ratio
+     is meant to break it but does not do so reliably for a flex item. The
+     staged tile resolved to ZERO WIDTH, which is why the opponent's camera
+     disappeared, and why both tile scores piled into one corner: each score is
+     positioned against its own tile's bottom edge, so a tile with no width
+     drops its score on top of the other one.
+     Computing the width from the shared --tile-h removes the cycle entirely. */
+  #online-game-panel.oche-mode #online-video-strip > .video-tile {
+    /* RELATIVE, not static. Static also cancels the immersive layout's
+       absolute positioning, which is why it was used - but .tile-score is
+       absolutely positioned against its own tile, and a static tile is not a
+       containing block. Both scores escaped to the panel and stacked on its
+       bottom edge, half of them clipped off the screen. Relative cancels the
+       immersive positioning just as well and keeps each score on its own
+       picture, which is where it is supposed to be. */
+    position: relative;
+    flex: 0 0 auto;
+    height: var(--tile-h);
+    width: calc(var(--tile-h) * 4 / 3);
+    margin: 0;
+    border-radius: 1.2vh;
+    overflow: hidden;
+  }
+  #online-game-panel.oche-mode #online-video-strip > .video-tile.hidden { display: none; }
+  /* .hidden is how the AV code says "nobody has a camera on", and it is only
+     0,1,0 - the rule above is 1,2,0 and would override it, leaving an empty
+     black band across the top of every oche view with no video in it. */
+  #online-game-panel.oche-mode #online-video-strip.hidden { display: none; }
+  /* THE STAGED VIDEO HAS TO BE RESIZED, and not resetting it is what made the
+     opponent's camera vanish while its tile still drew a border.
+     .immersive sizes the staged video with height: var(--stage-h) - and this
+     mode sets --stage-h to 0 to reclaim the band the immersive layout reserves.
+     The tile kept the explicit size given above, so the box was there; the
+     video inside it was zero pixels tall. Filling the tile is all that is
+     wanted here, which is what the tile does for every other video in the app. */
+  #online-game-panel.oche-mode #online-video-strip > .video-tile > video {
+    position: static;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* And say so when there is no picture. .immersive hides the placeholder on
+     the staged tile because its band is full-bleed and a caption would sit on
+     the video; in here an empty tile with no explanation just looks broken.
+     :not(.hidden) matters - renderAv toggles that class to mean "there IS a
+     picture", and forcing display would put the caption back over a live one. */
+  #online-game-panel.oche-mode #online-video-strip .video-tile-placeholder:not(.hidden) {
+    display: flex;
+  }
+  /* NO SCRIM ON THE SCORES IN HERE. .tile-score paints a gradient up from the
+     bottom of its tile, which is right for a small tile in a strip and wrong
+     once the staged tile IS the whole screen - it became a dark band across the
+     foot of the picture. A text shadow does the same job for two short strings
+     without dimming a quarter of the video. */
+  /* No "YOU" / "OPPONENT" in here. The score is sitting on the picture of the
+     player it belongs to, which already says whose it is - and the immersive
+     layout is close enough to a broadcast that a caption reads as clutter.
+     The label stays in the normal panel, where the two scores sit side by side
+     with no pictures to tell them apart. */
+  .oche-mode .tile-score-label { display: none; }
+  .oche-mode .tile-score {
+    /* With the label gone the number would drift left under space-between. */
+    justify-content: flex-end;
+    background: none;
+    /* An outline rather than a glow. The scrim existed to keep two short
+       strings readable over an arbitrary room, and a hard edge on the glyphs
+       does that without touching the picture at all - four offsets for the
+       border, one soft shadow underneath to lift it off a busy background. */
+    text-shadow:
+      1px 1px 0 rgba(0,0,0,0.95), -1px 1px 0 rgba(0,0,0,0.95),
+      1px -1px 0 rgba(0,0,0,0.95), -1px -1px 0 rgba(0,0,0,0.95),
+      0 2px 12px rgba(0,0,0,0.75);
+  }
+
+  /* On a phone the tiles are too small to carry a score as well as a face, so
+     the central row stays and the overlays go. Desktop does the opposite - see
+     the block below. */
+  @media (max-width: 899px) and (orientation: portrait) {
+    .oche-mode .tile-score { display: none; }
+  }
+
+  /* ---- Desktop: the score rides the camera ----
+     Each player's score sits on their own picture, so whoever is in the corner
+     takes their number to the corner with them and the big view keeps its own.
+     Swapping the big view swaps both, because .as-thumb is simply whichever
+     player is not staged - the existing view button already maintains that, so
+     "and vice versa" needs no new state.
+     It also stops the two numbers floating unattached over somebody's living
+     room, which is what a centred row does once a camera is behind it. */
+  /* Landscape is included by ORIENTATION, not width: a phone on its side
+     reports well under 900px, and "landscape should look like desktop" is
+     about shape rather than size. */
+  /* CRICKET KEEPS ITS SCOREBOARD, along the foot of the screen, cameras or not.
+     Everywhere else the scores ride the pictures and the centre of the screen
+     carries a big number, so a row as well would be saying it twice. Cricket
+     has no big number - the mark pad is the display - which leaves the points
+     with nowhere to live, and the machines put them exactly here: a player at
+     each end of the bottom edge. The tile scores go, so it is said once.
+     Ordered and floored the same way the no-video row is. */
+  /* The two scores FLANK the pad in the bottom corners rather than forming a
+     row beneath it. Out of the flow, so they cost no height at all - which is
+     what stopped the column running past the bottom of the screen and taking
+     the whole panel with it. It is also where they read best: the pad owns the
+     middle, and a player sits at each end the way a machine lays them out. */
+  #online-game-panel.oche-mode.cricket-stage .online-scoreboard,
+  #game-panel.oche-mode.cricket-stage #player-tabs {
+    display: flex;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 9.5vh;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin: 0;
+    padding: 0 3vw;
+    max-width: none;
+    z-index: 2;
+    pointer-events: none;
+  }
+  #online-game-panel.oche-mode.cricket-stage .online-score-box,
+  #game-panel.oche-mode.cricket-stage .player-tab {
+    flex: 0 0 auto;
+    min-width: 0;
+    background: none;
+    padding: 0;
+    text-align: center;
+  }
+  /* The rule that turns these on is five classes deep, so a five-class hide
+     only TIES and then loses on source order. An ID settles it outright. */
+  #online-game-panel.oche-mode.cricket-stage .tile-score { display: none; }
+  /* Local Cricket's big score is the same redundancy arriving by the other
+     route. In Cricket #big-score holds the player's POINTS, which is right on
+     the ordinary game screen and wrong here: the points already sit in the
+     tiles pinned at the bottom, and up here they were rendering at 318px and
+     taking three hundred pixels off the top of the stage. The pad then had
+     nowhere to go and ran under the control bar.
+     Online never hit this because its stage shows scores in the tiles from the
+     start; local play still had the x01 layout underneath it. */
+  #game-panel.oche-mode.cricket-stage #big-score { display: none; }
+  /* The pad is the scoreboard here, so everything above it is overhead and the
+     turn label is all that is left of it. Trimmed rather than removed - you do
+     need to know whose turn it is - but its 2vh margin and 3.2vh type were
+     sized for the x01 stage, where a 34vh number sits underneath and a couple
+     of vh either way is invisible. Here they come straight off the pad. */
+  /* No bottom margin in here. The label is the only thing in .game-top, which
+     centres it - and a margin on one side of a centred item shifts it by half,
+     which is exactly the equidistance being asked for. The 2vh it inherits is
+     for x01, where the label has the score above it and needs separating from
+     what follows. */
+  #online-game-panel.oche-mode.cricket-stage #online-turn-label,
+  #game-panel.oche-mode.cricket-stage #turn-label {
+    font-size: clamp(14px, 2.4vh, 30px);
+    font-size: clamp(14px, 2.4dvh, 30px);
+    margin-bottom: 0;
+  }
+
+  @media (min-width: 900px), (orientation: landscape) {
+    .oche-mode.immersive:not(.cricket-stage) .online-scoreboard { display: none; }
+    /* Both of these beat the immersive rules that hide them (0,3,0) at 0,4,0. */
+    .oche-mode.immersive .video-tile.as-stage .tile-score,
+    .oche-mode.immersive .video-tile.as-thumb .tile-score { display: flex; }
+    .oche-mode.immersive .video-tile.as-thumb .tile-score-value { display: inline; }
+
+    /* Lifted clear of the control bar along the bottom edge. The stage tile is
+       the whole screen in this layout, so its score sits on the very bottom
+       and was landing on the buttons - and, where the tile runs past the
+       viewport, being clipped by it. */
+    .oche-mode.immersive .video-tile.as-stage .tile-score {
+      padding: 40px 20px 14px;
+      bottom: 7.5vh;
+    }
+    .oche-mode.immersive .video-tile.as-stage .tile-score-label { font-size: 15px; }
+    .oche-mode.immersive .video-tile.as-stage .tile-score-value { font-size: 40px; }
+
+    .oche-mode.immersive .video-tile.as-thumb .tile-score {
+      padding: 26px 10px 7px;
+    }
+    .oche-mode.immersive .video-tile.as-thumb .tile-score-label { font-size: 11px; }
+    .oche-mode.immersive .video-tile.as-thumb .tile-score-value { font-size: 24px; }
+  }
+  /* With a band of video up top the number takes what is left rather than what
+     it would like. .immersive is the honest signal that a camera is actually
+     live - it is what the AV code already sets when any feed is staged. */
+  .oche-mode.immersive #big-score,
+  .oche-mode.immersive #online-big-score { font-size: clamp(70px, 25vh, 300px); }
+
+  /* THE IMMERSIVE STAGE RESERVATION MUST GO.
+     #online-game-panel.immersive reserves the whole camera band with
+     padding-top: var(--stage-h) - between 460 and 620px - and paints it solid
+     with ::before. Hiding the video strip does not reclaim either, so oche view
+     opened over a match with cameras on had half the screen as a black bar and
+     the score pushed off the bottom.
+     It needs the ID to win: .oche-mode.immersive is 0,2,0 and loses to 1,1,0
+     however far down the file it sits. */
+  /* EVERY overlay property is repeated here, not just the padding. The
+     immersive block also sets position: relative and overflow, at the same
+     1,1,0 - so .oche-mode's position: fixed lost to it and oche view opened
+     over a match with cameras was not an overlay at all: it sat in normal flow
+     under the header, which is where the 150px of dead space above the video
+     came from. Anything .immersive declares has to be answered here. */
+  #online-game-panel.oche-mode {
+    position: fixed;
+    inset: 0;
+    /* Same dvh height as .oche-mode above - and it has to be repeated for the
+       same reason everything else in this block is: .immersive declares its own
+       geometry at 1,1,0 and a class-only rule never reaches it. */
+    height: 100vh;
+    height: 100dvh;
+    z-index: 200;
+    margin: 0;
+    border-radius: 0;
+    padding: 2.5vh 3vw;
+    padding: 2.5dvh 3vw;
+    overflow: hidden;
+    --stage-h: 0px;
+    /* THESE THREE ARE THE ONES THAT KEPT ESCAPING.
+       #online-game-panel.immersive centres itself with
+       width: min(1280px, 94vw); margin-left: 50%; transform: translateX(-50%).
+       Same specificity as this rule, so declaring position and margin here does
+       not touch them - an undeclared property is not overridden, it is
+       inherited from the winning declaration of THAT property.
+       The result was a fullscreen panel 1280px wide, shifted half its own width
+       to the left. Every stray negative x I chased this session came from here. */
+    width: auto;
+    margin-left: 0;
+    transform: none;
+  }
+  #online-game-panel.oche-mode:fullscreen { padding: 3vh 4vw; }
+  /* BOTH scrims, not just the first. The immersive layout has two: ::before
+     paints the stage backdrop and ::after paints a readability gradient over
+     it. Only ::before was turned off here, so the gradient survived - and no
+     amount of scanning elements found it, because a pseudo-element is not an
+     element and querySelectorAll cannot see one. */
+  .oche-mode.immersive::before,
+  .oche-mode.immersive::after { display: none; }
+
+  /* The immersive video stage positions the score absolutely inside a camera
+     band. In here there is no camera band, so those have to come back to the
+     normal flow or they stack on top of each other at the top of the screen. */
+  .oche-mode .online-scoreboard,
+  .oche-mode #online-turn-darts,
+  .oche-mode #online-turn-label,
+  .oche-mode #online-big-score,
+  .oche-mode #online-match-bar,
+  .oche-mode #online-cricket-board {
+    position: static;
+    top: auto;
+    left: auto;
+    transform: none;
+    max-height: none;
+  }
+
+  .oche-mode .match-bar {
+    font-size: clamp(14px, 2vh, 22px);
+    margin-bottom: 1.5vh;
+    flex: none;
+  }
+
+  /* Player tabs become the top row of an arcade board: one column each, side
+     by side, the live one lit. */
+  /* ---- With no video, the players sit along the foot of the screen ----
+     Which is where the machine in the pub puts them, and it is the right place
+     once nothing else is competing for the middle: the number you are throwing
+     at owns the centre, and the two totals become a footer you glance at
+     between legs rather than a header you read past to reach the score.
+     With cameras on this does not apply - each score is already on its own
+     picture, and those are at the top.
+
+     Done with order and an auto top margin rather than by moving markup: these
+     elements are read by id from game code, and a flex column can put its own
+     children wherever it likes without any of that knowing. */
+  .oche-mode:not(.immersive) #player-tabs,
+  .oche-mode:not(.immersive) .online-scoreboard {
+    order: 10;
+    margin-top: auto;
+    /* Sits above the controls, which are centred along the bottom edge. The
+       two were previously both in the bottom-right corner and printed through
+       each other. */
+    margin-bottom: 7.5vh;
+  }
+  /* The local panel has .game-top with flex:1 to absorb the slack; the online
+     one has no such child, so without this the score clings to the top edge
+     and leaves the gap in the wrong place. Two auto margins share the space
+     between them, which centres the score and floors the row. */
+  .oche-mode:not(.immersive) #online-big-score { margin-top: auto; }
+
+  /* Capped and centred. Left to fill the width, the two names sit in opposite
+     corners of a 27" monitor with a hundred empty centimetres between them and
+     read as two unrelated scoreboards rather than one match. */
+  .oche-mode #player-tabs,
+  .oche-mode .online-scoreboard {
+    display: flex;
+    gap: 2vw;
+    margin: 0 auto 2vh;
+    flex: none;
+    width: 100%;
+    max-width: 1000px;
+  }
+  .oche-mode .player-tab,
+  .oche-mode .online-score-box {
+    flex: 1;
+    align-items: center;
+    text-align: center;
+    padding: 1.2vh 1vw;
+    border-radius: 1.4vh;
+    min-width: 0;
+  }
+  .oche-mode .player-tab-name,
+  .oche-mode .online-score-label { font-size: clamp(12px, 2.2vh, 26px); }
+  .oche-mode .player-tab-score,
+  .oche-mode .online-score-value { font-size: clamp(28px, 7vh, 92px); }
+
+  /* The number. Sized off the viewport HEIGHT rather than width, because the
+     constraint on a wall-mounted tablet in portrait is vertical. */
+  /* Centred in whatever is left after the player row, rather than stacked
+     under it. Top-aligning leaves a third of a wall-mounted screen empty and
+     puts the number higher than eye level. */
+  .oche-mode .game-top {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    flex: 1;
+    min-height: 0;
+  }
+  .oche-mode #big-score,
+  .oche-mode #online-big-score {
+    font-size: clamp(90px, 34vh, 420px);
+    line-height: 0.95;
+    text-align: center;
+  }
+  .oche-mode #turn-label,
+  .oche-mode #online-turn-label {
+    font-size: clamp(16px, 3.2vh, 42px);
+    text-align: center;
+    margin-bottom: 2vh;
+    opacity: 1;
+  }
+  .oche-mode #turn-darts,
+  .oche-mode #online-turn-darts {
+    justify-content: center;
+    gap: 1.6vw;
+    margin-bottom: 0;
+  }
+  .oche-mode .dart-slot {
+    width: clamp(64px, 12vw, 190px);
+    height: var(--dart-slot-h);
+    font-size: clamp(20px, 4.4vh, 56px);
+    border-radius: 1.2vh;
+  }
+
+  /* Cricket's mark pad IS the scoreboard, so it stays and grows rather than
+     being hidden with the other input surfaces. */
+  /* Cricket's mark pad IS the score, so in here it is a SOLID panel rather
+     than the translucent wash the immersive layout gives it. At 55% opacity
+     over an arbitrary room both suffer: the marks are muddy and the video
+     behind them is dimmed to no purpose. Solid is also what the machines do -
+     the numbers column on a real Cricket board sits on a dark card, not a
+     tint. Same objection as the score scrims, arriving by a different route. */
+  #online-game-panel.oche-mode #online-cricket-board,
+  #game-panel.oche-mode #cricket-board {
+    /* Solid first as the fallback, then let a little of the room through.
+       Not the 55% the immersive layout uses - at that depth the marks go muddy
+       over an arbitrary background, which is why this was made solid in the
+       first place. Around three quarters keeps the chalk marks and the closed
+       ⊗ reading at oche distance while the pad stops looking like a slab
+       pasted over the video. */
+    background: var(--video-bg);
+    background: color-mix(in srgb, var(--video-bg) 78%, transparent);
+    border-color: var(--panel-border);
+  }
+  /* THE PAD HAS ONE SIZE KNOB: --ck-u. Everything below is a multiple of it.
+
+     This replaced eight independently-tuned clamp() values, and the reason is
+     that they could not both be right. The requirement is "as large as it goes
+     without scrolling", and that is a single constraint on the pad's TOTAL
+     height - but eight separate clamps each guess at their share of it, so
+     making the desktop bigger made the phone scroll and fixing the phone made
+     the desktop a postage stamp. Both ends were tuned by hand, twice, and both
+     regressions were reported.
+
+     Expressed as a unit the arithmetic is one line, and it was measured rather
+     than guessed: the pad is eight rows - seven numbers and a header - and
+     comes out at 15.58u + 10.5px, the header being the tall one at 2.07u
+     against the numbers' 1.93u. The constant is the row borders and the padding
+     that does not scale. The layout above and below leaves the pad about 78vh,
+     so solving for u gives the line below.
+     RE-MEASURE THE MULTIPLIER IF A ROW'S CONTENTS CHANGE HEIGHT, and measure it
+     rather than deriving it - this has moved three times now. It was 16.95
+     until the marks were enlarged to nearly a full row, at which point they -
+     not the buttons - became what sets the row height; 17.07 after that; and
+     15.58 once the Miss footer went, which is a whole row back and is why the
+     marks are bigger than they were for free.
+     One trap when re-measuring: the pad carries max-height 84vh, so a test unit
+     large enough to hit it reports a clipped height and yields a slope that is
+     far too shallow. Measure the ROWS and add them up, or stay well under it.
+
+     SUBTRACTING THE CONSTANT IS THE WHOLE POINT, and it is why this is not
+     simply `4vh`. 21px is 1.8% of a desktop viewport and 5.4% of a landscape
+     phone's, so a plain vh multiplier that fits one overflows the other - the
+     pad drifts smaller, relatively, the smaller the screen gets, which is the
+     opposite of what a mark pad wants. Taking it off first makes the pad the
+     same FRACTION of the screen on every device, which is the rule: oche view
+     is the same picture everywhere, at whatever size the screen happens to be.
+
+     THE vw TERM IS BACK, and removing it was a mistake worth recording. The
+     reasoning was that a row is only ~5.5u of buttons against 92vw, so width
+     never runs out first - which is true of every DESKTOP aspect ratio and
+     false of a portrait phone. There, height is abundant and width is scarce:
+     u came out large, the pad's 12.5u exceeded the 92vw cap, and the cap took
+     the difference out of the only elastic part of the row - the two mark
+     columns - which collapsed to nothing. The buttons still looked right, so
+     the pad looked fine while showing NO MARKS AT ALL, on a board whose marks
+     are the entire score.
+     6.8vw is 12.5u fitting inside 85vw, leaving the margins the score tiles
+     sit in. min() takes whichever of height and width runs out first, which is
+     the actual question and is now asked in both orientations.
+     A pixel cap is still deliberately absent: a big screen across a room
+     should get a big pad. */
+  .oche-mode .cricket-board {
+    /* vh first, dvh second - a browser without dvh ignores the line it cannot
+       parse and keeps the vh one.
+       DVH IS THE MOBILE HALF OF THE PROPORTION RULE. On a phone `vh` is the
+       viewport with the URL bar HIDDEN, which is taller than what you can
+       actually see while the bar is showing - so a pad sized to 78vh genuinely
+       does not fit on screen, and the page scrolls, while the identical
+       arithmetic fits perfectly on a desktop where the two are the same number.
+       That is the whole "right on one end, wrong on the other" failure again,
+       arriving through the unit rather than through a constant. dvh is the
+       height that is actually visible right now. */
+    --ck-u: min(calc((78vh - 11px) / 15.6), 6.8vw);
+    --ck-u: min(calc((78dvh - 11px) / 15.6), 6.8vw);
+    display: block;
+    /* WIDTH IS A MULTIPLE OF u TOO, and it has to be stated. The panel is a
+       flex container, so the board shrink-wrapped to its minimum content
+       width - 5.5u, all of it the buttons - and the two mark columns either
+       side collapsed to six pixels each. The chalk marks were still being
+       drawn, in a column too narrow to show them, which on a Cricket board is
+       the only information that matters.
+       12.5u is the buttons plus room for three marks a side. Sizing it from
+       the same unit as the height is what keeps the pad the same SHAPE on
+       every screen, not merely the same height. */
+    width: calc(var(--ck-u) * 12.5);
+    max-width: 92vw;
+    /* Both are backstops, not the mechanism: the sizing above already fits, so
+       if this ever scrolls the sum has drifted and the number to change is
+       --ck-u, not this. A mark pad you have to scroll is worse than a small
+       one - you cannot see which numbers are closed. */
+    max-height: 84vh;
+    overflow-y: auto;
+    margin: 0 auto;
+    border-radius: 1.2vh;
+  }
+  /* The darts are absolutely positioned, so they reserve no space and the pad
+     centred itself straight underneath them. Reserving it here is what stops
+     the two overlapping - and it has to carry the ID, because the padding it
+     is overriding is set on #online-game-panel.oche-mode. */
+  #online-game-panel.oche-mode.cricket-stage,
+  #game-panel.oche-mode.cricket-stage {
+    /* EXACTLY the strip, computed from the strip's own two numbers rather than
+       guessed at. It was a flat 9vh, which is a shade under what the darts
+       actually occupy - 1.6vh of offset plus a slot that reaches 9vh on its own
+       - so the strip overhung the top of the flow by the difference.
+       That is invisible on the darts themselves, which are absolute and did not
+       move, and shows up instead in what sits below them: .game-top centres the
+       turn label in the band it is given, and the band started ABOVE the darts,
+       so the label was centred against a top edge the eye cannot see and came
+       out hard against the slots with all the air beneath it. Reserving the
+       real height makes the band the visible gap, and centring in it is then
+       centring between the darts and the pad. */
+    padding-top: calc(var(--darts-top) + var(--dart-slot-h));
+    /* And the SAME reservation at the bottom, for the same reason. The control
+       bar is absolute too, so the flow ran underneath it - and .game-top has
+       flex-grow, so it swallowed every pixel the pad did not use and pushed
+       the pad down onto the bar however small the pad was made. That is why
+       shrinking the pad never cured the overlap: the pad was not too big, the
+       flow simply had no bottom.
+       7 rather than 9: the bar measures a shade under 6vh, and the two spare
+       vh are worth more to the pad than to the gap. */
+    padding-bottom: 7vh;
+    padding-bottom: 7dvh;
+    /* Cricket re-declares --stage-h at .immersive.cricket-stage, which is a
+       class deeper than the oche rule that zeroes it - so the taller stage
+       came back, and with it the 760px scrim above. This is why the gradient
+       appeared in Cricket and not in x01. */
+    --stage-h: 0px;
+  }
+  /* THE ROWS HAVE TO BE SIZED, not the board. Every part of the pad carries a
+     fixed pixel font - .ck-num is 22px, .ck-mod 14px - so scaling the
+     container did nothing at all and the pad stayed a widget in the middle of
+     the screen however large the board's own font-size got.
+     Sized in vh here so it grows with the screen: on a real machine the pad is
+     the main event and takes about seventy per cent of the height, which is
+     what these land on. */
+  .oche-mode .ck-num {
+    font-size: var(--ck-u);
+    min-width: calc(var(--ck-u) * 2.2);
+    padding: calc(var(--ck-u) * 0.25) 0;
+  }
+  .oche-mode .ck-mod {
+    font-size: calc(var(--ck-u) * 0.6);
+    min-width: calc(var(--ck-u) * 1.3);
+    padding: calc(var(--ck-u) * 0.25) 0;
+  }
+  .oche-mode .ck-name { font-size: calc(var(--ck-u) * 0.45); }
+  .oche-mode .ck-points { font-size: calc(var(--ck-u) * 1.05); }
+  /* THE MARKS ARE THE SCORE, and at 0.9u they were the smallest thing on a pad
+     whose buttons are only inputs. On a real board the chalk is the biggest
+     thing on it. 1.65u makes the ⊗ very nearly a row tall, which is what it
+     has to be to read from the oche.
+     It stops just short of a full row on purpose: .ck-mark has line-height 1,
+     so once it exceeds the button row it becomes what sets the row height, and
+     the pad's 16.95u total - the number --ck-u is solved against - would start
+     moving with it. */
+  .oche-mode .ck-mark { font-size: calc(var(--ck-u) * 1.65); }
+  /* .ck-mark carries a 30px min-height, which is a floor the vh sizing could
+     not get under - on a landscape phone seven of those alone were most of the
+     screen, and it was a large part of why the pad still scrolled there after
+     the type had already been made small enough. */
+  .oche-mode .ck-mark { min-height: calc(var(--ck-u) * 1.2); }
+  .oche-mode .ck-controls { gap: calc(var(--ck-u) * 0.12); padding: calc(var(--ck-u) * 0.1) calc(var(--ck-u) * 0.25); }
+  .oche-mode .ck-header { padding: calc(var(--ck-u) * 0.18) 0; }
+
+  .oche-mode #winner-banner,
+  .oche-mode #online-winner-banner { font-size: clamp(18px, 3.4vh, 44px); }
+
+  /* Scoring from inside the mode. Hidden by default, one tap away, and an
+     overlay rather than a reflow so the score never moves. */
+  .oche-mode .entry-and-log,
+  .oche-mode .dartboard-wrap { display: none; }
+  /* One band across the bottom holding both input surfaces side by side - the
+     keypad on the left, the clickable board on the right. They are separate
+     siblings in the markup, so each is placed into the band rather than the
+     band being a container: moving the DOM would mean game.js and online.js
+     could no longer find their own elements. */
+  /* Both panels, because they are built differently: local wraps its keypad and
+     log in .entry-and-log, online has no such wrapper and uses
+     #online-manual-section. Targeting only the first meant "Score" did nothing
+     at all online - the keypad simply flowed down the page under the score. */
+  .oche-mode.oche-entry-open .entry-and-log,
+  .oche-mode.oche-entry-open #online-manual-section {
+    display: block;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 54vh;
+    overflow-y: auto;
+    background: var(--panel-bg-alt);
+    border-top: 1px solid var(--panel-border);
+    padding: 2vh 3vw;
+    z-index: 2;
+  }
+  .oche-mode.oche-entry-open .dartboard-wrap {
+    display: block;
+    position: absolute;
+    top: auto;
+    /* Clear of the Score/Exit buttons in the same corner - at 2vh the board's
+       lower numbers sit underneath them. */
+    bottom: 7vh;
+    right: 4vw;
+    left: auto;
+    width: min(40vh, 36vw);
+    max-width: none;
+    margin: 0;
+    z-index: 3;
+  }
+  .oche-mode.oche-entry-open #throw-log { display: none; }
+  /* THE KEYPAD MUST NOT SCROLL. It is stacked - display, five shortcuts, a
+     3x4 pad, then Miss - which runs to roughly 600px and did not fit the band
+     on a desktop, so the Enter key was below the fold of a panel that had just
+     been opened to press it. Given width, the same pieces sit in two columns
+     and come in at about 240px. Nobody should have to scroll to reach Enter. */
+  @media (min-width: 900px) {
+    .oche-mode.oche-entry-open .quick-entry {
+      max-width: 620px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-areas:
+        "display pad"
+        "shortcuts pad"
+        "miss pad";
+      grid-template-rows: auto auto 1fr;
+      gap: 10px 16px;
+      align-content: start;
+    }
+    .oche-mode.oche-entry-open .quick-display { grid-area: display; margin: 0; }
+    .oche-mode.oche-entry-open .quick-shortcuts { grid-area: shortcuts; margin: 0; }
+    .oche-mode.oche-entry-open .quick-pad { grid-area: pad; margin: 0; align-content: start; }
+    .oche-mode.oche-entry-open .quick-miss-btn { grid-area: miss; }
+    /* Per-Dart is a 20-button grid rather than a keypad; it fits already, but
+       it is roomier than it needs to be inside a band. */
+    .oche-mode.oche-entry-open #manual-sections,
+    .oche-mode.oche-entry-open #online-manual-sections {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 5px;
+    }
+  }
+  .oche-mode.oche-entry-open .online-turn-darts,
+  .oche-mode.oche-entry-open #turn-darts { margin-bottom: 0; }
+  /* The score gives way rather than being covered. Scoring a dart you cannot
+     see the effect of is the one thing this panel must not do. */
+  .oche-mode.oche-entry-open #big-score,
+  .oche-mode.oche-entry-open #online-big-score { font-size: clamp(56px, 15vh, 170px); }
+  .oche-mode.oche-entry-open {
+    /* The strip shrinks with everything else when the pad takes the bottom
+       half. Declared here rather than on the slot so the reservation below
+       shrinks by exactly the same amount. */
+    --dart-slot-h: clamp(36px, 6vh, 74px);
+  }
+  .oche-mode.oche-entry-open .dart-slot {
+    width: clamp(48px, 8vw, 110px);
+    font-size: clamp(16px, 3vh, 34px);
+  }
+  .oche-mode.oche-entry-open .game-top { justify-content: flex-start; }
+  /* THE ONE PLACE THE DARTS STRIP HAS TO BE RESERVED, and the reason it is
+     scoped this tightly: with the pad closed the score is CENTRED in the space
+     below, which clears the strip on its own and looks right - padding there
+     would only push a correct layout down. Opening the pad top-aligns the score
+     (the rule above) so that it gives way to the keypad instead of being
+     covered, and top-aligned means starting at the panel's own 2.5dvh padding,
+     which is underneath the strip. The score printed through the three dart
+     slots.
+     Absolutely-positioned furniture reserves nothing - the same failure the
+     Cricket stage already pads for at both ends, arriving here through a
+     justify-content change rather than through a pad that grew.
+     On the panel rather than on .game-top because the online panel has no
+     .game-top at all: its score centres itself with margin-top:auto, which
+     resolves against the panel's padding box, so padding is the one lever that
+     moves both. Hence the IDs too - #online-game-panel.oche-mode sets the
+     shorthand padding at 1,1,0 and a class-only rule never reaches it.
+     Cricket is excluded because .cricket-stage makes its own, larger
+     reservation for the same strip and must not be given two. */
+  #game-panel.oche-mode.oche-entry-open:not(.cricket-stage),
+  #online-game-panel.oche-mode.oche-entry-open:not(.cricket-stage) {
+    padding-top: calc(var(--darts-top) + var(--dart-slot-h) + 1.2vh);
+  }
+
+  /* Bottom right, not top right. At the top they sit on the player cards,
+     which span the full width - and the corner nearest your hand is the
+     bottom one when the screen is a tablet on a stand. */
+  /* ---- The running average ----
+     Where the arcade machines put it: down the right-hand side, out of the
+     score's way, big enough to read from the oche but never competing with the
+     number you are actually throwing at.
+
+     IT IS ON THE ORDINARY GAME SCREEN TOO. It was oche-view only, on the
+     argument that the stats pages carry this in far more detail - which is true
+     and beside the point: they carry it AFTER the match, and the number worth
+     having while you are throwing is the one that moves. Nothing about it is
+     oche-specific; it was simply built there first, and the class name is now a
+     lie kept for the churn a rename would cost across two controllers, the
+     shared renderer and both panels' markup.
+
+     Two presentations of one element, and they are genuinely different jobs
+     rather than a size change. In oche view it is a slab in the corner of a
+     screen with nothing else on it. Here it is a caption line under the score,
+     on a page already carrying a board, a keypad and a throw log - so it reads
+     quietly and lets the score stay the thing being read. */
+  .oche-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Centred to match the online panel, which centres its turn label and darts
+     inline; the local panel's column is left-aligned and gets the default. */
+  #online-oche-stat { justify-content: center; }
+  .oche-stat-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+  .oche-stat-value {
+    font-family: 'Oswald', sans-serif;
+    font-weight: 700;
+    font-size: 26px;
+    line-height: 1;
+  }
+  .oche-stat-second {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    opacity: 0.6;
+  }
+  /* Board View scales it with everything else, by an explicit rule per step
+     rather than a root font-size - the convention the rest of this section
+     follows. Without these the one number you are meant to read from two metres
+     away is the one that stayed at 26px.
+
+     :not(.oche-mode) IS LOAD-BEARING, and for the same reason :not(.immersive)
+     is. A Board View rule is three classes deep and the oche sizes below are
+     two, so without it these px sizes beat the vh ones INSIDE oche view - and
+     the failure is invisible on the desk setting, because that is the step with
+     no rule of its own. Oche view is already Board View's last step and sizes
+     itself off the viewport; it does not want a second opinion in pixels. */
+  [data-boardview="room"] .panel:not(.immersive):not(.oche-mode) .oche-stat-value { font-size: 34px; }
+  [data-boardview="across"] .panel:not(.immersive):not(.oche-mode) .oche-stat-value { font-size: 44px; }
+  [data-boardview="room"] .panel:not(.immersive):not(.oche-mode) .oche-stat-label { font-size: 13px; }
+  [data-boardview="across"] .panel:not(.immersive):not(.oche-mode) .oche-stat-label { font-size: 15px; }
+  [data-boardview="room"] .panel:not(.immersive):not(.oche-mode) .oche-stat-second { font-size: 15px; }
+  [data-boardview="across"] .panel:not(.immersive):not(.oche-mode) .oche-stat-second { font-size: 17px; }
+  /* Top right, not the middle. Halfway down the screen it lands on whatever
+     the camera is pointing at - a face, usually - and it is a number you
+     glance at between visits, not one you read while throwing. The machines
+     put it in the corner for the same reason. */
+  .oche-mode .oche-stat {
+    display: block;
+    position: absolute;
+    right: 2vw;
+    top: var(--darts-top);
+    text-align: right;
+    z-index: 3;
+    pointer-events: none;
+    margin: 0;
+  }
+  .oche-mode .oche-stat-label {
+    display: block;
+    font-size: clamp(10px, 1.6vh, 16px);
+    opacity: 0.65;
+  }
+  .oche-mode .oche-stat-second {
+    display: block;
+    font-size: clamp(10px, 1.5vh, 15px);
+    margin-top: 0.2vh;
+  }
+  .oche-mode .oche-stat-value {
+    display: block;
+    font-size: clamp(22px, 6vh, 64px);
+  }
+  /* Behind the score band it needs its own scrim, the same reasoning as the
+     tile scores: the video underneath is an arbitrary room. */
+  .oche-mode.immersive .oche-stat {
+    padding: 1vh 1.4vh;
+    border-radius: 1vh;
+    background: rgba(0,0,0,0.45);
+  }
+
+  /* Bottom CENTRE. The corners are where the scores want to be - a player at
+     each end, the way every machine lays it out - and putting the buttons in
+     one of them meant a score was always printed through them. The middle of
+     the bottom edge is the one part of an oche scoreboard with nothing else
+     competing for it, and on a tablet on a stand it is no harder to reach. */
+  .oche-controls {
+    position: absolute;
+    bottom: 1.6vh;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    z-index: 4;
+    max-width: 96vw;
+  }
+  .oche-btn {
+    background: var(--panel-raise-3);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 0.9vh 1.6vw;
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(12px, 1.8vh, 18px);
+    cursor: pointer;
+  }
+  .oche-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .oche-btn:hover { background: var(--panel-raise-4); }
+
+  /* The control, ON the game screen rather than only in the settings sheet.
+     Nobody standing at the oche having just realised they cannot read the
+     score is going to go and look for a gear icon. */
+  /* ---- Checkout suggestion ----
+     Quiet on purpose. It is help, not the score: a player who wants it should
+     find it under the number without having to look past it, and one who
+     doesn't should barely register it. Monospaced digits so the route does not
+     shuffle sideways as the darts change it. */
+  .checkout-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: -6px 0 16px;
+    font-family: 'Oswald', sans-serif;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+  }
+  .checkout-hint.hidden { display: none; }
+  .checkout-route {
+    font-size: 15px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: var(--accent-wash);
+    color: var(--on-panel);
+    white-space: nowrap;
+  }
+  /* The first is the one to throw; any others are alternatives. */
+  .checkout-route:not(:first-child) { opacity: 0.62; font-size: 13.5px; }
+  [data-boardview="room"] .checkout-route { font-size: 18px; }
+  [data-boardview="across"] .checkout-route { font-size: 22px; }
+  /* Directly under the score, centred, and as plain text rather than a chip -
+     over a camera picture the pill reads as a button and competes with the
+     number above it. A shadow instead of a background, for the same reason the
+     tile scores use a gradient scrim: the room behind it could be any colour. */
+  .oche-mode .checkout-hint {
+    justify-content: center;
+    margin: 2vh 0 0;
+    column-gap: 2.5vw;
+  }
+  .oche-mode .checkout-route {
+    background: none;
+    padding: 0;
+    font-size: clamp(16px, 3.2vh, 40px);
+    letter-spacing: 0.06em;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.85), 0 0 3px rgba(0,0,0,0.9);
+  }
+
+  /* ---- Saved and recent formats ---- */
+  .format-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 12px; }
+  .format-chips:empty { display: none; }
+  .format-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel-raise-1);
+    color: var(--on-panel);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .format-chip:hover { background: var(--panel-raise-3); }
+  .format-chip-save { border-style: dashed; opacity: 0.85; }
+  .format-chip-x { opacity: 0.5; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .format-chip-x:hover { opacity: 1; color: var(--danger); }
+
+  .boardview-btn {
+    background: var(--panel-raise-2);
+    color: var(--on-panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .boardview-btn:hover { background: var(--panel-raise-3); }
+
+  /* ---- Colourblind-safe board. Red/green is the single worst pairing there
+     is and it happens to be the dartboard's own scheme, so this is a real
+     accessibility need for this app specifically rather than a checkbox
+     imported from a list. Blue and amber are the standard substitution: they
+     separate under every common form of colour vision deficiency, and they
+     stay distinguishable in greyscale, which red and green do not. ---- */
+  [data-cb-board="on"] {
+    --board-red: #1F6FD0;
+    --board-green: #E8A33D;
+  }
 </style>
+<script>
+  /* Applies personal settings, and MUST run before first paint.
+
+     Not a module, and that is not an oversight. A module is deferred: the page
+     would paint in the default theme and then flip to yours, on every single
+     load. That flash is the difference between an app that has themes and an
+     app that looks broken, and it is the one bug in this feature that every
+     user sees every time.
+
+     It is also the ONLY code that stamps a preference onto the DOM. prefs.js
+     owns the schema, the validation and the storage, then calls back into this
+     function rather than reimplementing it - because two copies of "which
+     attribute does this setting set" drift, and the copy that drifts is the one
+     that only runs on first load, which is the hardest place to notice.
+
+     Absent keys stamp NOTHING and fall through to the CSS defaults. That is
+     what lets this run without knowing the schema: it needs no table of default
+     values, so there is nothing here to fall out of step with prefs.js. */
+  (function () {
+    var root = document.documentElement;
+
+    function set(attr, value, omitWhen) {
+      if (value == null || value === omitWhen) root.removeAttribute(attr);
+      else root.setAttribute(attr, value);
+    }
+
+    function apply(prefs) {
+      var p = prefs || {};
+
+      /* "auto" is resolved HERE rather than in prefs.js so that the rule lives
+         in one place, and so CSS never has to know that auto exists - it only
+         ever sees data-mode="light" or "dark". */
+      var mode = p.mode;
+      if (mode !== "light" && mode !== "dark") {
+        mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark" : "light";
+      }
+      root.setAttribute("data-mode", mode);
+
+      set("data-theme", p.theme, "baize");
+      set("data-motion", p.motion, "full");
+      set("data-contrast", p.contrast, "normal");
+      set("data-density", p.density, "comfortable");
+      set("data-boardview", p.boardView, "desk");
+      set("data-cb-board", p.colourblindBoard ? "on" : null);
+
+      /* A named accent is a class of curated swatch defined in CSS; only a
+         custom hex needs a property written from script. Keeping the palette in
+         the stylesheet is what stops eight colours being defined twice. */
+      if (typeof p.accent === "string" && p.accent.charAt(0) === "#") {
+        root.setAttribute("data-accent", "custom");
+        root.style.setProperty("--accent", p.accent);
+      } else {
+        set("data-accent", p.accent, "gold");
+        root.style.removeProperty("--accent");
+      }
+
+      if (typeof p.textScale === "number" && p.textScale !== 1) {
+        root.style.setProperty("--text-scale", String(p.textScale));
+      } else {
+        root.style.removeProperty("--text-scale");
+      }
+    }
+
+    window.__aioApplyPrefs = apply;
+
+    try {
+      apply(JSON.parse(localStorage.getItem("aio-darts-prefs") || "{}"));
+    } catch (err) {
+      /* Corrupt storage, or none at all. The app is fully usable unthemed, so
+         there is nothing here worth failing a page load over. */
+      apply({});
+    }
+  })();
+</script>
 </head>
 <body>
   <div class="wrap">
@@ -2274,8 +4124,8 @@
                     <div class="setup-row">
                       <label for="scorer-host">Address</label>
                       <input type="text" id="scorer-host" placeholder="192.168.1.50" autocomplete="off">
-                      <button type="button" id="scorer-connect" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Connect</button>
-                      <button type="button" id="scorer-disconnect" class="btn-secondary hidden" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Disconnect</button>
+                      <button type="button" id="scorer-connect" class="btn-secondary btn-soft">Connect</button>
+                      <button type="button" id="scorer-disconnect" class="btn-secondary btn-soft hidden">Disconnect</button>
                     </div>
                     <p class="format-note" id="scorer-status">Not connected.</p>
                     <p class="format-note">
@@ -2296,7 +4146,7 @@
 
     <div class="mode-tabs">
       <button id="tab-local" class="mode-tab active">Local Play</button>
-      <button id="tab-online" class="mode-tab">Online Challenge</button>
+      <button id="tab-online" class="mode-tab">Online Play</button>
       <button id="tab-account" class="mode-tab hidden">My Darts</button>
     </div>
 
@@ -2319,6 +4169,9 @@
           </select>
         </div>
 
+        <!-- Saved formats and the last three you played. Above the leg rows
+             because it is a shortcut PAST them. -->
+        <div id="format-chips" class="format-chips"></div>
         <div id="medley-legs" class="medley-legs"></div>
         <button type="button" id="add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
         <div class="setup-row">
@@ -2336,7 +4189,7 @@
              nothing else to configure. -->
 
         <div id="player-inputs"></div>
-        <button id="add-player-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">+ Add player</button>
+        <button id="add-player-btn" class="btn-secondary btn-soft">+ Add player</button>
         <div class="setup-actions">
           <button id="start-game-btn" class="btn-primary">Start Game</button>
         </div>
@@ -2361,9 +4214,22 @@
             <div id="big-score">501</div>
             <div id="turn-label">Player 1's turn</div>
             <div id="turn-darts"></div>
+            <div id="checkout-hint" class="checkout-hint hidden"></div>
+            <div id="oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span><span class="oche-stat-second"></span></div>
             <div class="actions-row">
-              <button id="undo-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Undo last dart</button>
-              <button id="new-game-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">New game</button>
+              <button id="undo-btn" data-undo class="btn-secondary btn-soft">Undo last dart</button>
+              <!-- Oche view has had this since it was built; the ordinary screen
+                   had only the board's physical button, so anyone without a
+                   Bluetooth board had no way to end a visit early - a bounce-out
+                   or a dart that missed the board entirely - without going
+                   fullscreen for it. -->
+              <button type="button" class="btn-secondary btn-soft js-end-turn">End turn</button>
+              <button id="new-game-btn" class="btn-secondary btn-soft">New game</button>
+              <!-- Cycles Desk / Room / Across the room. Here as well as in the
+                   settings sheet because this is where you are standing when
+                   you discover you need it. -->
+          <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
+              <button type="button" class="boardview-btn js-oche" title="Fullscreen scoreboard for the oche">⛶ Oche view</button>
             </div>
           </div>
 
@@ -2395,9 +4261,9 @@
                   <option value="triple">Triple</option>
                   <option value="double">Double</option>
                 </select>
-                <button id="manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-                <button id="manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-                <button id="manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+                <button id="manual-bull" class="btn-secondary btn-soft">Bull (25)</button>
+                <button id="manual-dblbull" class="btn-secondary btn-soft">Double Bull (50)</button>
+                <button id="manual-miss" class="btn-secondary btn-soft">Miss (0)</button>
               </div>
               <div id="manual-sections"></div>
             </div>
@@ -2405,6 +4271,18 @@
           </div>
 
           <div id="throw-log"></div>
+        </div>
+
+        <!-- END GAME, the local twin of online's End match, in the same place at
+             the bottom of the panel and behind the same two taps.
+             Abandoning a local game was always possible - "New game" up in the
+             actions row does exactly this - but it does not READ as ending one,
+             so the reliable way to stop a match was to leave the tab and come
+             back, which works only because leaving is defined as abandoning. A
+             control whose name matches the intent is the whole change; both
+             call abandonGame and neither saves the half-played match. -->
+        <div class="end-match-row">
+          <button type="button" id="end-game-btn" class="end-match-btn">End game</button>
         </div>
       </div>
     </div>
@@ -2421,7 +4299,11 @@
       <div id="lobby-panel" class="panel hidden">
         <div class="lobby-head">
           <div>
-            <div class="account-name">Lobby</div>
+            <!-- "Open Lobby", because it IS the open one - everybody signed in
+                 and not standing in a room. Naming it makes the Steel Tip and
+                 Soft Tip rooms below read as the two departures from it rather
+                 than as two of three places, which is what they are. -->
+            <div class="account-name">Open Lobby</div>
             <div class="account-sub" id="lobby-count">&nbsp;</div>
           </div>
           <div class="lobby-head-actions">
@@ -2473,8 +4355,12 @@
 
         <div class="account-section-title">Rooms</div>
         <p class="board-caveat">
-          A room is a place to wait and chat &mdash; &ldquo;501 Practice&rdquo;,
-          &ldquo;Cricket Only&rdquo; &mdash; not a match. Anyone in one can be challenged.
+          Rooms say what you want to play, and on what. Stand in one and only the
+          people in there with you can challenge you &mdash; tick
+          &ldquo;Open to challenges&rdquo; if you want the whole lobby to be able
+          to as well. Steel Tip and Soft Tip are about your board; the rest are a
+          game each. You can make your own, and those close when the last person
+          leaves.
         </p>
         <div id="lobby-rooms" class="people-list"></div>
         <div class="lobby-controls">
@@ -2484,6 +4370,13 @@
 
         <div id="lobby-room-view" class="hidden">
           <div class="account-section-title" id="room-title">Room</div>
+          <!-- WHO IS IN HERE, above the chat. Without this the room was chat and
+               a Leave button: you joined Steel Tip to find a steel-tip opponent,
+               saw nobody, and had to catch a name going past in the chat and
+               then hunt for that same person back in the main list to challenge
+               them. A room whose whole purpose is finding an opponent has to
+               show you the opponents. -->
+          <div id="room-members" class="people-list"></div>
           <div id="chat-log" class="chat-log"></div>
           <div class="lobby-controls">
             <input type="text" id="chat-input" maxlength="300" placeholder="Say something">
@@ -2496,7 +4389,12 @@
       </div>
 
       <div id="online-setup-panel" class="panel">
-        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Online Challenge</h3>
+        <!-- "Match Settings", not "Online Challenge". The tab above already
+             says which mode this is, so repeating it named the panel after the
+             section rather than after what is in it - and what is in it is the
+             format every route out of here uses, whether you challenge someone
+             in the lobby below or share an invite code. -->
+        <h3 style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Match Settings</h3>
         <div class="format-block">
           <div class="setup-row">
             <label for="online-format">Format</label>
@@ -2513,6 +4411,7 @@
             </select>
           </div>
 
+          <div id="online-format-chips" class="format-chips"></div>
           <div id="online-medley-legs" class="medley-legs"></div>
           <button type="button" id="online-add-leg-btn" class="btn-secondary add-leg-btn">+ Add leg</button>
           <div class="setup-row">
@@ -2539,7 +4438,7 @@
         </div>
         <div class="setup-actions">
           <input id="join-code-input" type="text" placeholder="Enter challenge code" style="text-transform:uppercase;">
-          <button id="join-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Join Challenge</button>
+          <button id="join-challenge-btn" class="btn-secondary btn-soft">Join Challenge</button>
         </div>
 
         <details class="signaling-settings">
@@ -2565,7 +4464,7 @@
         <h3 id="online-waiting-title" style="font-family:'Oswald',sans-serif; text-transform:uppercase; margin-top:0;">Waiting for opponent…</h3>
         <p id="online-waiting-note">Share this code with the person you're challenging:</p>
         <div id="challenge-code-display"></div>
-        <button id="cancel-challenge-btn" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Cancel</button>
+        <button id="cancel-challenge-btn" class="btn-secondary btn-soft">Cancel</button>
       </div>
 
       <!-- Online game -->
@@ -2629,7 +4528,15 @@
         </div>
 
         <div id="online-av-row" class="av-row">
+          <button type="button" class="boardview-btn js-boardview" title="How far away are you?"></button>
+          <button type="button" class="boardview-btn js-oche" title="Fullscreen scoreboard for the oche">⛶ Oche view</button>
           <button type="button" id="online-av-start-btn" class="av-btn">📹 Start camera &amp; mic</button>
+          <!-- Silencing and cutting the OPPONENT's feeds, entirely on this
+               machine. They are never told - see setRemoteEnabled in webrtc.js.
+               Always present rather than tucked behind a menu: this is the
+               control someone reaches for in a hurry. -->
+          <button type="button" id="online-opp-mute-btn" class="av-btn hidden">🔉 Mute opponent</button>
+          <button type="button" id="online-opp-hide-btn" class="av-btn hidden">👁 Block camera</button>
           <button type="button" id="online-av-mic-btn" class="av-btn hidden">🎤 Mute</button>
           <button type="button" id="online-av-cam-btn" class="av-btn hidden">📹 Camera off</button>
           <!-- Only revealed when more than one camera actually exists, which
@@ -2663,6 +4570,23 @@
 
         <div id="online-turn-label" style="text-align:center; margin:14px 0; font-weight:600;"></div>
         <div id="online-turn-darts" class="online-turn-darts"></div>
+        <div id="online-checkout-hint" class="checkout-hint hidden"></div>
+        <div id="online-oche-stat" class="oche-stat"><span class="oche-stat-label">PPD</span><span class="oche-stat-value">-</span><span class="oche-stat-second"></span></div>
+
+        <!-- UNDO AND END TURN, IN THE ONLINE PANEL. #online-undo-btn used to sit
+             in #game-panel's actions row - the LOCAL panel - which is display:none
+             for the whole of an online match, so the button was never on screen.
+             Undo was fully built underneath it: the snapshot stacks, the `undo`
+             peer message, the rule that the window closes when the opponent
+             throws. All of it was unreachable, and oche view's Undo button was
+             hidden too, because it looks for [data-undo] INSIDE the active panel
+             and there was none here to find.
+             This row is .actions-row, which oche view already hides, so the
+             fullscreen control bar stays the only copy in there. -->
+        <div class="actions-row">
+          <button type="button" id="online-undo-btn" data-undo class="btn-secondary btn-soft hidden">↶ Undo dart</button>
+          <button type="button" class="btn-secondary btn-soft js-end-turn">End turn</button>
+        </div>
 
         <div class="dartboard-wrap">
           <div class="dartboard"></div>
@@ -2680,7 +4604,7 @@
           <span id="online-rematch-status"></span>
           <span id="online-rematch-choice" class="hidden">
             <button type="button" id="online-rematch-accept" class="btn-primary next-leg-btn">Accept</button>
-            <button type="button" id="online-rematch-decline" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Decline</button>
+            <button type="button" id="online-rematch-decline" class="btn-secondary btn-soft">Decline</button>
           </span>
         </div>
 
@@ -2701,9 +4625,9 @@
                 <option value="triple">Triple</option>
                 <option value="double">Double</option>
               </select>
-              <button id="online-manual-bull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Bull (25)</button>
-              <button id="online-manual-dblbull" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Double Bull (50)</button>
-              <button id="online-manual-miss" class="btn-secondary" style="background:rgba(27,26,20,0.08); color:var(--ink); border:1px solid #cfc4a3;">Miss (0)</button>
+              <button id="online-manual-bull" class="btn-secondary btn-soft">Bull (25)</button>
+              <button id="online-manual-dblbull" class="btn-secondary btn-soft">Double Bull (50)</button>
+              <button id="online-manual-miss" class="btn-secondary btn-soft">Miss (0)</button>
             </div>
             <div id="online-manual-sections"></div>
           </div>
@@ -3087,6 +5011,8 @@
     </div>
   </div>
 
+  <script type="module" src="./customize.js"></script>
+  <script type="module" src="./ocheview.js"></script>
   <script type="module" src="./game.js"></script>
   <script type="module" src="./online.js"></script>
   <script type="module" src="./accountui.js"></script>

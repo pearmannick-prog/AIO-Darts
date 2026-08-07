@@ -33,10 +33,19 @@ export function renderCricketBoard(containerEl, players, currentIndex) {
          <div class="ck-points">${p.points}</div>
        </div>`).join("") + `</div>`;
 
+  // data-marks carries the COUNT as well as the glyph, because the three
+  // symbols do not share metrics: the single mark is a box-drawing diagonal
+  // (U+2571), which by definition fills its whole em box, while the X and the
+  // circled X are ordinary symbols with side bearings. At one font-size the
+  // slash therefore drew visibly longer than the X above it. CSS evens them up
+  // - see .ck-mark[data-marks="1"] - and it has to be done there rather than by
+  // picking a different character, because nothing in the common fonts is both
+  // a clean diagonal and metrically matched to U+2715.
   const marksFor = (group, target) => `<div class="ck-side">` +
-    group.map(({ p }) =>
-      `<div class="ck-mark${isClosedBy(p, target) ? " closed" : ""}">${markSymbol(p.marks[target] || 0)}</div>`
-    ).join("") + `</div>`;
+    group.map(({ p }) => {
+      const count = p.marks[target] || 0;
+      return `<div class="ck-mark${isClosedBy(p, target) ? " closed" : ""}" data-marks="${count}">${markSymbol(count)}</div>`;
+    }).join("") + `</div>`;
 
   const rows = CRICKET_TARGETS.map((target) => {
     const dead = isTargetDead(players, target);
@@ -54,20 +63,24 @@ export function renderCricketBoard(containerEl, players, currentIndex) {
     </div>`;
   }).join("");
 
+  // NO MISS BUTTON. End turn is the one control that means "that visit is
+  // over", and a Miss button beside it is a second way to say the same thing
+  // that says it less well: a miss is only ever interesting as part of a visit,
+  // and tapping it once for each dart that went nowhere is bookkeeping the
+  // player is being asked to do on the app's behalf. Ending the turn now
+  // records the darts that were not entered as thrown and missed - see
+  // matchrecorder's endTurn - so the averages come out the same without anyone
+  // tapping anything three times.
+  //
+  // It also bought the pad a whole row back, which at the oche is the
+  // difference between the marks being readable and not.
   containerEl.innerHTML =
     `<div class="ck-row ck-header">
        ${side(left, "ck-left")}
        <div class="ck-controls"></div>
        ${side(right, "ck-right")}
      </div>` +
-    rows +
-    `<div class="ck-row ck-footer">
-       <div class="ck-side"></div>
-       <div class="ck-controls">
-         <button type="button" class="ck-miss" data-target="MISS" data-mult="0">Miss</button>
-       </div>
-       <div class="ck-side"></div>
-     </div>`;
+    rows;
 }
 
 // Translates a click on the board into the SAME segment a real Granboard hit

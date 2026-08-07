@@ -54,7 +54,8 @@ fine, so the app takes sign-ups and then deletes them. Unset means "try", so
 every existing deployment is unaffected. Tests: `/healthz` reports
 `accounts:false`, `/api/*` 503s, the lobby doesn't start.
 
-Tests: `node --test server/dartnotation.test.js server/statsengine.test.js`.
+Tests: `node --test server/dartnotation.test.js server/statsengine.test.js
+server/checkout.test.js server/matchrecorder.test.js`.
 
 **Password reset is the only mail this app sends, and it works with no mail
 provider.** `server/email.js` posts to Resend when `EMAIL_API_KEY`, `EMAIL_FROM`
@@ -165,6 +166,137 @@ calls `stopDeviceCheck()`: the check holds a live camera, and closing a sheet
 over it without releasing it leaves the webcam light on with nothing on screen
 explaining why.
 
+## Personalization
+
+Optional and additive, like accounts — but unlike accounts it is **device-first
+and guest-first**. Preferences live in `localStorage` (`prefs.js`, one versioned
+JSON blob under `aio-darts-prefs`) and work signed out, on the Android build,
+and with `ACCOUNTS=off`. Syncing them to an account is a convenience that can be
+removed without breaking anything. Values are validated on the way OUT, so a
+corrupt or future-versioned blob degrades to "the app looks normal" rather than
+to a blank screen; unknown keys survive a write so an older tab cannot delete a
+newer build's setting.
+
+**The DOM stamping is an inline `<head>` script in `index.html`, and must stay
+one.** A module is deferred: the page would paint the default theme and flip to
+yours on every load. `prefs.js` calls back into that script (`__aioApplyPrefs`)
+rather than reimplementing it, because two copies of "which attribute does this
+set" drift, and the copy that drifts is the one that only runs before first
+paint. Absent keys stamp NOTHING and fall through to the CSS defaults, which is
+what keeps that script from needing to know the schema at all.
+
+**Themes are CSS, not JavaScript** — `[data-theme=…]` blocks. Scoped to any
+element rather than `:root`, which is what lets a theme picker card render a
+genuinely live preview by setting the attribute on itself. `theme.js` holds only
+the catalogue and the accent contrast maths. Note the app is **already half
+dark**: the chrome is felt with cream text and the PANELS are the light
+surfaces, so `[data-mode="dark"]` is mostly `--panel-*` overrides. `--fill-strong`
+exists because the brand dark used as a fill has to get *lighter* as the page
+gets darker.
+
+**Design tokens are two layers**: eight seeds, then roles expressed in terms of
+them. Rules may only refer to roles. `dartboard.js` and `charts.js` emit CSS
+classes rather than `fill`/`stroke` attributes, because an SVG presentation
+attribute cannot read a custom property — so a themed board repaints instead of
+needing a re-render, and that is the hook the colourblind-safe palette uses.
+Shadows (`rgba(0,0,0,…)`) are deliberately NOT tokenised: they are depth, and
+they read correctly over any palette.
+
+**Board View (`data-boardview`) is the most valuable setting in the app**, and
+it exists because darts is used at two distances — 40cm on the sofa, 2.5m at the
+oche — where every app this borrows from is used at one. It scales the game
+panels ONLY, and it must never reach inside `.immersive`: that layout positions
+its scoreboard at absolute offsets tuned to fixed type sizes, so scaling the
+type without moving the offsets breaks it rather than enlarging it. Hence
+`.panel:not(.immersive)` on every shared rule.
+
+**`.immersive` has bitten this twice, and both times the same way.** It is
+declared as `#online-game-panel.immersive` — an ID, specificity 1,1,0 — and it
+reserves the whole camera band with `padding-top: var(--stage-h)` (460–620px)
+plus a solid `::before` backdrop. Any rule trying to override it from a
+class-only selector silently loses no matter how far down the file it sits, so
+overrides need the ID too. Hiding `#online-video-strip` does **not** reclaim
+that space. Anything that changes the game panel's layout must be checked
+against all three of: no video, `.immersive`, and `.immersive.cricket-stage`,
+because they must look identical in oche view and only one of them is the case
+you will happen to be testing. `ocheview.js` is the same idea
+taken to fullscreen, and it RESTYLES THE EXISTING PANEL rather than rendering a
+second scoreboard — a duplicate scoreboard is one that will eventually disagree
+with the real one about who won. It holds a screen wake lock, which the browser
+drops on every tab switch without giving back.
+
+**Oche view is ONE picture at many sizes.** Desktop and phone must look the
+same — the same proportions, the same relative type, the same gaps — even though
+the pixel sizes differ. So oche-view geometry is expressed relative to the
+viewport, never in per-device breakpoints; a change that improves one screen and
+is not visible on the other is not finished. Two things this rule has already
+caught, both of which produce a layout that is right at one end and wrong at the
+other:
+
+- **Fixed pixel constants break the proportion at the small end.** The Cricket
+  pad measures `15.58u + 10.5px` — the constant is the row borders — which is a
+  far larger share of a landscape phone's height than a desktop's. `--ck-u`
+  therefore subtracts it *before* dividing, which is what makes the pad the same
+  fraction of every screen. A plain `Nvh` fits one device and overflows the
+  other, and eight separately-tuned `clamp()`s — the thing this replaced —
+  cannot be right at both ends at once, because the constraint being divided
+  among them is a single one on the total height.
+  **RE-MEASURE the multiplier whenever a row's contents change height**; it has
+  moved three times (16.95 → 17.07 when the marks grew, → 15.58 when the Miss
+  footer went). Measure the ROWS and add them up: the pad carries `max-height:
+  84vh`, so a test unit large enough to hit it reports a clipped height and
+  yields a slope that is far too shallow.
+- **`min()` of height and width, not height alone.** The vw term was removed
+  once on the reasoning that a row is only ~5.5u of buttons against 92vw so
+  width never runs out first — true of every desktop aspect ratio and false of a
+  portrait phone, where height is abundant and width is scarce. There `u` came
+  out large, the pad's 12.5u exceeded the width cap, and the cap took the
+  difference out of the only elastic part of the row: the two mark columns,
+  which collapsed to nothing. The buttons still looked right, so the pad looked
+  fine while showing **no marks at all**, on a board whose marks are the score.
+- **Absolutely-positioned furniture reserves nothing.** The darts strip and the
+  control bar are both absolute, so the flow runs underneath them unless padding
+  says otherwise. The strip's geometry is therefore one pair of variables —
+  `--darts-top` and `--dart-slot-h` — read by the slot itself, by the strip's
+  offset AND by everything reserving room for it, because two copies of "how
+  tall is a dart slot" means the reservation is the one that drifts, and it
+  fails by printing the score through the darts rather than by looking wrong on
+  its own. `.cricket-stage` reserves exactly that at the top and 7vh at the
+  bottom. Getting the top reservation *nearly* right is its own bug: `.game-top`
+  centres the turn label in the band it is given, so a band starting above the
+  darts centred the label against an edge the eye cannot see.
+  `.game-top` also has `flex-grow`, so it swallows whatever the pad leaves and
+  pushes the pad down onto the control bar however small the pad is made — which
+  is why an overlap there is not evidence the pad is too big.
+- **The ordinary game screen has the same one-unit pad, on its own unit.**
+  `.cricket-board` sets `--ck-u` as a plain length and states `width: 12.5u`,
+  sharing oche view's shape so the pad reads the same on the sofa and at the
+  board. Sharing the *unit* would be wrong: this page scrolls, so height is not
+  a constraint to divide up, and Board View is what "how far away am I" means
+  here — it sets `u` directly, one number per step. Before this the pad had no
+  stated width at all, and `.ck-row` being `1fr auto 1fr` meant a desktop panel
+  fed five hundred pixels of slack straight into the mark columns.
+
+`cricket-stage` is set by **both** controllers (`game.js` and `online.js`). It
+was online-only for a while, and local play inherited the x01 stage underneath
+it: the darts overlapped the top of the pad and `#big-score` rendered the
+player's Cricket points at 318px, taking three hundred pixels off the stage while
+the same number sat in the tiles at the bottom.
+
+**`checkout.js` is pure and composes `scoring.js`.** Which dart may finish is
+the `out` rule; the 170-vs-180 ceiling is `highestCheckout`. It takes **bull
+mode** because the answer genuinely differs: split bull has a 25 single and a 50
+double, full bull has only the 50, so routes through 25 vanish — which is why
+darts sites publish two charts. `server/checkout.test.js` exists because a wrong
+route is *plausible*; its strongest assertion cross-checks one-dart checkouts
+against `isOneDartFinish` for every score under every out rule. `checkouthint.js`
+is the DOM half, split off to keep that purity.
+
+**`audio.js` treats a missing file as silence, never an error.** That is what
+lets it ship with an empty `sounds/` directory and come alive - partially, if you
+like - when recordings appear. The filename is the whole registration; see
+`sounds/README.md`.
+
 `scorerlink.js` is the transport for a camera scorer: a WebSocket, the
 `dartnotation.js` parser, and two callbacks, with **no DOM** — which is what
 lets it be tested against a real stub server rather than only against hardware
@@ -197,6 +329,64 @@ never sees a dart, and a lobby outage cannot interrupt a match in progress.
 **Invite codes stay** — they are the only no-account path, the way to play someone
 outside your lobby, and the fallback when the lobby is down.
 
+**Match Settings sits ABOVE the lobby, and cannot be moved into it.** The format
+picker governs both routes out of the tab — a lobby challenge and an invite code
+alike — but the lobby panel does not render for guests or with `ACCOUNTS=off`,
+so putting the picker inside it would take the format controls away from the one
+path that has no account. It is ordered above rather than moved, with `order` on
+a flex `#online-mode`, because `online.js` shows and hides `#online-setup-panel`
+from six places and relocating the element would mean keeping all of them right
+for no visible gain. The panel is titled "Match Settings" and the tab "Online
+Play": the tab already says which mode you are in, so naming the panel after the
+section rather than its contents was what made the format feel unrelated to the
+challenge you were about to send.
+
+**Standing rooms are how tip type is expressed, and why it is not a format.**
+Steel and soft tip change nothing this app scores — same rules, same checkout
+ceiling, same bull — so tip type is not a property of a match, and a picker
+beside Bull would have the host declaring something they cannot enforce on the
+guest's board. It is a property of the board in your room, and what a player
+wants from it is to find someone with the same one: a place to stand. So
+`STANDING_ROOMS` in `server/lobby.js` seeds Steel Tip and Soft Tip, plus **one
+room per game mode** — which is why adding a game mode adds a room.
+
+Two things about them are load-bearing. **There is no "Open" room**: the lobby
+already is one, everybody signed in and not in a room is in it by definition, and
+minting a room for the default would make people join it or look like they were
+nowhere. And **standing rooms survive being empty**, which is the exception in
+`releaseRoom` — every other room is swept when the last person leaves, and
+sweeping these would delete Steel and Soft the moment the lobby emptied, so they
+would only exist once somebody had already managed to meet somebody else. An
+empty room is exactly the state a tip room has to survive.
+
+**A room narrows who may challenge you, and it is enforced on the handler as
+well as reported on the row.** `canBeChallengedBy(target, viewer)` is the single
+rule: in a room, only people standing in it with you, unless your status is
+`looking` ("Open to challenges"). The `challengeable` flag on each player row is
+that function, and so is the guard in the `challenge` message handler — a hidden
+button is a suggestion, and a message can be sent by something that never drew
+one. It is deliberately asymmetric: a player in a ROOM can still challenge a
+player in the open lobby, because the open one has expressed no preference to
+override. The room roster is filtered client-side from presence, which already
+carries every player's `roomId`, rather than sent with the room — a second copy
+of the membership is one that disagrees with the first.
+
+Note that "Open to challenges" was **write-only** before this: it set your status
+and was never set back from it, so the box and the server disagreed after a
+reconnect. That was cosmetic while it only meant "actively looking"; now that
+being in a room hangs off it, a stale tick is the difference between anyone being
+able to challenge you and nobody. `render` syncs it from your own presence entry.
+
+**Lobby rows carry the player's averages, fetched lazily by the client.** Not in
+the presence payload: presence is pushed to everyone on every change, so that
+would mean reading statistics for every person online and sending them all to
+everybody each time someone went idle. One request per visible player, answered
+from `stats_cache`, cached for the session. The permission check is simply
+*whether the server sent a headline at all* — it withholds figures for anyone
+opted out — and `lobbyui.js` deliberately does not read `shared` itself, because
+your own card is served in full whatever that flag says, so testing it there hid
+your own figures from you.
+
 Presence lives in `server/presence.js`, in memory, single-process, deliberately —
 and behind a small interface so that adding a second process later is that file
 plus a pub/sub bus rather than the protocol or the UI. Presence is per *person*,
@@ -219,6 +409,60 @@ left to send it on). `media_state` also rides the channel but is intercepted in
 `webrtc.js` and never reaches `online.js`'s `onMessage` — game code doesn't know
 about it. `hello` and `match_config` also carry the sender's display name, so a
 saved match can name the opponent.
+
+**`undo` is the one message that rewinds.** A player may take back their OWN
+darts, and the window closes when the OPPONENT throws — not when the visit
+ends, because a misread is usually spotted as the third dart lands or on the
+walk to the board. Each side keeps two snapshot stacks (`me` and `opp`) pushed
+in the same order for the same dart, so popping one on each keeps them in step;
+the sender rolls back and tells the peer, who rolls back their copy. Undoing
+restores `activeSide` too, so the turn comes back.
+
+**A completed visit HOLDS for ten seconds before the turn passes**, and that is
+what makes undo reach the case it exists for — a misread is spotted as the
+third dart lands, after the visit is technically over. While the hold runs it
+is still your turn, so the opponent *cannot* have thrown, and the question of
+rewinding a dart they already answered never arises. Either player cuts it
+short with End turn.
+
+Local play has the same hold behind the `localHold` preference, **off by
+default**. Online must hold — it is what makes undo safe there. Local does not
+need it, because its undo stack already survives the end of a visit, so the
+setting buys a countdown at the price of a pause: worth it alone at the board,
+a tax paid every visit in pass-and-play. It is skipped for bot seats, which
+never need a chance to undo and would otherwise add ten seconds a round.
+
+**A dart thrown DURING the hold belongs to the next visit, and both controllers
+now say so — differently, for the same reason.** Neither used to: the dart was
+appended to the visit that had already finished, so its marks were credited to a
+player who had stopped throwing, and in pass-and-play the next player's darts
+scored for their opponent. It surfaced as Cricket MPR reading 12 and 15 — marks
+over ROUNDS, against a ceiling of the nine marks three treble beds are worth —
+which is the only figure in the app with a ceiling low enough to make the bug
+visible. x01 has no equivalent, so it had been silently wrong there too.
+`game.js` COMMITS the hold and applies the dart to whoever is next, because in
+pass-and-play the next visit is at this same board and someone stepping up is
+the clearest possible statement that the last one is over. `online.js` REFUSES
+it, because the opponent throws at their own board and there is no next visit
+here to give it to; a fourth dart is a stray one, and undo is the honest answer.
+The refusal happens before the peer message is sent, so the two sides cannot
+disagree — and peer darts are still applied exactly as sent, which is what keeps
+an older build on the other end in step rather than desynced.
+
+**Both sides hold, and the thrower owns the clock.** Holding unilaterally is
+worse than not holding: the other side would believe it was their turn, throw,
+and have the dart rejected as out of turn. So the thrower counts down and
+announces the end with the existing `end_turn` message; the receiver waits for
+it, with a longer backstop timer in case it never comes (an older peer, a lost
+message) — ending a turn late beats a match that sits still forever.
+
+Undo past the opponent's next dart is still refused, and that is a design limit
+rather than a missing feature: with no authoritative server and no
+rollback/replay, rewinding a dart they have already answered means rewinding
+theirs as well, and in Cricket it retroactively changes whether their marks
+scored. The honest fix for a misread noticed that late is a score correction,
+which is a different feature and needs the recorder to understand an
+adjustment.
 
 **Rematch is the only other handshake**: `rematch_offer` → `rematch_accept` or
 `rematch_decline`. It is mutual on purpose and must stay that way — a one-sided
@@ -343,6 +587,18 @@ take the deployment down rather than protect it; and the WebSocket upgrades ARE
 gated, since protecting pages but not sockets would leave signaling and the lobby
 open to anyone who skipped the front door.
 
+**A refused upgrade must ANSWER before hanging up.** Rejecting one with a bare
+`socket.destroy()` sends no HTTP response at all, and Render's proxy turns that
+into a **502 Bad Gateway** — so the player is told the signaling server cannot be
+reached while the server is running perfectly and has merely refused them for
+want of the site password. It reads as a phone-only fault, because service
+workers do not intercept WebSocket handshakes: a phone running the app from cache
+never makes the ordinary request that would refresh the gate cookie, while a
+desktop that just loaded the page always carries one. The browser still only
+exposes a generic socket error to JavaScript, which is why `online.js` probes
+`/healthz` — the one thing the gate never blocks — before deciding whether
+"couldn't reach the server" is actually true.
+
 **Never build HTML from a player's display name.** `lobbyui.js` once interpolated
 the challenger's name into `innerHTML`, which is stored cross-user XSS — set your
 name to an `<img>` with an `onerror` and challenge someone, and it runs in their
@@ -386,10 +642,18 @@ it as the database grows rather than treating it as a constant.
   `online.js` (no new peer message - it rides `dart`); a case in `medley.js`'s
   `normalizeLeg` and `gameLabel`; an option in `medleybuilder.js` and both format
   pickers in `index.html`; a `stats/*.js` module registered in `statsengine.js`;
-  and both hand-maintained file lists. Bump `ENGINE_VERSION` if it changes what an
-  existing number MEANS. The stats page, dashboard, achievements screen and
-  leaderboard picker all iterate the registry, so they need no edit at all.
+  and both hand-maintained file lists; plus an entry in `STANDING_ROOMS` in
+  `server/lobby.js`, since there is one lobby room per game mode. Bump
+  `ENGINE_VERSION` if it changes what an existing number MEANS. The stats page,
+  dashboard, achievements screen and leaderboard picker all iterate the registry,
+  so they need no edit at all.
 - Solo (one-player) play is supported in every game mode and must keep working.
+- **Adding a preference** is: an entry in `prefs.js`'s `SCHEMA` (with its
+  default and what counts as a legal value), a group in `PREF_GROUPS` so reset
+  covers it, a control in `customize.js`, and - only if it needs to be visible
+  before first paint - a line in the inline `<head>` script. Nothing else: the
+  panel is built from the sections it lists, and an absent key falls through to
+  the CSS default on its own.
 - Edge cases the rules deliberately encode: leaving exactly 1 busts under double/
   master out but is legal under SISO; under double-in, pre-opening darts count as
   darts but score nothing; cricket closing-out while behind on points does not win;
@@ -398,6 +662,28 @@ it as the database grows rather than treating it as a constant.
   rounded down.
 - Quick Total is refused in Cricket and Bermuda. A bare turn total says nothing
   about which numbers were hit, and in Bermuda it cannot express a halving.
+- **A visit is three darts unless it checked out**, and `recorder.endTurn(seat)`
+  is where that is enforced. Darts nobody entered were still thrown, so ending a
+  turn sets `darts` to 3 rather than counting the throws — otherwise a visit of
+  60 and two misses read as a PPD of 60 against a ceiling of 60. It is carried
+  on `darts`, never as a fourth entry in `throws`: a dart with no segment would
+  put a phantom miss in the heatmap and in every per-dart statistic, which is
+  the same split quick totals already need. `endTurn` takes the SEAT because a
+  visit where all three missed registers nothing at all and leaves no open turn
+  to read it from — and that visit must still be recorded, or a player who
+  misses everything has the round dropped from their MPR denominator and their
+  average goes UP for missing. This is what lets Cricket's pad have no Miss
+  button: End turn already says the visit is over, which is the thing the player
+  was going to do anyway.
+- **The live average names its own figure.** `liveStats` returns a labelled
+  object with a null value before the first dart, and null ONLY when the game
+  offers no average at all. Returning null for both let the renderer fall back
+  to a hardcoded "PPD", which is the wrong number's name in Cricket. It splits
+  by what is being counted rather than by game: marks on a target (Cricket,
+  Bermuda) or points off darts (x01, Count Up), so a fifth game needs no third
+  branch. It is shown on the ordinary game screen as well as in oche view —
+  everything oche view offers is reachable without going fullscreen for it,
+  including Undo dart, End turn and End game.
 
 ## CI
 
