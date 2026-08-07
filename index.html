@@ -170,19 +170,39 @@
   /* Deliberately small and quiet - this is a hobby project, not a product
      with a paywall, so the ask should read as optional rather than a banner
      asking to be dismissed. */
-  #support-link {
-    text-align: center;
+  #footer-links {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
     margin-top: 8px;
     font-family: 'Inter', sans-serif;
   }
-  #support-link a {
+  #footer-links a,
+  #footer-links span,
+  #footer-links button {
     font-size: 11px;
     letter-spacing: 0.03em;
     color: var(--on-chrome);
     opacity: 0.45;
     text-decoration: none;
   }
-  #support-link a:hover { opacity: 0.8; text-decoration: underline; }
+  /* The About control is a <button> because it opens a dialog rather than
+     navigating, but it has to READ as the links beside it - so the button
+     chrome is stripped rather than the link being faked with an anchor. */
+  #footer-links button {
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  #footer-links button:hover { opacity: 0.8; text-decoration: underline; }
+  /* The separator is decoration, and must not light up with the links either
+     side of it - hovering a dot that does nothing reads as a broken link. */
+  #footer-links span { opacity: 0.3; }
+  #footer-links a:hover { opacity: 0.8; text-decoration: underline; }
 
   header {
     display: flex;
@@ -1872,6 +1892,34 @@
     padding: 0 4px;
   }
   .settings-close:hover { opacity: 1; }
+
+  /* Prose, unlike the settings sheet's controls - so it gets a readable measure
+     and headings that separate sections rather than label widgets. */
+  .about-body { font-size: 14px; line-height: 1.55; }
+  .about-body p { margin: 0 0 12px; }
+  .about-body h3 {
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    opacity: 0.75;
+    margin: 18px 0 8px;
+  }
+  .about-body a { color: var(--accent); }
+  .about-body code {
+    font-size: 12px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--panel-raise-2);
+  }
+  /* The build, last and quietest: it is the thing you are asked for in a bug
+     report and never read otherwise. */
+  .about-build {
+    margin-top: 16px;
+    font-size: 11px;
+    opacity: 0.5;
+    font-variant-numeric: tabular-nums;
+  }
   /* The two panels sit apart so they read as separate concerns rather than
      one long form. */
   #settings-body > details { margin-top: 14px; }
@@ -4068,6 +4116,76 @@
     <!-- Settings. Everything here is "does my hardware work" rather than "how
          should this game be set up", which is why it is out of the setup
          panels and reachable from anywhere including mid-match. -->
+    <!-- ABOUT IS AN OVERLAY, NOT A FOURTH TAB, for exactly the reason Settings
+         is one: leaving a tab ends a match. A tab called About is a tab someone
+         taps mid-match out of idle curiosity, and it would have to be granted an
+         exemption from a rule that is much better kept absolute. It also has to
+         work for guests, so it cannot live under the account tab, which does not
+         render without an accounts API.
+         It reuses .settings-sheet rather than growing a second dialog style -
+         two of those drift, and the one that drifts is the one opened least. -->
+    <div id="about-overlay" class="settings-overlay hidden">
+      <div class="settings-sheet" role="dialog" aria-modal="true" aria-labelledby="about-title">
+        <div class="settings-head">
+          <h2 id="about-title">About AIO Darts</h2>
+          <button type="button" id="about-close" class="settings-close" aria-label="Close about">&times;</button>
+        </div>
+        <div class="about-body">
+          <p>
+            An all-in-one darts app: pass-and-play scoring at one board, and
+            online 1v1 over a direct connection with optional camera and mic so
+            you can watch your opponent throw.
+          </p>
+          <p>
+            Three equal ways to score, and they all run through the same rules:
+            a <strong>Granboard over Bluetooth</strong>, the
+            <strong>clickable dartboard</strong>, or <strong>manual entry</strong>.
+            A plain steel-tip board works as well as an electronic one.
+          </p>
+          <p>
+            <strong>x01</strong> (301/501/701, every in and out rule),
+            <strong>Cricket</strong>, <strong>Count Up</strong> and
+            <strong>Bermuda Triangle</strong>, singly or as a medley. Solo play
+            works in all of them, and every seat can be a computer player.
+          </p>
+          <p>
+            Online matches are peer-to-peer. Darts never touch a server: both
+            browsers run the identical rules and stay in step, so a match cannot
+            be interrupted by anything happening here.
+          </p>
+
+          <h3>Statistics</h3>
+          <p>
+            Optional. Guests play exactly as they always have, and everything is
+            computed on-device from the darts you threw - an account only adds
+            somewhere to keep it. Leaderboards rank self-reported scores: a
+            peer-to-peer app with no referee cannot prove a match happened, and
+            appearing on them is opt-in.
+          </p>
+
+          <h3>Source, licence and credits</h3>
+          <p>
+            <a href="https://github.com/pearmannick-prog/AIO-Darts" target="_blank" rel="noopener">github.com/pearmannick-prog/AIO-Darts</a>
+            - the code, the README and the issue tracker.
+          </p>
+          <p>
+            Licensed under
+            <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial 1.0.0</a>,
+            with one exception: the Bluetooth service UUID and the dart-hit
+            decoding table in <code>granboard.js</code> are adapted from
+            <a href="https://github.com/sobassy/gran-app" target="_blank" rel="noopener">sobassy/gran-app</a>
+            and keep their original <strong>MIT</strong> terms. Credit to that
+            project for reverse-engineering the protocol in the first place.
+          </p>
+          <p>
+            Not affiliated with or endorsed by Gran Darts, DartConnect, or any
+            other maker whose hardware or scoring conventions this works with.
+          </p>
+          <p id="about-build" class="about-build">&nbsp;</p>
+        </div>
+      </div>
+    </div>
+
     <div id="settings-overlay" class="settings-overlay hidden">
       <div class="settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div class="settings-head">
@@ -5004,7 +5122,23 @@
     </div>
 
     <footer id="app-version">&nbsp;</footer>
-    <div id="support-link">
+    <!-- Source and licence, reachable from the app rather than only from the
+         repo. Partly so anyone curious can read how it works or file a bug, and
+         partly because the licence terms should be findable BY THE PEOPLE USING
+         IT: this is PolyForm Noncommercial, and the Granboard decoding is
+         third-party code under MIT, whose notice is meant to travel with the
+         code you hand out. A hosted app hands that JavaScript to every visitor,
+         and the attribution sitting in a README nobody can see from here is a
+         thin way to carry it. -->
+    <div id="footer-links">
+      <!-- A button rather than a link: it opens a dialog on this page, and
+           anything that looks like a link should go somewhere. -->
+      <button type="button" id="about-btn">About</button>
+      <span aria-hidden="true">&middot;</span>
+      <a href="https://github.com/pearmannick-prog/AIO-Darts" target="_blank" rel="noopener">
+        Source &amp; licence
+      </a>
+      <span aria-hidden="true">&middot;</span>
       <a href="https://ko-fi.com/nickpearman" target="_blank" rel="noopener">
         &#9825; Support this project
       </a>

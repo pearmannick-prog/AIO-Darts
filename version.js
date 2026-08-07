@@ -12,6 +12,45 @@
 
 const footer = document.getElementById("app-version");
 
+// ---------------------------------------------------------------------------
+// About
+//
+// Wired here rather than in online.js, which owns the settings overlay, because
+// this is app chrome rather than either mode's - and because the one dynamic
+// thing in the sheet is the build string this file already resolves. Putting it
+// with the controller for online play would mean the About box depended on a
+// module that has nothing to do with it.
+//
+// An OVERLAY, not a fourth tab: leaving a tab ends a match, and a tab called
+// About is one somebody taps mid-match out of curiosity. See the note on the
+// markup.
+const aboutOverlay = document.getElementById("about-overlay");
+
+function openAbout() {
+  aboutOverlay?.classList.remove("hidden");
+}
+
+function closeAbout() {
+  aboutOverlay?.classList.add("hidden");
+}
+
+document.getElementById("about-btn")?.addEventListener("click", openAbout);
+document.getElementById("about-close")?.addEventListener("click", closeAbout);
+
+// Clicking the backdrop closes it; clicking inside the sheet must not.
+aboutOverlay?.addEventListener("click", (event) => {
+  if (event.target === aboutOverlay) closeAbout();
+});
+
+// Escape, which is what every dialog on the web does and what people try first.
+// Ignored while it is already shut, so it cannot swallow the key from the
+// settings sheet or from oche view.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (aboutOverlay?.classList.contains("hidden")) return;
+  closeAbout();
+});
+
 // A deployment that is NOT the production branch says so, loudly, at the top of
 // the page. Two near-identical sites is a genuinely easy thing to get wrong:
 // the mistakes it prevents are registering an account on the wrong one, filing
@@ -45,14 +84,27 @@ fetch("./version.json")
 
     if (!sha || sha === "dev") {
       footer.textContent = "AIO Darts · local dev build";
+      setAboutBuild("Local dev build");
       return;
     }
     const date = builtAt && builtAt !== "unknown" ? builtAt.slice(0, 10) : "";
     footer.textContent =
       `AIO Darts · build ${sha.slice(0, 7)}${date ? ` · ${date}` : ""}` +
       `${branch && branch !== "main" ? ` · ${branch}` : ""}`;
+    // The FULL sha in here, where the footer shows seven characters. This is the
+    // line someone is asked to quote in a bug report, and a short sha is one
+    // more thing to go and look up.
+    setAboutBuild(
+      `Build ${sha}${date ? ` · ${date}` : ""}${branch ? ` · ${branch}` : ""}`,
+    );
   })
   .catch(() => {
     // No server at all (opened straight off the filesystem).
     footer.textContent = "AIO Darts · local dev build";
+    setAboutBuild("Local dev build");
   });
+
+function setAboutBuild(text) {
+  const node = document.getElementById("about-build");
+  if (node) node.textContent = text;
+}
