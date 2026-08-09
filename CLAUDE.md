@@ -55,7 +55,10 @@ every existing deployment is unaffected. Tests: `/healthz` reports
 `accounts:false`, `/api/*` 503s, the lobby doesn't start.
 
 Tests: `node --test server/dartnotation.test.js server/statsengine.test.js
-server/checkout.test.js server/matchrecorder.test.js`.
+server/checkout.test.js server/matchrecorder.test.js server/freeze.test.js`.
+Note that **CI does not run these** — `docker-build.yml` builds the image and
+nothing else — so they are a manual gate, which is worth knowing before
+trusting a green check on a PR.
 
 **Password reset is the only mail this app sends, and it works with no mail
 provider.** `server/email.js` posts to Resend when `EMAIL_API_KEY`, `EMAIL_FROM`

@@ -736,10 +736,12 @@ roster.
 
 This is a recommendation, not a decided point.
 
-1. **The freeze predicate, pure and tested, before any UI.** One function, three
-   of the four scores, and a test file beside `checkout.test.js`. It is the only
-   genuinely new *rule* in team play and it is the cheapest thing here to get
-   right first.
+1. ~~**The freeze predicate, pure and tested, before any UI.**~~ **DONE.**
+   `isFrozen` and `resolvePartnersThrow` in `scoring.js`, with 23 tests in
+   `server/freeze.test.js`. `resolvePartnersThrow` composes `resolveThrow`
+   rather than reimplementing any of it, and asks about the freeze only once
+   `isWin` is true — so a dart that busts on the out rule still busts instead
+   of conceding the leg.
 2. **Local x01 doubles, freeze ON, in `game.js`.** Team grouping and turn
    rotation — rotation is `game.js:1119`, already modular over `players.length`
    — plus the team win condition and both `frozenFinish` outcomes. Singles keeps
