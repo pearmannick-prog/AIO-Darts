@@ -549,13 +549,44 @@ Pure, total, trivially testable, and it belongs beside `resolveThrow` in
 `scoring.js` — or in a small partners module — rather than in a controller. It
 is precisely the kind of arithmetic `server/checkout.test.js` exists to pin down.
 
-**3. Checking out while frozen LOSES THE LEG.** *"If a player reaches zero when
-he/she is 'frozen', the win is credited to the opposing team."* This is not a
-bust and must not be modelled as one — a bust restores the score and passes the
-turn, whereas this **ends the leg in the opponents' favour**. It is the only
-rule in this codebase where reaching zero is a defeat, and `medley.js`'s leg
-resolution has to be able to express "this leg was won by the side that did not
-finish it".
+**3. Checking out while frozen LOSES THE LEG — and that outcome is itself a
+setting.** The source says *"If a player reaches zero when he/she is 'frozen',
+the win is credited to the opposing team."* **Decided: make it a per-leg
+choice**, because the penalty is severe enough that houses differ on it and the
+gentler reading is a plain bust.
+
+```
+rules.frozenFinish: "loss" | "bust"      default "loss"
+```
+
+- **`"loss"`** — the leg ends and the **opponents** win it. The sourced
+  behaviour, and the default, on the same principle that keeps `X01_RULES`
+  matching the machines rather than matching taste.
+- **`"bust"`** — the score is restored and the turn passes, exactly like any
+  other bust. This costs nothing to implement: it reuses the bust path whole,
+  which is the point of offering it.
+
+It sits in `rules` beside the in/out matrix and the freeze flag, and it is a
+**dependent setting** — meaningless when freeze is off. `normalizeLeg` should
+still default it unconditionally (an absent key must never mean "undefined
+behaviour"), and the format picker should disable rather than hide it when
+freeze is off, so it is discoverable as belonging to the freeze.
+
+**Only `"loss"` needs anything new**: `medley.js`'s leg resolution has to express
+*"this leg was won by the side that did not finish it"*, which is the only place
+in the app where reaching zero is a defeat.
+
+**The recorder already survives this, and it is worth knowing why before someone
+tidies it.** `matchrecorder.js:399–408` marks the winning visit as a checkout
+only when `turn.seat === winnerSeat`. Under a frozen loss the open turn belongs
+to the player who reached zero and `winnerSeat` is an opponent, so the two
+differ and **`isCheckout` correctly stays false** — a leg lost by finishing is
+not a checkout, and it must not inflate that player's checkout percentage. That
+is the right outcome, but it is right *by seat comparison* rather than by
+intent: the comment above it reads "marks the winning visit as the checkout",
+which quietly assumes the winner is the finisher. Under this rule that
+assumption is false. Anyone simplifying it to "mark the open turn as the
+checkout" would silently start crediting frozen losses as successful checkouts.
 
 **The opportunity, which is worth taking.** The source notes: *"The board does
 not prompt you for this so it is the player's responsibility to spot it."* That
@@ -658,10 +689,13 @@ This is a recommendation, not a decided point.
    right first.
 2. **Local x01 doubles, freeze ON, in `game.js`.** Team grouping and turn
    rotation — rotation is `game.js:1119`, already modular over `players.length`
-   — plus the team win condition and the frozen-checkout outcome. Singles keeps
+   — plus the team win condition and both `frozenFinish` outcomes. Singles keeps
    working throughout: a team of one is a singles player, so nothing needs a
    special case. This variant specifically because it is the only one with a
-   single index space, so every error is visible; see 7b.
+   single index space, so every error is visible; see 7b. Do `"bust"` first: it
+   reuses the existing bust path whole, so the leg can be played end to end
+   before `medley.js` learns that a leg can be won by the side that did not
+   finish it.
 3. **Recorder: four seats, `team` column, migration.** Including every
    `=== seat` win comparison listed in 3a — this is the part that silently
    halves if it is missed.
