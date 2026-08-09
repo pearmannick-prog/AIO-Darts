@@ -1,4 +1,6 @@
-# render.yaml - Render Blueprint for the deployment at aio-darts.onrender.com.
+# render.yaml - Render Blueprint for the deployment at aiodarts.com (the custom
+# domain in front of the Render service below; aio-darts.onrender.com still
+# answers on the same service).
 #
 # What this is for: everything else about this project lives in the repo, and
 # without this file the deployment's settings live only in Render's dashboard -
@@ -51,10 +53,25 @@ services:
         value: stun:stun.l.google.com:19302
 
       # TURN relays traffic for the ~10-20% of players whose networks refuse
-      # direct P2P. Left commented because it costs bandwidth on whoever hosts
-      # it - and with camera and mic switched on, a relayed match is a video
-      # call's worth of traffic. Read the README section on TURN before
-      # enabling this on anything metered.
+      # direct P2P. This deployment HAS it, via Cloudflare Realtime rather than
+      # a relay of its own - which is why the static TURN_URL/TURN_USERNAME/
+      # TURN_CREDENTIAL trio below stays commented out and these two are set
+      # instead. Cloudflare does not issue long-lived credentials: the server
+      # holds the key and the API token and mints a short-lived credential per
+      # session, so the token never leaves the server and only the minted
+      # credential reaches a browser. That is why it cannot be expressed as a
+      # username and password pair. See the block comment in server/server.js.
+      #
+      # It costs bandwidth on whoever hosts the relay, and with camera and mic
+      # switched on a relayed match is a video call's worth of traffic - read
+      # the README section on TURN before assuming this is free.
+      - key: TURN_KEY_ID
+        sync: false
+      - key: TURN_KEY_API_TOKEN
+        sync: false
+
+      # The static alternative, for a relay you run yourself. Mutually
+      # exclusive with the pair above in practice, not in code.
       # - key: TURN_URL
       #   value: turn:turn.example.com:3478
       # - key: TURN_USERNAME
@@ -62,23 +79,64 @@ services:
       # - key: TURN_CREDENTIAL
       #   sync: false
 
-    # ---------------------------------------------------------------------
-    # DISK REQUIRED - read this before deploying accounts.
-    # ---------------------------------------------------------------------
-    # Accounts, match history, statistics and leaderboards live in a SQLite
-    # file in DATA_DIR. Render's free tier has an EPHEMERAL filesystem: it is
-    # wiped on every deploy and on every restart. Deployed as written below,
-    # this app will therefore delete every account each time it redeploys, and
-    # do it silently, because a fresh empty database is indistinguishable from
-    # a working one until someone tries to sign in.
-    #
-    # Gameplay does not depend on it - local and online darts are pure browser
-    # code plus a signaling relay, and the server logs loudly and reports
-    # accounts:false on /healthz when the database is unusable - so the free
-    # tier is still a perfectly good way to host the darts. It is not a way to
-    # host the accounts.
-    #
-    # To keep data, move to a paid instance type and attach a disk:
+      # Password reset mail. With all three set, server/email.js posts the reset
+      # link to Resend; with any of them missing it LOGS the link instead, which
+      # is a working mode rather than a broken one - it is what lets a
+      # self-hosted box do password resets on day one. Production has all three,
+      # so resets here actually send.
+      #
+      # PUBLIC_URL is also what makes the link in that mail point at the right
+      # host: it must be the address players actually use (https://aiodarts.com),
+      # not the onrender.com one.
+      - key: PUBLIC_URL
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_API_KEY
+        sync: false
+
+      # ---------------------------------------------------------------------
+      # PERSISTENCE - production carries real accounts, and this is what keeps
+      # them.
+      # ---------------------------------------------------------------------
+      # Accounts, match history, statistics and leaderboards live in a SQLite
+      # file in DATA_DIR. Render's free tier has an EPHEMERAL filesystem: it is
+      # wiped on every deploy AND on every spin-down after ~15 minutes idle.
+      # With nothing else in place this app would therefore delete every account
+      # several times a day and do it SILENTLY, because a fresh empty database
+      # is indistinguishable from a working one - it opens fine and reports
+      # accounts:true on /healthz - until someone tries to sign in.
+      #
+      # Litestream is what closes that: it replicates the file to R2 and
+      # restores it on boot, so the ephemeral disk stops mattering. See
+      # litestream.yml and docker-entrypoint.sh. That makes these five
+      # variables load-bearing on this service - unset R2_BUCKET and the
+      # entrypoint quietly exec's node directly and the silent wipe is back.
+      #
+      # The one check that tells you which state a deploy is in is the first
+      # line of its log: `replication : R2 bucket …` or `replication : off`.
+      #
+      # sync: false because they are credentials - Render prompts for them and
+      # never reads them from this file. R2_PATH is not secret but is listed
+      # the same way to keep the five together, and because production and the
+      # test build MUST NOT share a prefix: same bucket, different paths, or
+      # each will restore and then overwrite the other's database.
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PATH
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+
+    # A disk is the OTHER way to solve this, and the two are not exclusive -
+    # a disk makes the local file durable, Litestream makes it recoverable
+    # after the machine itself is gone, and only the second also protects
+    # against a bad DELETE (see the snapshot note in litestream.yml). To attach
+    # one, move to a paid instance type and uncomment:
     #
     #   disk:
     #     name: aio-darts-data
@@ -145,6 +203,22 @@ services:
       # password; /healthz stays open so Render's health check still passes.
       # Production leaves it UNSET, which disables the gate entirely.
       - key: SITE_PASSWORD
+        sync: false
+
+      # The same five as production, and the reason they are listed again
+      # rather than shared: R2_PATH must DIFFER between the two services. One
+      # bucket is fine, one prefix is not - two deployments replicating to the
+      # same path each restore the other's database on boot and then overwrite
+      # it, which loses both. Everything else about them is identical.
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PATH
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
         sync: false
 
       # No TURN here on purpose: a relayed match with video is a video call's

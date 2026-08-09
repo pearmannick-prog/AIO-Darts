@@ -13,9 +13,10 @@ deployment simple (see [Architecture](#architecture)).
 
 If you'd like to support the project, there's a small "Support this project"
 link in the app's footer, pointing to https://ko-fi.com/nickpearman. No
-paywall and nothing is gated behind it - it's just a tip jar for now. A free
-tier alongside a paid one is planned for later, once accounts and persistent
-stats land, but that's a ways off.
+paywall and nothing is gated behind it - it's just a tip jar for now. Accounts
+and persistent stats have since landed, so a free tier alongside a paid one is
+now possible rather than hypothetical; nothing has been gated and there is no
+date on it.
 
 The Bluetooth service UUID and dart-hit decoding table in `granboard.js` are
 adapted from the open-source project
@@ -921,16 +922,53 @@ use requires a separate agreement with the licensor.
 
 ## Roadmap
 
-*Last reviewed: 30 July 2026.*
+*Last reviewed: 9 August 2026.*
 
 - The remaining Cricket variants (Cut-Throat, Wildcard, Low Ball, Hammer, the
   /200 spread limit) and the rest of the Arachnid "Other Games"
 - Teams, and with them the Freeze Rule - which is a partners rule, so teams are
-  the prerequisite rather than a flag
+  the prerequisite rather than a flag. There is a written design for this in
+  [`docs/team-play.md`](docs/team-play.md) - a proposal, not an implementation,
+  and it argues that "two at each end" and "four separate houses" are different
+  sizes of problem, only the first of which is worth building first. It ends
+  with six decisions it needs before anyone writes code
 - Native Windows (C#/.NET) version
-- Webcam-based hit detection for standard steel-tip boards
+- Webcam-based hit detection for standard steel-tip boards. Half of this is
+  already in place: `dartnotation.js` and `scorerlink.js` read an existing
+  camera scorer (Autodarts, OpenDartboard) into the same segments a Granboard
+  produces, so what is missing is the detection itself, not a way to use it
 
 Done since the last review:
+
+- ✅ **Accounts, statistics and the lobby reached production** (7 August 2026) -
+  they had been running on the test build since the 2nd; they now run on
+  `aiodarts.com`. Guests are unaffected, which was the point of building it
+  additively.
+- ✅ **Standing rooms in the lobby** (7 August 2026) - Steel Tip, Soft Tip and
+  one room per game mode, because tip type is a property of the board you are
+  standing at rather than of a match: it changes nothing the app scores, so it
+  is a place to stand rather than a format to pick. Standing in a room narrows
+  who may challenge you, enforced on the server as well as shown on the row.
+- ✅ **The visit hold, and undo online** (5 August 2026) - a finished visit
+  holds for ten seconds before the turn passes, which is what makes taking a
+  dart back reach the case it exists for: a misread is spotted as the third
+  dart lands, not before. Both sides hold and the thrower owns the clock. Local
+  play can have it too, off by default - at the board it is worth the pause, in
+  pass-and-play it is a tax on every visit.
+- ✅ **Oche view and Board View** (5 August 2026) - darts is used at two
+  distances, 40cm on the sofa and 2.5m at the board, and every app this borrows
+  from is designed for one. Board View scales the game panels; oche view goes
+  fullscreen and restyles the existing scoreboard rather than drawing a second
+  one that could disagree with it about who won.
+- ✅ **Themes and personalization** (5 August 2026) - light/dark/auto, three
+  themes, a colourblind-safe board palette, checkout suggestions, match sound,
+  and remembering the formats you actually play. All device-first: it works
+  signed out, on the Android build, and with accounts switched off entirely.
+- ✅ **A camera scorer, and the Settings overlay** (4 August 2026) - darts from
+  an Autodarts or OpenDartboard scorer route exactly like Bluetooth ones. The
+  camera check and the scorer address live in an overlay rather than a fourth
+  tab, because leaving a tab ends a match and those two are what you reach for
+  mid-match.
 
 - ✅ **The online lobby** (3 August 2026) - live presence, challenges, Quick
   Match, rooms, chat and blocking. Gameplay stays peer-to-peer: an accepted
