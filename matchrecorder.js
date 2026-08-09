@@ -55,6 +55,11 @@ export function createRecorder({ mode, format, players }) {
     // it was set up even after the format presets change.
     format: JSON.parse(JSON.stringify(format ?? [])),
     winnerSeat: null,
+    // The winning TEAM in a partners match, null in singles. Kept beside
+    // winnerSeat rather than replacing it: a singles match genuinely has a
+    // winning seat, and collapsing both into one field would mean every reader
+    // having to know which kind of index it was looking at.
+    winnerTeam: null,
     drawn: false,
     players: (players ?? []).map((p, seat) => ({
       seat,
@@ -300,6 +305,7 @@ export function createRecorder({ mode, format, players }) {
         bull: bull ?? null,
         rounds: rounds ?? null,
         winnerSeat: null,
+        winnerTeam: null,
         turns: [],
       };
       doc.legs.push(leg);
@@ -403,22 +409,44 @@ export function createRecorder({ mode, format, players }) {
     // The dart that wins a leg does not go through endTurn - the controllers
     // finish the leg then and there - so this closes whatever is open and
     // marks the winning visit as the checkout.
-    endLeg(winnerSeat) {
+    //
+    // `winnerSeat` is the person who threw the finishing dart, and it is NOT
+    // the same question as who won the leg once teams exist:
+    //
+    //   - In a partners leg the leg belongs to a TEAM, so `winnerTeam` is what
+    //     decides legsWon, and both partners get it.
+    //   - A leg can be won with no finishing dart at all. Reaching zero while
+    //     frozen hands the leg to the opposition (see scoring.js), so
+    //     winnerSeat is null while winnerTeam is set - and the player who did
+    //     reach zero must not be credited with a checkout for it, which the
+    //     seat comparison below already handles because the two differ.
+    endLeg(winnerSeat, { winnerTeam = null } = {}) {
       if (!leg) return;
       if (turn && winnerSeat !== null && winnerSeat !== undefined && turn.seat === winnerSeat) {
         turn.isCheckout = true;
       }
       closeTurn();
       leg.winnerSeat = winnerSeat ?? null;
-      if (winnerSeat !== null && winnerSeat !== undefined && doc.players[winnerSeat]) {
-        doc.players[winnerSeat].legsWon += 1;
+      leg.winnerTeam = Number.isInteger(winnerTeam) ? winnerTeam : null;
+
+      // Credit the side, whichever kind of side this match has. Singles is the
+      // one-player case of the same statement rather than a separate branch.
+      const winners = leg.winnerTeam === null
+        ? (Number.isInteger(leg.winnerSeat) ? [doc.players[leg.winnerSeat]] : [])
+        : doc.players.filter((p) => p.team === leg.winnerTeam);
+      for (const player of winners) {
+        if (player) player.legsWon += 1;
       }
       leg = null;
     },
 
-    endMatch({ winnerSeat = null, drawn = false } = {}) {
+    // winnerTeam is the match result in a partners game, where winnerSeat has
+    // nothing to say - a match is won by a pair, and naming one of them would
+    // be the same silent half-credit the leg tally used to give.
+    endMatch({ winnerSeat = null, drawn = false, winnerTeam = null } = {}) {
       closeTurn();
       doc.winnerSeat = winnerSeat ?? null;
+      doc.winnerTeam = Number.isInteger(winnerTeam) ? winnerTeam : null;
       doc.drawn = Boolean(drawn);
       doc.endedAt = new Date().toISOString();
       doc.durationMs = Date.now() - startedAt;

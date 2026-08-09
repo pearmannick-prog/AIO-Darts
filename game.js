@@ -698,31 +698,32 @@ function finishLeg(winnerIndex, { conceded = false, finisherSeat = null } = {}) 
   // That null matters. endLeg marks the open visit as the checkout only when
   // its seat matches, so a frozen player who reached zero and lost is not
   // credited with one - see matchrecorder.js and docs/team-play.md 7a.
-  state.recorder?.endLeg(state.teams ? finisherSeat : (winnerIndex ?? null));
+  // The seat is who threw the finishing dart - null when nobody did, which is
+  // what a conceded leg is - and the team is who the leg belongs to. Both,
+  // because they are different questions once teams exist: the seat is what
+  // marks a visit as a checkout, the team is what the leg tally counts.
+  state.recorder?.endLeg(
+    state.teams ? finisherSeat : (winnerIndex ?? null),
+    { winnerTeam: state.teams ? winnerIndex : null },
+  );
 
   // Only a finished match is saved. Abandoning one halfway (New Game) leaves
   // nothing behind on purpose: a half-played leg would drag every average down
   // with darts that were never a real attempt at a checkout.
   if (state.match.over && state.recorder) {
     const document = state.recorder.endMatch({
-      // In partners this is a TEAM index, which is not a seat - so it is not
-      // written as one. See the note below on why the record is not saved yet.
+      // In partners the match index counts teams, so it is written as the
+      // winning team and the winning SEAT stays null - a pair won it, and
+      // naming one of them would be the half-credit this whole pass removed.
       winnerSeat: state.teams ? null : (state.match.winnerIndex ?? null),
+      winnerTeam: state.teams ? (state.match.winnerIndex ?? null) : null,
       drawn: Boolean(state.match.drawn),
     });
-    // PARTNERS MATCHES ARE NOT SAVED YET, and that is deliberate rather than
-    // unfinished. Every per-person figure in the record is already correct -
-    // the darts, the averages, the checkout marking - which is why the
-    // recorder still runs and the live average on screen works. What is not
-    // correct is anything derived from WINNING: statsengine.js attributes a
-    // leg and a match to a single seat in five places, so storing a doubles
-    // result now would credit one partner and silently drop the other, and it
-    // would do it in a way that looks exactly like a correct record.
-    //
-    // Writing nothing is recoverable; writing something wrong is not, because
-    // it has to be found first. The next step is the team-aware statistics
-    // pass, after which this gate comes out. See docs/team-play.md section 8.
-    if (!state.teams) recordMatch(document);
+    // Stored locally first and uploaded afterwards, so this works signed out
+    // and offline - see the queue in accountstore.js. Partners matches were
+    // held back from this until the statistics understood sides rather than
+    // seats; they no longer are (ENGINE_VERSION 9).
+    recordMatch(document);
     state.recorder = null;
   }
 }

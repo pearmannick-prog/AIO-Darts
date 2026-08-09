@@ -17,6 +17,10 @@
 
 import { getDatabase, bool, orNull, inTransaction } from "./db.js";
 import { ApiError } from "./api-error.js";
+// The same predicate the stats page uses. Answering "did I win?" here with a
+// second copy of the rule is how a history row and a win count end up
+// disagreeing about the same match.
+import { matchWonBy } from "../statsengine.js";
 
 // Generous but finite. A very long medley of 701 legs might be a few hundred
 // visits; anything past these numbers is a bug or an attempt to fill the disk.
@@ -72,8 +76,8 @@ export function insertMatch(userId, match) {
     const { lastInsertRowid: matchId } = db
       .prepare(
         `INSERT INTO matches (user_id, client_uuid, mode, started_at, ended_at,
-                              duration_ms, format_json, winner_seat, drawn)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                              duration_ms, format_json, winner_seat, winner_team, drawn)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         userId,
@@ -88,12 +92,13 @@ export function insertMatch(userId, match) {
         int(match.durationMs),
         JSON.stringify(match.format ?? []),
         nullableInt(match.winnerSeat),
+        nullableInt(match.winnerTeam),
         bool(match.drawn)
       );
 
     const playerStmt = db.prepare(
-      `INSERT INTO match_players (match_id, seat, display_name, is_self, legs_won, sets_won)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO match_players (match_id, seat, display_name, is_self, team, legs_won, sets_won)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     players.forEach((player, index) => {
       playerStmt.run(
@@ -101,14 +106,18 @@ export function insertMatch(userId, match) {
         int(player.seat, index),
         text(player.displayName, 40) || `Player ${index + 1}`,
         bool(player.isSelf),
+        // nullableInt, not int: 0 is a real team and NULL means singles, so
+        // coercing an absent team to 0 would turn every solo player into
+        // Team 1 and every singles match into a doubles one.
+        nullableInt(player.team),
         int(player.legsWon),
         int(player.setsWon)
       );
     });
 
     const legStmt = db.prepare(
-      `INSERT INTO legs (match_id, leg_index, game, x01_start, rules, bull, rounds, winner_seat)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO legs (match_id, leg_index, game, x01_start, rules, bull, rounds, winner_seat, winner_team)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
     const turnStmt = db.prepare(
       `INSERT INTO turns (leg_id, turn_index, seat, darts, scored, remaining_before,
@@ -133,7 +142,8 @@ export function insertMatch(userId, match) {
         orNull(leg.rules ? text(leg.rules, 20) : null),
         orNull(leg.bull ? text(leg.bull, 10) : null),
         nullableInt(leg.rounds),
-        nullableInt(leg.winnerSeat)
+        nullableInt(leg.winnerSeat),
+        nullableInt(leg.winnerTeam)
       );
 
       turns.forEach((turn, turnIndex) => {
@@ -210,7 +220,7 @@ export function listMatches(userId, { limit = 25, before = null } = {}) {
         .all(userId, capped);
 
   const playerStmt = db.prepare(
-    "SELECT seat, display_name, is_self, legs_won, sets_won FROM match_players WHERE match_id = ? ORDER BY seat"
+    "SELECT seat, display_name, is_self, team, legs_won, sets_won FROM match_players WHERE match_id = ? ORDER BY seat"
   );
   const legStmt = db.prepare(
     "SELECT game, COUNT(*) AS n FROM legs WHERE match_id = ? GROUP BY game"
@@ -232,17 +242,32 @@ export function listMatches(userId, { limit = 25, before = null } = {}) {
       durationMs: row.duration_ms,
       format: safeJson(row.format_json, []),
       winnerSeat: row.winner_seat,
+      winnerTeam: row.winner_team,
       drawn: Boolean(row.drawn),
       games: legStmt.all(row.id).map((g) => ({ game: g.game, legs: g.n })),
       // "Did I win?" is the first thing anyone reads off a history row, so it
       // is answered here rather than leaving the page to work it out from
-      // seats.
-      won: row.winner_seat !== null && self ? row.winner_seat === self.seat : false,
+      // seats - and it is a SIDE that wins, which is a seat in singles and a
+      // team in partners. Answered with the same predicate the stats engine
+      // uses, rather than a second copy of the rule that could disagree with
+      // the numbers on the stats page about the same match.
+      won: self
+        ? matchWonBy(
+            {
+              drawn: Boolean(row.drawn),
+              winnerSeat: row.winner_seat,
+              winnerTeam: row.winner_team,
+              players: players.map((p) => ({ seat: p.seat, team: p.team })),
+            },
+            self.seat,
+          )
+        : false,
       dartsThrown: self ? int(dartStmt.get(row.id, self.seat)?.darts) : 0,
       players: players.map((p) => ({
         seat: p.seat,
         displayName: p.display_name,
         isSelf: Boolean(p.is_self),
+        team: p.team,
         legsWon: p.legs_won,
         setsWon: p.sets_won,
       })),
@@ -278,11 +303,13 @@ export function loadMatch(userId, matchId) {
     durationMs: row.duration_ms,
     format: safeJson(row.format_json, []),
     winnerSeat: row.winner_seat,
+    winnerTeam: row.winner_team,
     drawn: Boolean(row.drawn),
     players: players.map((p) => ({
       seat: p.seat,
       displayName: p.display_name,
       isSelf: Boolean(p.is_self),
+      team: p.team,
       legsWon: p.legs_won,
       setsWon: p.sets_won,
     })),
@@ -294,6 +321,7 @@ export function loadMatch(userId, matchId) {
       bull: leg.bull,
       rounds: leg.rounds,
       winnerSeat: leg.winner_seat,
+      winnerTeam: leg.winner_team,
       turns: turnStmt.all(leg.id).map((turn) => ({
         turnIndex: turn.turn_index,
         seat: turn.seat,
@@ -387,6 +415,7 @@ export function loadAllMatches(userId) {
       durationMs: row.duration_ms,
       format: safeJson(row.format_json, []),
       winnerSeat: row.winner_seat,
+      winnerTeam: row.winner_team,
       drawn: Boolean(row.drawn),
       players: [],
       legs: [],
@@ -401,6 +430,10 @@ export function loadAllMatches(userId) {
       seat: row.seat,
       displayName: row.display_name,
       isSelf: Boolean(row.is_self),
+      // Without this the stats engine sees every recorded match as singles,
+      // and a doubles result would be scored against a seat that did not win
+      // it - which is the exact failure the team column exists to prevent.
+      team: row.team,
       legsWon: row.legs_won,
       setsWon: row.sets_won,
     });
@@ -419,6 +452,7 @@ export function loadAllMatches(userId) {
       bull: row.bull,
       rounds: row.rounds,
       winnerSeat: row.winner_seat,
+      winnerTeam: row.winner_team,
       turns: [],
     };
     legsById.set(row.id, leg);

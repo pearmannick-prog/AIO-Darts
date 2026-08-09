@@ -754,15 +754,21 @@ This is a recommendation, not a decided point.
    key and could not hold the freeze (7a), and partners is refused on non-x01
    legs for now rather than silently mis-scoring a Cricket leg with a
    team-sized leg tally.
-3. **Recorder: four seats, `team` column, migration.** Including every
-   `=== seat` win comparison listed in 3a — this is the part that silently
-   halves if it is missed. **Partly started:** each recorded player already
-   carries `team`, so the record has the field; nothing derives statistics from
-   it yet. **Until it does, a partners match is played but NOT SAVED** — the
-   gate is in `finishLeg`, and the reasoning is written there: every per-person
-   figure in the record is already right, but storing a doubles result now
-   would credit one partner and drop the other, and would look exactly like a
-   correct record while doing it.
+3. ~~**Recorder: four seats, `team` column, migration.**~~ **DONE.** Migration
+   `006_teams.sql` adds `match_players.team` plus `winner_team` on both
+   `matches` and `legs`; the save gate is gone and partners matches are
+   recorded like any other.
+
+   The `=== seat` comparisons became four functions in `statsengine.js` —
+   `isTeamMatch`, `matchWonBy`, `legWonBy` and a private `teamOfSeat` — and
+   every previous copy of the question now calls one. `server/matches.js`
+   answers its history-row "did I win?" through `matchWonBy` too rather than
+   keeping a second copy of the rule, which is how a history row and a win
+   count end up disagreeing about the same match.
+
+   `winner_seat` keeps its exact meaning and is **NULL in a partners game**,
+   which is also what represents a leg with no finisher at all — the frozen
+   concession of 7a.
 4. ~~**Tell the player they are frozen.**~~ **DONE** as part of step 2 — it is
    one line in the turn label once the predicate exists, and deferring it would
    have meant shipping the worst outcome in the game with no warning attached.
@@ -771,7 +777,15 @@ This is a recommendation, not a decided point.
    that by now already understands teams. This is the step that carries 3b's
    invisible-failure risk, which is why it is here rather than first, and why
    the thrower index gets tests rather than care.
-6. **Stats: decide the singles-averages rule, bump `ENGINE_VERSION`.**
+6. ~~**Stats: decide the singles-averages rule, bump `ENGINE_VERSION`.**~~
+   **DONE** alongside step 3, because the two touch the same functions.
+   `ENGINE_VERSION` is 9. Doubles darts feed the averages; doubles wins stay
+   out of the singles win count, win percentage, streaks and the win
+   achievements. Two details worth knowing: the win-percentage **denominator**
+   moved too (`decided`, the matches winnable alone — otherwise playing
+   doubles would quietly lower your win rate), and a doubles match is
+   **skipped** by the streak walk rather than treated as a loss, so it cannot
+   break a run.
 7. **`online.js`:** seat/thrower split, then the roster in `hello`/
    `match_config`.
 8. **Turn rotation online, and the undo window widening** to "anyone on the
