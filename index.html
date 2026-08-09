@@ -4580,6 +4580,32 @@
           </p>
         </div>
 
+        <!-- LOCAL DOUBLES: two people at THIS board, against two at theirs.
+             See docs/team-play.md section 0 for why that is the name - it is
+             about where the players are standing, not about being offline.
+
+             It sits with the format rather than in the lobby for the same
+             reason Match Settings does: this is a property of the match you
+             are about to play, and it has to be reachable on the invite-code
+             path, which has no lobby behind it.
+
+             Both ends have to fill this in. A partner named here against an
+             opponent playing alone is a 2 v 1, which is a different game and
+             is not what either of them chose - so the app plays singles and
+             says so rather than guessing. -->
+        <div class="format-block">
+          <div class="setup-row">
+            <label for="online-partner">Partner</label>
+            <input type="text" id="online-partner" maxlength="40"
+                   placeholder="Name - leave blank to play alone">
+          </div>
+          <p class="format-note">
+            Playing doubles with someone at your board? Name them here. Your
+            opponents must name a partner too, or the match is played as
+            singles.
+          </p>
+        </div>
+
         <!-- Optional, and collapsed by default: nobody who plays without a
              camera should have to scroll past it. Sits above Create/Join
              because "check my gear" is a thing you do BEFORE you make someone
@@ -4707,11 +4733,11 @@
 
         <div id="online-scoreboard" class="online-scoreboard">
           <div id="online-me-box" class="online-score-box">
-            <div class="online-score-label">You</div>
+            <div id="online-me-label" class="online-score-label">You</div>
             <div id="online-me-score" class="online-score-value">501</div>
           </div>
           <div id="online-opp-box" class="online-score-box">
-            <div class="online-score-label">Opponent</div>
+            <div id="online-opp-label" class="online-score-label">Opponent</div>
             <div id="online-opp-score" class="online-score-value">501</div>
           </div>
         </div>

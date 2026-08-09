@@ -22,6 +22,31 @@ that it ships the niche variant before the expected one.
 
 ---
 
+## 0. The two kinds of doubles, and what they are called
+
+**Adopted 9 August 2026, and it supersedes the "Shape A / Shape B" labels used
+throughout the rest of this document.** The distinction is not about online
+versus offline — it is about **where the players are standing**, which is the
+thing that actually decides the engineering:
+
+- **LOCAL DOUBLES** — partners share **one board and one machine**. They take
+  turns at the same oche, and the app sees one device for the pair. This is
+  what a pub doubles match is, and it works both in pass-and-play and online,
+  where each *end* of the connection is a local pair.
+- **REMOTE DOUBLES** — every player has **their own setup**: their own board,
+  their own machine, their own connection. Four people, four devices.
+
+The old names map straight onto these: Shape A is local doubles at each end of
+an online match, and Shape B is remote doubles. The new names are better
+because they say what is true of the players rather than which section of this
+document described it first, and because "local doubles" is a real thing you
+can play with nobody online at all — which `game.js` now does.
+
+Everything built so far is **local doubles**. Remote doubles is unbuilt, and
+section 4 is still the honest account of what it costs.
+
+---
+
 ## 1. The thing that changes the whole shape of this
 
 **"2v2" is two completely different engineering problems depending on where the
@@ -777,6 +802,20 @@ This is a recommendation, not a decided point.
    that by now already understands teams. This is the step that carries 3b's
    invisible-failure risk, which is why it is here rather than first, and why
    the thrower index gets tests rather than care.
+
+   **Already true ONLINE, for free.** `online.me` / `online.opp` have always
+   held one score per *side*, which is the shared-total shape exactly — so
+   online local doubles arrived at the shared-total model without anyone
+   building it, and Cricket doubles online works for the same reason. What is
+   still outstanding is the shared-total model in `game.js`, where scores are
+   per person.
+
+   **The general lesson, worth applying to the next controller:** give each
+   controller the variant that matches the model it already has. `game.js` was
+   already four scores for four players, so freeze-ON x01 was nearly free
+   there; `online.js` was already one score per side, so shared-total doubles
+   was nearly free here. Picking one variant to build "first" across the whole
+   app would have meant fighting one of the two controllers for no reason.
 6. ~~**Stats: decide the singles-averages rule, bump `ENGINE_VERSION`.**~~
    **DONE** alongside step 3, because the two touch the same functions.
    `ENGINE_VERSION` is 9. Doubles darts feed the averages; doubles wins stay
@@ -786,10 +825,14 @@ This is a recommendation, not a decided point.
    doubles would quietly lower your win rate), and a doubles match is
    **skipped** by the streak walk rather than treated as a loss, so it cannot
    break a run.
-7. **`online.js`:** seat/thrower split, then the roster in `hello`/
-   `match_config`.
-8. **Turn rotation online, and the undo window widening** to "anyone on the
-   other team throws".
+7. ~~**`online.js`:** seat/thrower split, then the roster in `hello`/
+   `match_config`.~~ **DONE**, and far smaller than this list expected — see
+   the note below on why.
+8. ~~**Turn rotation online, and the undo window widening**~~ **DONE / NOT
+   NEEDED.** Rotation is one line beside the existing side flip. The undo
+   window needed **no widening at all**: the two stacks are per SIDE, and in
+   local doubles a side *is* a team, so "the window closes when the other side
+   throws" was already "when anyone on the other team throws".
 9. **Lobby: pair formation. This is the biggest single piece and is easy to
    under-estimate** — until it exists, doubles is invite-code only, which is a
    perfectly good first release.
