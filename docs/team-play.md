@@ -119,7 +119,7 @@ this document.**
 | Game | Rules seats | Recorder seats | Index spaces |
 | --- | --- | --- | --- |
 | **Cricket doubles** | **2** — the team shares marks and points | 4 — one per person | **Two.** The split described below. |
-| **x01 doubles (4-score)** | **4** — every player has their own remaining | 4 — one per person | **One.** Same as today. |
+| **x01 doubles (4-score, freeze)** | **4** — every player has their own remaining | 4 — one per person | **One.** Same as today. |
 
 Recorder seats are PEOPLE in both, joined to teams by a `team` column. What
 varies is whether the *rules* layer sees teams at all, and it does so only in
@@ -564,11 +564,27 @@ unreachable rather than merely rare. This is the clearest example so far of the
 app being able to beat the machine it takes its rules from, and it costs almost
 nothing.
 
-**One thing still unconfirmed:** the rule is scoped to x01 "with 4 Scores",
-which implies a 2-score partners x01 variant exists where the freeze does not
-apply. If both are offered, x01 doubles is two formats rather than one. Worth
-settling before the format picker is designed, but it does not block anything —
-build the 4-score variant, which is the one the rule describes.
+**The freeze is a GAME VERSION, not a property of partners x01.** Confirmed: not
+all four-or-more-player x01 games carry it. So it is selectable, and it belongs
+exactly where the other selectable x01 rules already live — in the leg
+descriptor. `medley.js` legs are `{game:"x01", score, rules}` and `rules` already
+carries the in/out matrix, so the freeze is one more key beside them, defaulting
+off. That is the whole integration: `normalizeLeg` gains a default, the format
+picker gains a checkbox, and nothing else learns a new concept.
+
+This matters more than it sounds, because it means **the freeze must not be
+wired into the team model.** The tempting shortcut is "partners x01 ⇒ freeze",
+and it is wrong: a partners game without the freeze is an ordinary four-player
+x01 with a team win condition. Keeping them independent is what stops teams and
+the freeze from having to be built in the same change.
+
+**Still unconfirmed, and it is the one question left on x01:** does the *non*-
+freeze partners x01 also use four separate scores, or does it share one team
+score? The source ties four scores to the freeze version specifically. If
+non-freeze partners x01 shares a score, then the 3a table needs a third row and
+x01 doubles has both seat models depending on a checkbox — which is worth
+knowing before the controller is written, though it changes nothing about
+building the freeze version first.
 
 ### 7b. Which game to build first — the answer has changed
 
