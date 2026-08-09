@@ -4,7 +4,7 @@ Status: **proposal, nothing built.** Written to be argued with. Every claim abou
 the current code carries a file reference so you can check it rather than trust
 it.
 
-**Revised 9 August 2026.** Four of the six open questions are now decided, and
+**Revised 9 August 2026.** Five of the six open questions are now decided, and
 the seat model is settled **for Cricket**, on the evidence of a photographed
 Arachnid Galaxy 3 running Cricket /200 doubles — see section 3a. That machine is
 already this codebase's reference for the x01 in/out matrix (`scoring.js`), so
@@ -207,11 +207,30 @@ does not count toward singles leaderboards. That is exactly the rule already
 applied to matches against a computer opponent (`ENGINE_VERSION` 7), so there is
 precedent and a place to put it.
 
-**Cameras — nothing to do.** Two peers, and `webrtc.js` already reserves **two**
-video m-lines per connection for the second-camera feature. A team gets one
-camera on each player, or one on the board and one on whoever is throwing, with
-no renegotiation and no new code. This is the single strongest argument for
-Shape A: the camera story is already built.
+**Cameras — nothing to do, and this is now confirmed rather than argued.**
+**DECIDED: the camera setup in Shape A is identical to singles.** The earlier
+draft speculated about how a team might allocate its two m-lines — one per
+player, or one on the board and one on the thrower. That framing was wrong,
+because it treated a camera as belonging to a *person*. It belongs to an **end**:
+both partners stand at one board, so what the far side needs to see is exactly
+what it needs to see in a singles match, and there is no second viewpoint to
+carry.
+
+So the media path does not change at all. One main camera per end plus the
+existing optional board camera, the same two m-lines already negotiated up front
+and filled with `replaceTrack()`, the same `media_state` message intercepted in
+`webrtc.js`, the same device check, the same `switchCamera()` and mirroring
+rules. Nothing renegotiates and no bandwidth question arises — **doubling the
+players does not double the streams**, which is the single sharpest difference
+between Shape A and Shape B, where four cameras in a mesh is the cost that
+forces an SFU (section 4).
+
+One small UI consequence, not a networking one: a video tile is now a **team**,
+so the tile shows two people while the scoreboard names one. That is consistent
+with the existing rule that each player's score sits on their own camera — the
+score on a tile is simply the team's — and it pairs with the naming pattern
+below, where the tile shows the pair and the large name says which of them is
+throwing.
 
 ### What is genuinely fiddly
 
@@ -408,8 +427,13 @@ Three settled on 9 August 2026, three still open.
    partner may finish** — the standard rule, and the default the code should
    assume. **But it is conditional**, and the condition is the Freeze Rule: see
    7a, which is now the largest open question in this document.
-5. **In Shape A, what do the two cameras point at?** One per player, or one on
-   the board and one on the thrower? The connection supports either today.
+5. ~~**In Shape A, what do the two cameras point at?**~~ **DECIDED: exactly what
+   they point at in singles.** Both partners are at one board, so a camera
+   belongs to an *end*, not to a person, and there is no second viewpoint to
+   carry. The whole media path is unchanged — see section 3. The question was
+   malformed: it assumed a team would want to spend its two m-lines differently,
+   when the reason Shape A is cheap is that it does not want to spend them at
+   all.
 6. **What happens when one player of four drops?** Forfeit the team, pause, or
    let their partner throw both? This has no standard answer and it will happen.
 
