@@ -60,6 +60,13 @@ export function createRecorder({ mode, format, players }) {
       seat,
       displayName: p.displayName,
       isSelf: Boolean(p.isSelf),
+      // Which team this seat plays for, or null in singles. Carried even
+      // though nothing derives statistics from it yet, because the alternative
+      // - inferring partners from seat parity when the time comes - is a rule
+      // that would then live in the recorder, the stats engine, the
+      // leaderboards and both controllers at once. One field, written by
+      // whoever knows the answer. See docs/team-play.md.
+      team: Number.isInteger(p.team) ? p.team : null,
       legsWon: 0,
       setsWon: 0, // see the schema: sets don't exist in this app yet
     })),

@@ -23,6 +23,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { isFrozen, resolvePartnersThrow, resolveThrow } from "../scoring.js";
+import {
+  canPlayTeams, teamOf, teamLabel, partnerOf, opponentsOf, freezeInputs,
+} from "../teams.js";
+import { normalizeLeg, gameLabel } from "../medley.js";
 import { SegmentType } from "../granboard.js";
 
 // Segment builders. resolveThrow only reads value, type and section, so these
@@ -257,4 +261,112 @@ test("your own score is irrelevant - on a double either way", () => {
   const onADouble = 40;
   assert.equal(resolvePartnersThrow(onADouble, D(20), CLEAR).isWin, true);
   assert.equal(resolvePartnersThrow(onADouble, D(20), FROZEN).isWin, false);
+});
+
+// ---------------------------------------------------------------------------
+// The pairing - teams.js
+//
+// Which seat is my partner is the other half of getting the freeze right, and
+// it fails the same silent way: pair the wrong seats and the predicate still
+// answers, still plausibly, and the only symptom is a leg that ends when it
+// should not have.
+
+test("partners is offered at exactly four seats", () => {
+  // Three cannot be two equal teams and six is a different game with its own
+  // rotation. Neither is a partners match with a bit missing.
+  assert.equal(canPlayTeams(4), true);
+  for (const n of [0, 1, 2, 3, 5, 6, 8]) assert.equal(canPlayTeams(n), false);
+});
+
+test("seats alternate, which is what keeps the existing rotation correct", () => {
+  // A1 B1 A2 B2. game.js advances with (i + 1) % players.length and needs no
+  // change at all because of this - so if the pairing ever stops alternating,
+  // turn ORDER breaks too, not just the teams.
+  assert.deepEqual([0, 1, 2, 3].map(teamOf), [0, 1, 0, 1]);
+});
+
+test("partnerOf is symmetric and never yourself", () => {
+  for (const seat of [0, 1, 2, 3]) {
+    assert.notEqual(partnerOf(seat), seat);
+    assert.equal(partnerOf(partnerOf(seat)), seat);
+    assert.equal(teamOf(partnerOf(seat)), teamOf(seat));
+  }
+});
+
+test("opponents are the other team, both of them", () => {
+  assert.deepEqual(opponentsOf(0), [1, 3]);
+  assert.deepEqual(opponentsOf(1), [0, 2]);
+  assert.deepEqual(opponentsOf(2), [1, 3]);
+  assert.deepEqual(opponentsOf(3), [0, 2]);
+  for (const seat of [0, 1, 2, 3]) {
+    assert.equal(opponentsOf(seat).length, 2);
+    assert.equal(opponentsOf(seat).includes(seat), false);
+    assert.equal(opponentsOf(seat).includes(partnerOf(seat)), false);
+  }
+});
+
+test("teamLabel is 1-based, and agrees with teamOf", () => {
+  assert.equal(teamLabel(0), "Team 1");
+  assert.equal(teamLabel(1), "Team 2");
+  assert.equal(teamLabel(2), "Team 1");
+  assert.equal(teamLabel(3), "Team 2");
+});
+
+test("freezeInputs reads the partner and the opponents, never the thrower", () => {
+  // Seats 0 and 2 are one team, 1 and 3 the other.
+  const remaining = [40, 60, 300, 20];
+  assert.deepEqual(freezeInputs(remaining, 0), {
+    partnerRemaining: 300,          // seat 2
+    opponentsCombined: 60 + 20,     // seats 1 and 3
+  });
+  // The thrower's own 40 appears in neither number. Change it and nothing
+  // about the answer moves.
+  const moved = [180, 60, 300, 20];
+  assert.deepEqual(freezeInputs(moved, 0), freezeInputs(remaining, 0));
+});
+
+test("the pairing and the predicate agree end to end", () => {
+  // Seat 0 throws. Partner (seat 2) is on 300 against 80 combined: frozen.
+  // Seat 1 throws. Partner (seat 3) is on 20 against 340 combined: clear.
+  const remaining = [40, 60, 300, 20];
+  const a = freezeInputs(remaining, 0);
+  const b = freezeInputs(remaining, 1);
+  assert.equal(isFrozen(a.partnerRemaining, a.opponentsCombined), true);
+  assert.equal(isFrozen(b.partnerRemaining, b.opponentsCombined), false);
+});
+
+// ---------------------------------------------------------------------------
+// The leg descriptor - medley.js
+//
+// The freeze sits BESIDE `rules` rather than inside it, because `rules` is a
+// string key into X01_RULES and has no room for another field. Asserted here
+// because docs/team-play.md originally assumed otherwise.
+
+test("an x01 leg always describes its freeze, even when off", () => {
+  // An absent key must mean the default rather than undefined behaviour - a
+  // stored match has to be readable without knowing which build wrote it.
+  const plain = normalizeLeg({ game: "x01", score: 501 });
+  assert.equal(plain.freeze, false);
+  assert.equal(plain.frozenFinish, "loss");
+});
+
+test("'loss' is the default penalty, and only 'bust' overrides it", () => {
+  assert.equal(normalizeLeg({ game: "x01", freeze: true }).frozenFinish, "loss");
+  assert.equal(normalizeLeg({ game: "x01", freeze: true, frozenFinish: "bust" }).frozenFinish, "bust");
+  // Anything unrecognised falls back to the sourced behaviour rather than
+  // being carried through as-is.
+  assert.equal(normalizeLeg({ game: "x01", frozenFinish: "nonsense" }).frozenFinish, "loss");
+});
+
+test("freeze is only truthy when it is exactly true", () => {
+  // Legacy legs, and legs from an older build, carry no freeze key at all.
+  assert.equal(normalizeLeg("501").freeze, false);
+  assert.equal(normalizeLeg({ game: "x01", freeze: "yes" }).freeze, false);
+  assert.equal(normalizeLeg({ game: "x01", freeze: 1 }).freeze, false);
+});
+
+test("the label names the freeze only when it is on", () => {
+  assert.equal(gameLabel({ game: "x01", score: 501 }).includes("freeze"), false);
+  assert.equal(gameLabel({ game: "x01", score: 501, freeze: true }).includes("· freeze"), true);
+  assert.equal(gameLabel({ game: "x01", score: 501, freeze: true, frozenFinish: "bust" }).includes("freeze (bust)"), true);
 });

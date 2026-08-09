@@ -742,20 +742,30 @@ This is a recommendation, not a decided point.
    rather than reimplementing any of it, and asks about the freeze only once
    `isWin` is true — so a dart that busts on the out rule still busts instead
    of conceding the leg.
-2. **Local x01 doubles, freeze ON, in `game.js`.** Team grouping and turn
-   rotation — rotation is `game.js:1119`, already modular over `players.length`
-   — plus the team win condition and both `frozenFinish` outcomes. Singles keeps
-   working throughout: a team of one is a singles player, so nothing needs a
-   special case. This variant specifically because it is the only one with a
-   single index space, so every error is visible; see 7c. Do `"bust"` first: it
-   reuses the existing bust path whole, so the leg can be played end to end
-   before `medley.js` learns that a leg can be won by the side that did not
-   finish it.
+2. ~~**Local x01 doubles, freeze ON, in `game.js`.**~~ **DONE.** A Partners
+   (2 v 2) toggle at exactly four seats, `teams.js` for the pairing, the freeze
+   on the leg descriptor, the team win condition, both `frozenFinish` outcomes,
+   and the frozen warning of step 4 — which turned out to cost one line once
+   the predicate existed, so it was not worth deferring. Turn rotation needed
+   **no change at all**: seats alternate, so `(i + 1) % players.length` was
+   already the doubles order.
+
+   Two things learned in the doing, both recorded above: `rules` is a string
+   key and could not hold the freeze (7a), and partners is refused on non-x01
+   legs for now rather than silently mis-scoring a Cricket leg with a
+   team-sized leg tally.
 3. **Recorder: four seats, `team` column, migration.** Including every
    `=== seat` win comparison listed in 3a — this is the part that silently
-   halves if it is missed.
-4. **Tell the player they are frozen** (`checkouthint.js`), which the reference
-   machines do not do. Cheap, and it removes the worst outcome in the game.
+   halves if it is missed. **Partly started:** each recorded player already
+   carries `team`, so the record has the field; nothing derives statistics from
+   it yet. **Until it does, a partners match is played but NOT SAVED** — the
+   gate is in `finishLeg`, and the reasoning is written there: every per-person
+   figure in the record is already right, but storing a doubles result now
+   would credit one partner and drop the other, and would look exactly like a
+   correct record while doing it.
+4. ~~**Tell the player they are frozen.**~~ **DONE** as part of step 2 — it is
+   one line in the turn label once the predicate exists, and deferring it would
+   have meant shipping the worst outcome in the game with no warning attached.
 5. **The shared-total model, once** — the two-index split of 3a, delivering
    freeze-OFF x01 doubles **and** Cricket doubles together, against a recorder
    that by now already understands teams. This is the step that carries 3b's

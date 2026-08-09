@@ -7,7 +7,12 @@ import {
 } from "./boardlink.js";
 import { createScorerLink } from "./scorerlink.js";
 import { SOURCES as SCORER_SOURCES } from "./dartnotation.js";
-import { resolveThrow, rulesFor } from "./scoring.js";
+import {
+  resolveThrow, resolvePartnersThrow, isFrozen, rulesFor,
+} from "./scoring.js";
+import {
+  canPlayTeams, teamOf, teamLabel, freezeInputs, TEAM_COUNT,
+} from "./teams.js";
 import { createQuickEntry } from "./quickentry.js";
 import { renderDartboard, moveMarkerTo as moveMarker, hideMarker } from "./dartboard.js";
 import {
@@ -52,6 +57,10 @@ const state = {
   match: null,     // see medley.js; a single game is a one-leg match
   legOver: false,  // leg decided but match still running - waiting for "Next leg"
   players: [],
+  // Partners play. False for every ordinary match, which is what keeps every
+  // path below reading exactly as it did - a singles game is not a team game
+  // with one player per team, it simply doesn't take these branches.
+  teams: false,
   currentPlayerIndex: 0,
   dartsThisTurn: [],
   startOfTurnRemaining: STARTING_SCORE,
@@ -117,6 +126,8 @@ const el = {
   // online), and an unscoped ".dartboard" would silently match whichever
   // appears first in the HTML.
   dartboardEl: document.querySelector("#local-mode .dartboard"),
+  teamsSetup: document.getElementById("teams-setup"),
+  teamsToggle: document.getElementById("teams-toggle"),
 };
 
 // Clicking a segment on the board scores it directly - the same applyHit
@@ -179,6 +190,37 @@ function refreshPlayerRows() {
     row.querySelector(".player-input").placeholder = `Player ${i + 1}`;
   });
   el.playerInputs.classList.toggle("at-minimum", rows.length <= MIN_PLAYERS);
+  refreshTeamsSetup(rows);
+}
+
+// Partners is only offered at exactly four seats. Adding a fifth player with
+// the box already ticked would leave a checked control governing nothing, so
+// the toggle is cleared as it is hidden rather than left set and ignored - the
+// state on screen is then always the state the match will start with.
+function refreshTeamsSetup(rows) {
+  if (!el.teamsSetup || !el.teamsToggle) return;
+  const eligible = canPlayTeams(rows.length);
+  el.teamsSetup.classList.toggle("hidden", !eligible);
+  if (!eligible) el.teamsToggle.checked = false;
+
+  // The pairing, shown rather than described. Which seats are partners is the
+  // one thing about this that is easy to get wrong at the table, and reading
+  // it off the rows beats trusting a sentence about odds and evens.
+  const on = eligible && el.teamsToggle.checked;
+  rows.forEach((row, i) => {
+    let badge = row.querySelector(".player-team");
+    if (!on) {
+      badge?.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "player-team";
+      // Before the remove button, so the row reads name - who - which team.
+      row.insertBefore(badge, row.querySelector(".player-remove"));
+    }
+    badge.textContent = teamLabel(i);
+  });
 }
 
 addPlayerRow("Player 1");
@@ -198,6 +240,10 @@ subscribeToAccount(({ user }) => {
 
 el.addPlayerBtn.addEventListener("click", () => addPlayerRow());
 
+// Ticking the box only redraws the badges - nothing about the match is decided
+// until Start Game reads it.
+el.teamsToggle?.addEventListener("change", () => refreshPlayerRows());
+
 el.playerInputs.addEventListener("click", (event) => {
   if (!event.target.classList.contains("player-remove")) return;
   if (el.playerInputs.querySelectorAll(".player-row").length <= MIN_PLAYERS) return;
@@ -214,7 +260,33 @@ el.startGameBtn.addEventListener("click", () => {
   // evidence of what you meant to play, and the point of the list is to save
   // you setting it up again.
   recordFormatUsed(legs);
-  state.match = createMatch(legs, names.length);
+
+  // Read once, here, rather than from the checkbox again later: the form stays
+  // on screen behind the game panel and a rematch replays beginMatch without
+  // it, so a match must not be able to change shape halfway through because
+  // somebody tidied the setup.
+  state.teams = Boolean(el.teamsToggle?.checked) && canPlayTeams(names.length);
+
+  // PARTNERS IS x01 ONLY FOR NOW. Cricket doubles is a different seat model -
+  // the team shares one set of marks, where partners x01 gives everyone their
+  // own score - and it is the next piece of work rather than something this
+  // one covers. Refusing the format is the honest failure: the alternative is
+  // a medley that starts fine and then reaches a Cricket leg with a leg tally
+  // sized for teams and a rules module expecting people, which would go wrong
+  // several minutes into a match rather than before it.
+  if (state.teams && legs.map(normalizeLeg).some((l) => l.game !== "x01")) {
+    alert(
+      "Partners play currently supports x01 legs only.\n\n"
+      + "Remove the other games from the format, or turn Partners off.",
+    );
+    return;
+  }
+
+  // LEGS ARE WON BY TEAMS. createMatch sizes legsWon at call time, so passing
+  // the team count is the whole of what a partners match needs from medley.js
+  // - the leg tally, "best of five", the clinch and the draw all then work on
+  // teams without knowing that is what they are counting.
+  state.match = createMatch(legs, state.teams ? TEAM_COUNT : names.length);
   state.playerNames = names;
 
   // Which seat belongs to the person whose account this is. Pass-and-play has
@@ -247,6 +319,13 @@ el.startGameBtn.addEventListener("click", () => {
     players: names.map((name, seat) => ({
       displayName: name,
       isSelf: seat === selfSeat && !state.bots[seat],
+      // Explicit, never re-derived from seat parity. The pairing is worked out
+      // once in teams.js from an order the player can see, and every consumer
+      // of the record is told the answer rather than being trusted to
+      // recompute it - see docs/team-play.md on why a convention in five
+      // places is one that drifts. Null in singles, which is the honest
+      // representation rather than "team 0".
+      team: state.teams ? teamOf(seat) : null,
     })),
   });
 
@@ -508,6 +587,10 @@ function snapshot() {
       startOfTurnRemaining: state.startOfTurnRemaining,
       gameOver: state.gameOver,
       winnerIndex: state.winnerIndex,
+      // Undoing the dart that conceded a leg has to clear the reason as well
+      // as the result, or the label keeps saying somebody went out frozen
+      // after the throw that did it has been taken back.
+      legConceded: state.legConceded,
       throwLog: state.throwLog,
     })),
     // Rides along in the same snapshot rather than keeping a second stack, so
@@ -571,6 +654,7 @@ function startLeg(names) {
   state.gameOver = false;
   state.legOver = false;
   state.winnerIndex = null;
+  state.legConceded = false;
   state.throwLog = [];
 
   state.recorder?.startLeg({
@@ -588,9 +672,15 @@ function startLeg(names) {
 // Called whenever a leg is won. Decides whether that also ends the match.
 // gameOver stays true either way so no further darts register until the
 // player moves on.
-function finishLeg(winnerIndex) {
+// winnerIndex is a TEAM index in partners play and a seat index otherwise -
+// the same number `state.match.legsWon` is indexed by, because createMatch was
+// sized with whichever of the two this match counts in. Everything that reads
+// state.winnerIndex has to know which, so sideNames() below is the only place
+// that turns it back into something to show.
+function finishLeg(winnerIndex, { conceded = false, finisherSeat = null } = {}) {
   state.gameOver = true;
   state.winnerIndex = winnerIndex;
+  state.legConceded = conceded;
   recordLegWin(state.match, winnerIndex);
   // A one-leg match is over the moment the leg is - nothing to advance to.
   state.legOver = !state.match.over;
@@ -599,19 +689,40 @@ function finishLeg(winnerIndex) {
   // for the sound that means it is finished.
   if (state.match.over) cueWin();
 
-  state.recorder?.endLeg(winnerIndex ?? null);
+  // The recorder counts SEATS, always - a leg is closed against the person who
+  // threw the finishing dart, not against a team. In singles the two numbers
+  // are the same one. In partners they are not, so the seat is passed
+  // explicitly, and it is null when nobody on the winning side finished
+  // anything: a conceded leg was won by the other team without a checkout.
+  //
+  // That null matters. endLeg marks the open visit as the checkout only when
+  // its seat matches, so a frozen player who reached zero and lost is not
+  // credited with one - see matchrecorder.js and docs/team-play.md 7a.
+  state.recorder?.endLeg(state.teams ? finisherSeat : (winnerIndex ?? null));
 
   // Only a finished match is saved. Abandoning one halfway (New Game) leaves
   // nothing behind on purpose: a half-played leg would drag every average down
   // with darts that were never a real attempt at a checkout.
   if (state.match.over && state.recorder) {
     const document = state.recorder.endMatch({
-      winnerSeat: state.match.winnerIndex ?? null,
+      // In partners this is a TEAM index, which is not a seat - so it is not
+      // written as one. See the note below on why the record is not saved yet.
+      winnerSeat: state.teams ? null : (state.match.winnerIndex ?? null),
       drawn: Boolean(state.match.drawn),
     });
-    // Stored locally first and uploaded afterwards, so this works signed out
-    // and offline - see the queue in accountstore.js.
-    recordMatch(document);
+    // PARTNERS MATCHES ARE NOT SAVED YET, and that is deliberate rather than
+    // unfinished. Every per-person figure in the record is already correct -
+    // the darts, the averages, the checkout marking - which is why the
+    // recorder still runs and the live average on screen works. What is not
+    // correct is anything derived from WINNING: statsengine.js attributes a
+    // leg and a match to a single seat in five places, so storing a doubles
+    // result now would credit one partner and silently drop the other, and it
+    // would do it in a way that looks exactly like a correct record.
+    //
+    // Writing nothing is recoverable; writing something wrong is not, because
+    // it has to be found first. The next step is the team-aware statistics
+    // pass, after which this gate comes out. See docs/team-play.md section 8.
+    if (!state.teams) recordMatch(document);
     state.recorder = null;
   }
 }
@@ -655,11 +766,17 @@ function applyHit(rawSegment) {
   // Captured before the throw is applied, because the recorder wants the score
   // this dart was thrown at, not the one it left behind.
   const remainingBefore = player.remaining;
-  const { after, isBust, isWin, opened, ignored } = resolveThrow(player.remaining, segment, {
-    inRule: rules.in,
-    outRule: rules.out,
-    opened: player.opened !== false,
-  });
+  const { after, isBust, isWin, opened, ignored, concedes } = resolvePartnersThrow(
+    player.remaining, segment, {
+      inRule: rules.in,
+      outRule: rules.out,
+      opened: player.opened !== false,
+      // The freeze is asked about only in a partners leg that has it switched
+      // on. resolvePartnersThrow with freeze off returns resolveThrow's answer
+      // untouched, so an ordinary singles game takes exactly the path it
+      // always did rather than a team-shaped one that happens to agree.
+      ...freezeOptions(),
+    });
   player.opened = opened;
 
   state.dartsThisTurn.push(segment);
@@ -688,17 +805,62 @@ function applyHit(rawSegment) {
     cueBust();
     player.remaining = state.startOfTurnRemaining;
     endTurn({ busted: true });
+  } else if (concedes) {
+    // Reached zero while frozen, under the "loss" setting: the leg is over and
+    // the OTHER team has won it. Deliberately not folded into the bust branch
+    // above - a bust restores the score and passes the turn, this ends the leg
+    // - and the score is left AT zero rather than restored, because that is
+    // what happened and the throw log has to be able to show it.
+    player.remaining = after;
+    cueBust();
+    finishLeg(opposingTeamOf(state.currentPlayerIndex), { conceded: true });
   } else {
     player.remaining = after;
     if (isWin) {
       cueCheckout();
-      finishLeg(state.currentPlayerIndex);
+      finishLeg(
+        state.teams ? teamOf(state.currentPlayerIndex) : state.currentPlayerIndex,
+        { finisherSeat: state.currentPlayerIndex },
+      );
     } else if (state.dartsThisTurn.length >= 3) {
       endTurn();
     }
   }
 
   render();
+}
+
+// The freeze half of a throw's options, or nothing at all when this is not a
+// partners leg with the rule switched on.
+//
+// Kept as one function because the two numbers it produces are the ones the
+// rule is easiest to get wrong about - it never reads the thrower's own score
+// - so there is exactly one place that derives them, shared with the online
+// controller when that arrives. teams.js does the actual pairing arithmetic.
+function freezeOptions() {
+  if (!state.teams || !state.legConfig?.freeze) return { freeze: false };
+  const remainings = state.players.map((p) => p.remaining);
+  return {
+    freeze: true,
+    frozenFinish: state.legConfig.frozenFinish || "loss",
+    ...freezeInputs(remainings, state.currentPlayerIndex),
+  };
+}
+
+// Is the player at the oche frozen right now? Read by the UI, which warns them
+// BEFORE they throw - the reference machines do not, and say so in their own
+// documentation, which makes this the cheapest improvement on them available.
+function currentlyFrozen() {
+  const opts = freezeOptions();
+  if (!opts.freeze) return false;
+  // isFrozen rather than re-writing `>` here. The comparison is the whole rule
+  // and a second copy of it is a second thing to get backwards - which would
+  // show as the warning disagreeing with what the throw then does.
+  return isFrozen(opts.partnerRemaining, opts.opponentsCombined);
+}
+
+function opposingTeamOf(seat) {
+  return (teamOf(seat) + 1) % TEAM_COUNT;
 }
 
 // DartConnect-style whole-turn-total entry. Unlike applyHit, this always
@@ -733,10 +895,15 @@ function applyQuickTotal(totalValue) {
   // an exact-zero entry is assumed to be a legal finish under whatever the
   // leg's out rule is (see quickentry.js).
   player.opened = true;
-  const { after, isBust, isWin } = resolveThrow(player.remaining, segment, {
+  // The freeze applies to a quick total exactly as it does to a dart: what it
+  // governs is reaching zero, and it makes no difference whether the three
+  // darts were entered one at a time or added up first. Without this, whole-
+  // turn entry would be a way to check out while frozen and get away with it.
+  const { after, isBust, isWin, concedes } = resolvePartnersThrow(player.remaining, segment, {
     inRule: "straight",
     outRule: "straight",
     opened: true,
+    ...freezeOptions(),
   });
 
   state.throwLog.unshift({
@@ -760,10 +927,16 @@ function applyQuickTotal(totalValue) {
   if (isBust) {
     player.remaining = state.startOfTurnRemaining;
     endTurn();
+  } else if (concedes) {
+    player.remaining = after;
+    finishLeg(opposingTeamOf(state.currentPlayerIndex), { conceded: true });
   } else {
     player.remaining = after;
     if (isWin) {
-      finishLeg(state.currentPlayerIndex);
+      finishLeg(
+        state.teams ? teamOf(state.currentPlayerIndex) : state.currentPlayerIndex,
+        { finisherSeat: state.currentPlayerIndex },
+      );
     } else {
       endTurn(); // always finalizes, regardless of dartsThisTurn count
     }
@@ -779,6 +952,22 @@ function applyQuickTotal(totalValue) {
 // Shows which leg is in progress and the running leg tally. Hidden entirely
 // for a single game, so a normal one-off match looks exactly as it did before
 // medleys existed.
+// The names of the SIDES this match is scored between, in the order
+// `match.legsWon` is indexed. Singles: one per player. Partners: one per team,
+// which is both partners' names, because "Team 1 leads 2-1" tells you nothing
+// about who is at the board and a scoreboard is read by people who know each
+// other's names rather than their seat numbers.
+//
+// One function, because the leg tally, the match bar and the winner banner
+// must all agree about what index 1 refers to - and a second derivation of
+// that is how they would stop agreeing.
+function sideNames() {
+  const names = state.players.map((p) => p.name);
+  if (!state.teams) return names;
+  return Array.from({ length: TEAM_COUNT }, (_, team) =>
+    names.filter((_n, seat) => teamOf(seat) === team).join(" & "));
+}
+
 function renderMatchBar() {
   if (!el.matchBar) return;
   const match = state.match;
@@ -792,7 +981,7 @@ function renderMatchBar() {
 
   if (!multiLeg) return;
 
-  const names = state.players.map((p) => p.name);
+  const names = sideNames();
   el.matchBar.querySelector(".match-progress").textContent = legProgressText(match);
   el.matchBar.querySelector(".match-score").textContent = matchScoreText(match, names);
 }
@@ -801,14 +990,19 @@ function renderMatchBar() {
 // play, match won, and a drawn match (possible with an even number of legs).
 function winnerBannerText() {
   const match = state.match;
-  const names = state.players.map((p) => p.name);
+  const names = sideNames();
+  // A side is one person or two, so the verb has to agree with it. "Ben & Dan
+  // wins!" is the kind of thing that makes a scoreboard look unfinished, and
+  // the banner is the one line of the match everybody reads.
+  const wins = state.teams ? "win" : "wins";
+  const takes = state.teams ? "take" : "takes";
 
   if (match?.over) {
     if (match.drawn) return `Match drawn ${matchScoreText(match, names)}`;
     const winner = names[match.winnerIndex] ?? "Winner";
     return match.legs.length > 1
-      ? `🏆 ${winner} wins the match ${matchScoreText(match, names)}`
-      : `🏆 ${winner} wins!`;
+      ? `🏆 ${winner} ${wins} the match ${matchScoreText(match, names)}`
+      : `🏆 ${winner} ${wins}!`;
   }
 
   // A Count Up leg can end level, in which case it's credited to nobody.
@@ -816,7 +1010,7 @@ function winnerBannerText() {
     return `Leg ${match.currentLeg + 1} drawn · ${matchScoreText(match, names)}`;
   }
   const legWinner = names[state.winnerIndex] ?? "Winner";
-  return `${legWinner} takes leg ${match.currentLeg + 1} · ${matchScoreText(match, names)}`;
+  return `${legWinner} ${takes} leg ${match.currentLeg + 1} · ${matchScoreText(match, names)}`;
 }
 
 el.nextLegBtn?.addEventListener("click", () => {
@@ -1208,9 +1402,18 @@ function render() {
 
   if (state.gameOver) {
     // Count Up can end level, in which case there's no winner to name.
+    // sideNames() rather than the player list, because in partners the winner
+    // index counts teams - naming players[1] there would credit whoever
+    // happens to sit in seat 1 for a leg their whole team won.
+    const winner = sideNames()[state.winnerIndex];
     el.turnLabel.textContent = state.winnerIndex === null || state.winnerIndex === undefined
       ? "Leg drawn."
-      : `${state.players[state.winnerIndex].name} wins the leg! 🎯`;
+      // A conceded leg says WHY. Nobody watching saw the winning side throw
+      // anything, so "X wins the leg" on its own reads as a bug in the app
+      // rather than as the rule doing what it says.
+      : state.legConceded
+        ? `Checked out while frozen - ${winner} ${state.teams ? "take" : "takes"} the leg`
+        : `${winner} ${state.teams ? "win" : "wins"} the leg! 🎯`;
   } else if (bermuda) {
     // The current target is the entire state of a Bermuda turn - without it on
     // screen the player has nothing to aim at - so it goes where the turn
@@ -1226,8 +1429,25 @@ function render() {
     const left = Math.max(0, rounds - current.roundsPlayed);
     el.turnLabel.textContent =
       `${current.name}'s turn · round ${Math.min(current.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(current)}`;
+  } else if (state.teams) {
+    // Partners: say which team is at the oche as well as who, because the
+    // score on screen belongs to a person and the leg belongs to a pair.
+    el.turnLabel.textContent =
+      `${current.name}'s turn · ${teamLabel(state.currentPlayerIndex)}`;
   } else {
     el.turnLabel.textContent = `${current.name}'s turn`;
+  }
+
+  // FROZEN, SAID OUT LOUD. The reference machines do not do this - their own
+  // documentation says spotting it is the player's responsibility - and the
+  // penalty for missing it is the worst outcome in the game: reach zero and
+  // the leg goes to the opposition. The app already knows all four scores and
+  // the predicate is pure, so there is no reason to make anyone track it in
+  // their head. Written after the branches above so it wins whatever the turn
+  // label wanted to say, the same way the hold does below.
+  if (!state.gameOver && currentlyFrozen()) {
+    const finish = state.legConfig?.frozenFinish === "bust" ? "busts" : "loses the leg";
+    el.turnLabel.textContent = `❄ ${current.name} is FROZEN - going out ${finish}`;
   }
 
   // The hold, said plainly. A silent pause reads as the app having frozen, and

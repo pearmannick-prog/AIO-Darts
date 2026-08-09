@@ -62,7 +62,12 @@ export function recordFormatUsed(legs) {
 function sameLeg(a, b) {
   const x = normalizeLeg(a), y = normalizeLeg(b);
   return x.game === y.game && x.score === y.score && x.rules === y.rules
-    && x.rounds === y.rounds && x.bull === y.bull;
+    && x.rounds === y.rounds && x.bull === y.bull
+    // Two legs that differ only in the freeze are different legs. Without
+    // this, switching it on would leave the preset dropdown still claiming
+    // "Best of 5" - and, worse, a frozen format would collide with the plain
+    // one in the recent-formats list and only one of them would survive.
+    && x.freeze === y.freeze && x.frozenFinish === y.frozenFinish;
 }
 
 // els: { legs, addBtn, preset } - any may be absent, in which case the
@@ -106,6 +111,11 @@ export function createMedleyBuilder(els) {
         <select class="leg-score${isX01 ? "" : " hidden"}">${scoreOptions}</select>
         <select class="leg-rules${isX01 ? "" : " hidden"}">${rulesOptions}</select>
         <select class="leg-rounds${isCountUp ? "" : " hidden"}">${roundOptions}</select>
+        <select class="leg-freeze${isX01 ? "" : " hidden"}" title="The Freeze Rule - partners x01 only">
+          <option value="off"${isX01 && !leg.freeze ? " selected" : ""}>No freeze</option>
+          <option value="loss"${isX01 && leg.freeze && leg.frozenFinish !== "bust" ? " selected" : ""}>Freeze &middot; out = lose leg</option>
+          <option value="bust"${isX01 && leg.freeze && leg.frozenFinish === "bust" ? " selected" : ""}>Freeze &middot; out = bust</option>
+        </select>
         <button type="button" class="leg-remove" title="Remove this leg">&times;</button>
       </div>`;
     }).join("");
@@ -125,10 +135,22 @@ export function createMedleyBuilder(els) {
       if (game === "countup") {
         return { game: "countup", rounds: Number(row.querySelector(".leg-rounds")?.value) || DEFAULT_ROUNDS };
       }
+      // One control for two fields, because they are one decision: whether
+      // the freeze is on, and what it costs to go out while frozen. Two
+      // separate controls would let you choose a penalty for a rule that is
+      // switched off, which is a state with nothing to mean.
+      //
+      // It has no effect at all outside partners play - game.js only consults
+      // it when the match is 2 v 2 - and is left visible rather than tied to
+      // the partners toggle because the format picker is shared with the
+      // online panel, where there is no such toggle to tie it to.
+      const freeze = row.querySelector(".leg-freeze")?.value || "off";
       return {
         game: "x01",
         score: Number(row.querySelector(".leg-score")?.value) || 501,
         rules: row.querySelector(".leg-rules")?.value || "double",
+        freeze: freeze !== "off",
+        frozenFinish: freeze === "bust" ? "bust" : "loss",
       };
     });
     const mode = bullMode();
