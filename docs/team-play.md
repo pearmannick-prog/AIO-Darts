@@ -17,7 +17,7 @@ model. See the table in 3a and the rule in 7a.
 
 Build order: **freeze-ON x01 doubles first** as a thin first step where every
 error is visible, then the shared-total model once, serving freeze-OFF x01 and
-Cricket together. 7b sets out the honest argument against that ordering, which is
+Cricket together. 7c sets out the honest argument against that ordering, which is
 that it ships the niche variant before the expected one.
 
 ---
@@ -124,9 +124,9 @@ this document.**
 | **x01 doubles, freeze OFF** | **2** — 2v2 with a shared team total | 4 — one per person | **Two.** |
 | **Cricket doubles** | **2** — the team shares marks and points | 4 — one per person | **Two.** |
 
-Recorder seats are PEOPLE in both, joined to teams by a `team` column. What
-varies is whether the *rules* layer sees teams at all, and it does so only in
-Cricket. The evidence for each is direct: a photographed Cricket /200 doubles
+Recorder seats are PEOPLE in all three, joined to teams by a `team` column. What
+varies is whether the *rules* layer sees teams at all — it does in every row but
+the first. The evidence for each is direct: a photographed Cricket /200 doubles
 match shows two mark columns for four players, and the reference explanation of
 the Freeze Rule (7a) describes partners x01 as "X01 games with 4 Scores".
 
@@ -141,7 +141,8 @@ reverses the obvious guess about which game is easier to build:
   which is pure, self-contained and testable, and a team-based win condition.
 
 The rest of this section describes the two-index split, which applies **to
-Cricket**.
+Cricket doubles and to freeze-OFF x01 doubles** — the two rows that share a
+team total, and therefore one piece of work rather than two.
 
 Today the three meanings collapse into a single number, and that is why the
 current code reads so cleanly: `game.js` passes `state.currentPlayerIndex`
@@ -489,11 +490,14 @@ Three settled on 9 August 2026, three still open.
    section 5's point holds that A is controller-and-recorder work and B is
    transport work, so building A first is not a detour that has to be undone.
    Nothing in A touches `webrtc.js` or the signaling cap.
-2. ~~**Do doubles darts count toward your singles averages?**~~ **HALF DECIDED.**
-   Per-person darts *are* recorded in a doubles match — the reference machine
-   shows four separate MPRs and section 3a follows it. Whether they then feed
-   the *singles* averages and leaderboards is still open; suggestion unchanged
-   (yes for darts, no for wins, as with computer opponents).
+2. ~~**Do doubles darts count toward your singles averages?**~~ **DECIDED: yes
+   for darts, no for wins.** Doubles darts are real darts thrown at a real
+   board, so they feed your averages, MPR, checkout percentage and heatmap. The
+   *win* does not touch the singles win count, win percentage, streaks or the
+   `won >= N` achievements — a doubles result must not silently become a singles
+   one. Doubles wins can get their own counters and boards later; see 7b, which
+   also corrects this document's claim that there was an existing precedent for
+   this shape.
 3. ~~**Cricket doubles: shared marks?**~~ **DECIDED: yes, shared.** Confirmed
    directly: two mark columns for four players, one team score each. This is
    what keeps `cricket.js` unchanged — a doubles match is still a players array
@@ -628,9 +632,58 @@ variants exist, and they are different games.
 SAME seat model.** Two rules seats, four recorder seats, joined by `team`. So the
 two-index work described in the rest of 3a is done **once** and serves both, and
 the freeze-ON variant is the only one that escapes it. That is what makes the
-build order in 7b coherent rather than arbitrary.
+build order in 7c coherent rather than arbitrary.
 
-### 7b. Which game to build first — and the one honest tension in this document
+### 7b. Darts in, wins out — and why the practice-match precedent does NOT transfer
+
+**Decided (question 2): doubles darts feed your averages; doubles wins do not
+feed your singles wins.** Reason: the darts are real darts you threw at a real
+board, so excluding them would under-report how much you have played and drag
+nothing but noise out of your averages. The win belongs to two people, so
+counting it as a singles win overstates you by exactly one partner.
+
+**Correction.** Earlier revisions of this document twice said this was "exactly
+the rule already applied to matches against a computer opponent, so there is
+precedent and a place to put it". Checked, and that is wrong in a way that
+matters for implementation.
+
+A practice match is excluded **entirely** — darts and all. `statsengine.js:518`
+is `match.mode === "practice"`, and `computeStats` filters those matches out at
+the door before anything is computed (`statsengine.js:527`), then re-runs the
+whole engine over the other pile to report them separately. It is all-or-nothing
+by design: *"the darts are real darts, but the record is not a record of playing
+anybody."*
+
+Doubles is the first split in this app that is **partial**, and the filter
+mechanism cannot express it. A doubles match must stay in the main pile, because
+its darts count. So the exclusion moves from a filter at the entry point to a
+**predicate consulted inside the win counting** — `careerStats`' `won`,
+`winPct`, the streak walk, the per-game buckets at `statsengine.js:275`, and the
+`won >= 1 / 10 / 100` achievements at `statsengine.js:453–457`. Every one of
+those is a place where a doubles match has to be skipped while its darts have
+already been counted somewhere else.
+
+That is more scattered than "add a filter", and it is the same list as the
+`=== seat` list in 3a — which is convenient, because both are fixed in the same
+pass over the same functions.
+
+**Doubles wins later cost no migration.** Once matches carry `team` and
+`winnerSeat`, "who won this doubles match" is already recorded; adding doubles
+win counts, a doubles win percentage, doubles streaks and a doubles leaderboard
+is a presentation and aggregation change with no schema work — the same property
+that lets a new game mode bring its own metrics without touching the database.
+Designing the exclusion as *"not counted here"* rather than *"not recorded"* is
+what keeps that door open, and is the reason to resist the shortcut of simply
+not writing a `winnerSeat` for doubles legs.
+
+**Bump `ENGINE_VERSION` to 9 when this lands.** No historical number moves —
+there are no doubles matches yet — so the cache does not strictly need
+invalidating. But the convention in that file is that the version records what a
+number *means*, and "your average now includes darts thrown in doubles" is
+exactly that. The numbered list of definitions is load-bearing documentation
+here, and an entry costs nothing.
+
+### 7c. Which game to build first — and the one honest tension in this document
 
 There are now **two** seat models to build, not three: freeze-ON x01 stands
 alone, while freeze-OFF x01 and Cricket share one. The order is therefore a
@@ -692,7 +745,7 @@ This is a recommendation, not a decided point.
    — plus the team win condition and both `frozenFinish` outcomes. Singles keeps
    working throughout: a team of one is a singles player, so nothing needs a
    special case. This variant specifically because it is the only one with a
-   single index space, so every error is visible; see 7b. Do `"bust"` first: it
+   single index space, so every error is visible; see 7c. Do `"bust"` first: it
    reuses the existing bust path whole, so the leg can be played end to end
    before `medley.js` learns that a leg can be won by the side that did not
    finish it.
