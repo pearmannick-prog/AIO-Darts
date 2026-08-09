@@ -157,6 +157,46 @@ for, and it is why the statistics half of this is the larger half — the turn
 rotation genuinely is nearly free (`game.js:1119` is already modular over
 `players.length`), and it is easy to mistake the whole feature for that.
 
+### 3b. One shared board per end — and why the thrower index is safety-critical
+
+**Confirmed: both partners at an end share one board, one camera and one mic.**
+The hardware path needs no change at all, which is worth checking rather than
+assuming: `boardlink.js` has **no concept of a player**. It owns the one
+connection and routes each segment to whichever controller wants it
+(`boardlink.js:44, 81`), and `deliverExternalSegment` feeds camera scorers into
+the identical path. A dart carries a segment and nothing else.
+
+That is exactly why it works, and exactly where the danger is. **A dart has no
+identity, so the only thing deciding which partner is credited is the controller's
+thrower index.** In singles that is safe, because the current seat *is* the
+person and getting it wrong shows up immediately as the wrong score on the wrong
+side of the board.
+
+Under teams it is not safe, and the reason is the whole argument of this section:
+**both partners score into the same team total, so a dart credited to the wrong
+partner produces an identical scoreboard.** The team score is right. The marks
+are right. The leg plays out correctly and the winner is correct. Nothing on
+screen is wrong. The only thing that is wrong is the per-person average — quietly,
+permanently, and in the direction of whichever partner happened to be indexed.
+
+This is the same class of failure the codebase already worries about elsewhere
+and for the same reason — a scoring bug shows up on a board you are looking at, a
+statistics bug looks exactly like a correct one for months (`CLAUDE.md`, on why
+`statsengine.test.js` exists at all). Two consequences:
+
+- **The thrower index deserves test coverage**, not just care. It is the one
+  piece of team state with no visible symptom when it is wrong, which makes it
+  the one piece that a test has to hold rather than a play-through.
+- **It is another argument for the four-seat model.** Under two seats with a
+  thrower index the per-person figures do not exist, so the bug is unreachable —
+  but only because the feature is absent. Recording per person is what makes
+  those four MPRs possible *and* what makes them worth protecting.
+
+The mic is shared too, which has one small user-visible consequence: the existing
+"mute the opponent" control now mutes **two people**, because it mutes an end.
+That is the correct behaviour and needs no change, but the control's wording is
+written for one person.
+
 ### One thing to steal from the machine's layout
 
 The current thrower is named **large**, with the team pair small underneath —
