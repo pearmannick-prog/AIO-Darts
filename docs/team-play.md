@@ -4,17 +4,19 @@ Status: **proposal, nothing built.** Written to be argued with. Every claim abou
 the current code carries a file reference so you can check it rather than trust
 it.
 
-**Revised 9 August 2026.** Five of the six open questions are now decided, and
-the seat model is settled **for Cricket**, on the evidence of a photographed
-Arachnid Galaxy 3 running Cricket /200 doubles — see section 3a. That machine is
-already this codebase's reference for the x01 in/out matrix (`scoring.js`), so
-following it here is consistency rather than a new dependency.
+**Revised 9 August 2026.** Five of the six original questions are decided, the
+sixth is online-only and blocks nothing, and the Freeze Rule — which opened as a
+seventh and larger question — now has a sourced answer in 7a.
 
-One new question has opened and it is now the most important one in the
-document: **the Freeze Rule may mean partners x01 has per-player scores**, which
-would make 3a's shared team score true of Cricket and false of x01. See 7a. The
-practical answer is to build Cricket doubles first, which needs nothing this
-document is unsure about.
+**The seat model differs by game, and that is the headline.** Cricket doubles
+shares one score and one set of marks between partners (evidenced by a
+photographed Arachnid Galaxy 3 running Cricket /200 doubles); partners x01 gives
+every player their **own** score and uses the team only for the win condition and
+the freeze. See 3a for the table and 7a for the rule.
+
+That inverts the build order this document previously recommended: **x01 doubles
+first**, because four separate scores means one index space instead of two, and
+`game.js` already runs four-handed x01. See 7b.
 
 ---
 
@@ -99,14 +101,44 @@ Turn order is the standard doubles rotation, alternating both team and player:
 A1  →  B1  →  A2  →  B2  →  A1 …
 ```
 
-Score is per **team**. Both partners throw into the same 501, or the same set of
-Cricket marks. That is how doubles is scored everywhere, and it falls out for
-free because the rules already take a seat rather than a person.
+Score is per **team** — *in Cricket.* Both partners throw into the same set of
+marks, and that falls out for free because the rules already take a seat rather
+than a person.
+
+**x01 is not like this, and an earlier draft of this document was wrong to
+assume it was.** Partners x01 on the reference machines is played with **four
+separate scores**, one per person, and the team exists only for the win
+condition and the Freeze Rule. See 7a, which now has a definite answer, and 3a,
+which carves x01 out.
 
 ### 3a. The seat model, which is the decision everything else rests on
 
-**Decided: rules seats are TEAMS, recorder seats are PEOPLE, joined by a `team`
-column.** Two index spaces where today there is one.
+**Decided, and it differs by game — which is the single most important line in
+this document.**
+
+| Game | Rules seats | Recorder seats | Index spaces |
+| --- | --- | --- | --- |
+| **Cricket doubles** | **2** — the team shares marks and points | 4 — one per person | **Two.** The split described below. |
+| **x01 doubles (4-score)** | **4** — every player has their own remaining | 4 — one per person | **One.** Same as today. |
+
+Recorder seats are PEOPLE in both, joined to teams by a `team` column. What
+varies is whether the *rules* layer sees teams at all, and it does so only in
+Cricket. The evidence for each is direct: a photographed Cricket /200 doubles
+match shows two mark columns for four players, and the reference explanation of
+the Freeze Rule (7a) describes partners x01 as "X01 games with 4 Scores".
+
+The consequence is counter-intuitive and worth stating plainly, because it
+reverses the obvious guess about which game is easier to build:
+
+- **Cricket doubles has the two-index problem.** Rules seat ≠ recorder seat, and
+  the controllers own a mapping that can be silently wrong.
+- **x01 doubles does not.** A rules seat is a person is a recorder seat, exactly
+  as today, so `game.js` can keep passing `state.currentPlayerIndex` straight
+  into the recorder. What x01 adds instead is a *rule* — the freeze predicate —
+  which is pure, self-contained and testable, and a team-based win condition.
+
+The rest of this section describes the two-index split, which applies **to
+Cricket**.
 
 Today the three meanings collapse into a single number, and that is why the
 current code reads so cleanly: `game.js` passes `state.currentPlayerIndex`
@@ -463,10 +495,11 @@ Three settled on 9 August 2026, three still open.
    directly: two mark columns for four players, one team score each. This is
    what keeps `cricket.js` unchanged — a doubles match is still a players array
    of length 2.
-4. ~~**x01 doubles: may either partner check out?**~~ **DECIDED: yes, either
-   partner may finish** — the standard rule, and the default the code should
-   assume. **But it is conditional**, and the condition is the Freeze Rule: see
-   7a, which is now the largest open question in this document.
+4. ~~**x01 doubles: may either partner check out?**~~ **DECIDED: yes, subject to
+   the freeze test.** Either partner may finish, *unless they are frozen* —
+   which is the case when their partner's score exceeds the opposing team's
+   combined score. Finishing while frozen does not merely fail; it hands the leg
+   to the opponents. The rule is now fully specified in 7a.
 5. ~~**In Shape A, what do the two cameras point at?**~~ **DECIDED: exactly what
    they point at in singles.** Both partners are at one board, so a camera
    belongs to an *end*, not to a person, and there is no second viewpoint to
@@ -477,51 +510,88 @@ Three settled on 9 August 2026, three still open.
 6. **What happens when one player of four drops?** Forfeit the team, pause, or
    let their partner throw both? This has no standard answer and it will happen.
 
-### 7a. The Freeze Rule may contradict the shared team score, and that is not a footnote
+### 7a. The Freeze Rule — ANSWERED, and it reshapes x01 doubles
 
-**Open, and it is the question that could invalidate 3a for x01.**
+**Source:** CAP Amusement, "Freeze Rule",
+<https://www.capamusement.com/article.cfm?ArticleNumber=38>.
 
-Section 3a settled the seat model on a photograph of a **Cricket** match: one
-score per team, marks per team, darts per person. The Freeze Rule is a **partners
-x01** rule, and the note that closed question 4 above is that either partner may
-check out *"unless some special circumstances like freeze rules where they depend
-on each other's scores."*
+**The rule, as stated:** *"A player may go out and win only if their partners
+score is equal to or less than the combined score of the opposing team."*
 
-**"Each other's scores" is the problem.** If a frozen partner is a fact about one
-*person's* score rather than the team's, then partners x01 has per-player scores
-as well as — or instead of — a shared one, and the clean statement "rules seat =
-team" is true of Cricket and false of x01. That is a materially different data
-model, and it is the kind of thing that is very expensive to retrofit: it would
-mean the team object carries per-thrower scoring state, `scoring.js`'s caller
-changes shape, and the recorder's team join stops being the only place teams are
-known.
+Three facts follow, and each one changes something:
 
-The two possibilities, which need separating before any x01 doubles code:
+**1. Partners x01 has FOUR SEPARATE SCORES.** The rule is scoped to "X01 games
+with 4 Scores" — each of the four players carries their own remaining. This is
+the per-partner reading, and it is stronger than feared: it is not that the
+freeze *condition* needs per-player state bolted onto a shared score, it is that
+there is no shared score at all. 3a is carved accordingly.
 
-- **The freeze compares the two TEAMS' scores.** Shared team score survives
-  intact, 3a holds everywhere, and the rule is a check in the controller before
-  allowing a finish. Cheap.
-- **The freeze compares the two PARTNERS' scores.** Partners x01 needs per-player
-  scoring state, and 3a needs a carve-out saying so. Not cheap, but knowing it
-  early is what makes it not-cheap rather than a rewrite.
+The unexpected consequence is that this makes x01 doubles **simpler**, not
+harder. With a score per person, a rules seat is a person is a recorder seat —
+one index space, exactly as today — so the two-index hazard that Cricket doubles
+introduces does not exist here. `game.js` already runs four-handed x01 with four
+scores. What x01 doubles adds is the team grouping, the win condition, and the
+freeze predicate.
 
-**This document does not currently know which**, and guessing is exactly what the
-codebase's convention forbids — the rules layer records edge cases precisely and
-says why, and a scoring rule invented from a plausible-sounding name would be
-wrong quietly, in the way the 170-vs-180 checkout ceiling was flagged as being
-able to go wrong quietly. The Arachnid manual is the reference this project
-already uses for the x01 in/out matrix, so it is the place to settle it.
+**2. The comparison is asymmetric, and reads three of the four scores.** Whether
+*I* may finish depends on **my partner's** score against the **opposing team's
+combined** score — the sum of both opponents' remaining. It does not involve my
+own score at all. So the predicate is:
 
-Two consequences even before it is settled:
+```
+canGoOut(partnerRemaining, oppA + oppB)  →  partnerRemaining <= oppA + oppB
+```
 
-1. The roadmap's ordering was right for a reason that is now clearer. It lists
-   the Freeze Rule as needing teams as a *prerequisite* rather than being a flag
-   — and if the second possibility above is the true one, teams are a
-   prerequisite in a stronger sense than "you need four players first".
-2. **Build Cricket doubles first.** It is fully specified by 3a, needs no rule
-   this document is unsure about, and exercises the entire seat/thrower split.
-   x01 doubles can follow once the freeze question is answered, and nothing about
-   doing Cricket first has to be undone.
+Pure, total, trivially testable, and it belongs beside `resolveThrow` in
+`scoring.js` — or in a small partners module — rather than in a controller. It
+is precisely the kind of arithmetic `server/checkout.test.js` exists to pin down.
+
+**3. Checking out while frozen LOSES THE LEG.** *"If a player reaches zero when
+he/she is 'frozen', the win is credited to the opposing team."* This is not a
+bust and must not be modelled as one — a bust restores the score and passes the
+turn, whereas this **ends the leg in the opponents' favour**. It is the only
+rule in this codebase where reaching zero is a defeat, and `medley.js`'s leg
+resolution has to be able to express "this leg was won by the side that did not
+finish it".
+
+**The opportunity, which is worth taking.** The source notes: *"The board does
+not prompt you for this so it is the player's responsibility to spot it."* That
+is a hardware limitation, not a design intent, and this app is under no such
+constraint — the predicate is pure and the app already knows all four scores. A
+frozen player can simply be **told**, in the same place the checkout hint is
+shown (`checkouthint.js`), and the catastrophic outcome above becomes
+unreachable rather than merely rare. This is the clearest example so far of the
+app being able to beat the machine it takes its rules from, and it costs almost
+nothing.
+
+**One thing still unconfirmed:** the rule is scoped to x01 "with 4 Scores",
+which implies a 2-score partners x01 variant exists where the freeze does not
+apply. If both are offered, x01 doubles is two formats rather than one. Worth
+settling before the format picker is designed, but it does not block anything —
+build the 4-score variant, which is the one the rule describes.
+
+### 7b. Which game to build first — the answer has changed
+
+The previous revision said **build Cricket doubles first**, on the reasoning that
+3a fully specified it while the freeze question left x01 undefined. That
+reasoning is now spent, and the conclusion inverts.
+
+**Build x01 doubles first.** It has **one index space** rather than two, which
+removes the single most dangerous thing about team play — the silently
+mis-attributed dart of 3b, which cannot happen when each player has their own
+score, because a dart credited to the wrong partner now shows up immediately as
+the wrong score on the wrong line. `game.js` already runs four-handed x01 with
+four separate scores, so the throwing half is close to done.
+
+What it adds is a pure predicate and a win condition, both of which are exactly
+the kind of thing this codebase is set up to test. Cricket doubles then follows
+with the two-index split as its own, separable piece of work, by which point the
+team grouping and the recorder's `team` column already exist and are proven.
+
+The roadmap's ordering was right all along, and for a reason now visible: it
+lists the Freeze Rule as needing teams as a **prerequisite** rather than as a
+flag. It is a prerequisite in the strong sense — the rule is unstatable without
+partners, and partners x01 is where teams are cheapest to build.
 
 ---
 
@@ -539,20 +609,28 @@ roster.
 
 This is a recommendation, not a decided point.
 
-1. **Local doubles in `game.js`, Cricket first.** Seat/thrower split, singles
-   still working throughout — a team of one is a singles player, so nothing
-   needs a special case. Rotation is `game.js:1119`, which is already modular
-   over `players.length`. Cricket rather than x01 because 3a fully specifies it
-   and 7a does not yet specify x01; x01 doubles slots in unchanged once the
-   Freeze Rule question is answered.
-2. **Recorder: four seats, `team` column, migration.** Including every
+1. **The freeze predicate, pure and tested, before any UI.** One function, three
+   of the four scores, and a test file beside `checkout.test.js`. It is the only
+   genuinely new *rule* in team play and it is the cheapest thing here to get
+   right first.
+2. **Local x01 doubles in `game.js`.** Teams grouping and turn rotation —
+   rotation is `game.js:1119`, already modular over `players.length` — plus the
+   team win condition and the frozen-checkout outcome. Singles keeps working
+   throughout: a team of one is a singles player, so nothing needs a special
+   case. **x01 rather than Cricket** because it has one index space rather than
+   two (3a) and `game.js` already runs four-handed x01 with four scores; see 7b.
+3. **Recorder: four seats, `team` column, migration.** Including every
    `=== seat` win comparison listed in 3a — this is the part that silently
    halves if it is missed.
-3. **Stats: decide the singles-averages rule, bump `ENGINE_VERSION`.**
-4. **`online.js`:** seat/thrower split, then the roster in `hello`/
+4. **Tell the player they are frozen** (`checkouthint.js`), which the reference
+   machines do not do. Cheap, and it removes the worst outcome in the game.
+5. **Local Cricket doubles**, which is where the two-index split of 3a is
+   introduced — by now against a recorder that already understands teams.
+6. **Stats: decide the singles-averages rule, bump `ENGINE_VERSION`.**
+7. **`online.js`:** seat/thrower split, then the roster in `hello`/
    `match_config`.
-5. **Turn rotation online, and the undo window widening** to "anyone on the
+8. **Turn rotation online, and the undo window widening** to "anyone on the
    other team throws".
-6. **Lobby: pair formation. This is the biggest single piece and is easy to
+9. **Lobby: pair formation. This is the biggest single piece and is easy to
    under-estimate** — until it exists, doubles is invite-code only, which is a
    perfectly good first release.
