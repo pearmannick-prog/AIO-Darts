@@ -4,6 +4,13 @@ Status: **proposal, nothing built.** Written to be argued with. Every claim abou
 the current code carries a file reference so you can check it rather than trust
 it.
 
+**Revised 9 August 2026.** Three of the six open questions are now decided, and
+the seat model is settled, on the evidence of a photographed Arachnid Galaxy 3
+running Cricket /200 doubles — see section 3a. That machine is already this
+codebase's reference for the x01 in/out matrix (`scoring.js`), so following it
+here is consistency rather than a new dependency. The remaining open questions
+are 4, 5 and 6.
+
 ---
 
 ## 1. The thing that changes the whole shape of this
@@ -91,6 +98,68 @@ Score is per **team**. Both partners throw into the same 501, or the same set of
 Cricket marks. That is how doubles is scored everywhere, and it falls out for
 free because the rules already take a seat rather than a person.
 
+### 3a. The seat model, which is the decision everything else rests on
+
+**Decided: rules seats are TEAMS, recorder seats are PEOPLE, joined by a `team`
+column.** Two index spaces where today there is one.
+
+Today the three meanings collapse into a single number, and that is why the
+current code reads so cleanly: `game.js` passes `state.currentPlayerIndex`
+straight into the recorder (`game.js:676, 890, 931, 984, 1116`) and `online.js`
+passes `seatOf(side)` (`online.js:2576–2864`). A rules seat *is* a recorder seat
+*is* a person. Teams break that identity, because **a team is one scoring seat
+with two people throwing into it**, and both halves are needed: per-team state or
+it isn't doubles, per-person darts or the averages are meaningless.
+
+The evidence that this is the right split rather than a guess — an Arachnid
+Galaxy 3 mid-match, Cricket /200 doubles, round 5 of 25:
+
+- **Two** mark columns, headed 1 and 2, for **four** players.
+- **One** score per team — 240 for Gollon/Mazur, 190 for Bobzien/Cromwell.
+- **Four** separate MPRs along the bottom (5.00, 2.50, 3.00, 4.00), one per
+  person.
+
+So the machine keeps game state per team and darts per person, which is exactly
+this split. It also rules out the cheaper alternative of two seats with a thrower
+index: that models the scoreboard correctly and throws away every per-person
+statistic, and those four MPRs are the thing a doubles player actually looks at.
+
+Where the boundary falls, which is the useful part:
+
+| | Space | Changes? |
+| --- | --- | --- |
+| `scoring.js`, `cricket.js`, `bermuda.js` | rules seat = **team** | **No.** A doubles Cricket match is still a players array of length 2. |
+| `matchrecorder.js`, `statsengine.js`, `stats/*` | recorder seat = **person** | Yes — four entries, plus the team join. |
+| `game.js`, `online.js` | own the mapping | Yes — and they are the **only** place the two can be confused. |
+
+Keeping the mapping in exactly two files is the whole point. `CLAUDE.md` already
+records what happens to a convention duplicated across files — the ring→segment
+slot mapping lives in four places and is called out as a hazard — and this one
+would fail *silently, into people's statistics*, rather than visibly on a board.
+
+**The `=== seat` comparisons are the concrete work**, and there are more of them
+than "add a column" suggests. A win is currently attributed to exactly one seat:
+
+- `statsengine.js:121` — `won: leg.winnerSeat === seat`
+- `statsengine.js:161, 209, 275` — `match.winnerSeat === seat`
+- `matchrecorder.js:407` — `doc.players[winnerSeat].legsWon += 1`
+
+Left alone, **the partner who did not throw the winning dart gets nothing**: no
+leg, no match, no win streak, and the achievements at `statsengine.js:453–457`
+(`won >= 1 / 10 / 100`) stop counting for half of all players. Every one of those
+becomes "is this seat on the winning team". That is what the `team` column is
+for, and it is why the statistics half of this is the larger half — the turn
+rotation genuinely is nearly free (`game.js:1119` is already modular over
+`players.length`), and it is easy to mistake the whole feature for that.
+
+### One thing to steal from the machine's layout
+
+The current thrower is named **large**, with the team pair small underneath —
+`BRAD GOLLON` over `GOLLON MAZUR`. That answers "whose turn is it *within* the
+team" in space the name already occupies, instead of adding a turn indicator.
+It is the one genuinely new piece of information a doubles scoreboard has to
+carry, and it costs no layout.
+
 ### What actually has to change
 
 **`online.js`** — `online.me` and `online.opp` become team objects. They already
@@ -108,8 +177,12 @@ This matters: adding a game mode has never needed a new peer message
 (`CLAUDE.md`), and neither does this.
 
 **`matchrecorder.js`** — four seats instead of two. Every dart already records a
-seat, so per-player statistics keep working unchanged; the thing that becomes
-ambiguous is *legs won*, which belongs to the team.
+seat, so the per-person *throwing* statistics — averages, MPR, checkout
+percentage, the heatmap — keep working unchanged, which is a real saving. What
+does not is anything derived from **winning**: see the `=== seat` list in 3a.
+An earlier draft of this document said per-player statistics keep working
+"unchanged" full stop, and that was wrong in the way that matters — it is the
+win attribution that silently halves.
 
 **Schema** — `match_players` needs a `team` column. I'd argue hard against the
 tempting alternative of "seats 0 and 2 are one team, 1 and 3 the other": that is
@@ -120,11 +193,14 @@ lives in four places and is called out as a hazard). One nullable integer column
 is cheaper than five copies of a rule. `team` stays `NULL` for singles, which is
 also the honest representation.
 
-**Statistics** — this needs a decision from you, see section 7. My suggestion:
-the *darts* count toward your averages, because they are real darts you threw at
-a real board; the *win* does not count toward singles leaderboards. That is
-exactly the rule already applied to matches against a computer opponent
-(`ENGINE_VERSION` 7), so there is precedent and a place to put it.
+**Statistics** — **partly decided.** Per-person darts *are* recorded in a doubles
+match: the machine shows four MPRs, and section 3a follows it. What that does not
+settle is whether those darts then feed your *singles* averages and leaderboards,
+which is still a judgement call. My suggestion stands: the darts count toward
+your averages, because they are real darts you threw at a real board; the win
+does not count toward singles leaderboards. That is exactly the rule already
+applied to matches against a computer opponent (`ENGINE_VERSION` 7), so there is
+precedent and a place to put it.
 
 **Cameras — nothing to do.** Two peers, and `webrtc.js` already reserves **two**
 video m-lines per connection for the second-camera feature. A team gets one
@@ -146,8 +222,15 @@ Shape A: the camera story is already built.
 
 ### Rough size
 
-Two or three days of careful work, most of it in `online.js` and the recorder,
-plus one migration. No new failure modes. Nothing in the networking layer moves.
+Two or three days of careful work, plus one migration. No new failure modes.
+Nothing in the networking layer moves.
+
+**Where those days go is not where it looks.** The instinct is that doubles is
+"take turns differently", and that part is nearly free — `game.js:1119` already
+rotates modulo `players.length`, and the pure rules have never known who threw.
+The work is in the statistics: two index spaces to keep straight, and every
+`=== seat` win comparison in 3a to widen. Budget it the other way round from
+your instinct.
 
 ---
 
@@ -270,7 +353,11 @@ right seam.
 
 ## 6. Recommendation
 
-**Build Shape A. Do not build Shape B until someone asks for it by name.**
+**Build Shape A first.** *(Updated 9 August 2026: the original recommendation
+was "do not build Shape B until someone asks for it by name". Someone has —
+both are wanted. That changes the timeline, not the order, for reason 4 below:
+A's work is in the controller and the recorder, B's is in the transport, and A
+is not a detour on the way to B.)*
 
 The reasoning:
 
@@ -284,22 +371,36 @@ The reasoning:
    what Shape B would need anyway.
 
 The one honest argument against: if what you actually want is four mates in four
-different houses, Shape A does not give you that at all, and building it first is
-a detour. Which is why the first question in the next section matters more than
-the rest put together.
+different houses, Shape A does not give you that at all. That is now known to be
+wanted eventually — so the argument has real force, and the answer to it is
+reason 4 rather than a denial. Shape A is not thrown away when B is built; the
+seat/thrower split is the foundation B stands on, and B adds ends where A added
+throwers. What A does not do is bring B any closer in the transport layer, so if
+four-separate-houses is the urgent need rather than the eventual one, this order
+is wrong.
 
 ---
 
-## 7. Decisions I need from you
+## 7. Decisions
 
-1. **Which shape do you actually want?** Two at each end, or four separate
-   houses? Everything above hinges on this.
-2. **Do doubles darts count toward your singles averages?** My suggestion: yes
-   for darts, no for wins — the same split already applied to practice matches
-   against a computer.
-3. **Cricket doubles: shared marks?** Standard says yes, the team closes numbers
-   together. Confirm.
-4. **x01 doubles: may either partner check out?** Standard says yes.
+Three settled on 9 August 2026, three still open.
+
+1. ~~**Which shape do you actually want?**~~ **DECIDED: both, eventually — Shape
+   A first.** Shape B is wanted in the future, which does not change the order:
+   section 5's point holds that A is controller-and-recorder work and B is
+   transport work, so building A first is not a detour that has to be undone.
+   Nothing in A touches `webrtc.js` or the signaling cap.
+2. ~~**Do doubles darts count toward your singles averages?**~~ **HALF DECIDED.**
+   Per-person darts *are* recorded in a doubles match — the reference machine
+   shows four separate MPRs and section 3a follows it. Whether they then feed
+   the *singles* averages and leaderboards is still open; suggestion unchanged
+   (yes for darts, no for wins, as with computer opponents).
+3. ~~**Cricket doubles: shared marks?**~~ **DECIDED: yes, shared.** Confirmed
+   directly: two mark columns for four players, one team score each. This is
+   what keeps `cricket.js` unchanged — a doubles match is still a players array
+   of length 2.
+4. **x01 doubles: may either partner check out?** Standard says yes. Still open —
+   the reference photograph is a Cricket match, so it says nothing about this.
 5. **In Shape A, what do the two cameras point at?** One per player, or one on
    the board and one on the thrower? The connection supports either today.
 6. **What happens when one player of four drops?** Forfeit the team, pause, or
@@ -307,14 +408,32 @@ the rest put together.
 
 ---
 
-## 8. If you say go on Shape A, the order I'd do it in
+## 8. The order I'd do it in
 
-1. Seat/thrower split in `online.js`, singles still working throughout — a team
-   of one is a singles player, so nothing needs a special case.
-2. Roster in `hello`/`match_config`.
-3. Recorder: four seats, `team` column, migration.
-4. Turn rotation and the undo window widening to "anyone on the other team".
-5. Stats: decide the doubles rule, bump `ENGINE_VERSION`.
-6. Lobby: pair formation. **This is the biggest single piece and is easy to
+**Revised: start with `game.js`, not `online.js`.** The original order below
+opened with the seat/thrower split in `online.js`. Local pass-and-play doubles —
+four people round one board — is the same split with none of the surrounding
+difficulty: no protocol, no roster in `hello`, no undo window to widen across a
+connection, no peer that might be running an older build. It is also a real
+feature in its own right rather than scaffolding, and the Freeze Rule lands there
+too. Doing it first proves the two-index model against the recorder in the one
+place where a mistake is cheap to find. Then online is mostly rotation plus the
+roster.
+
+This is a recommendation, not a decided point.
+
+1. **Local doubles in `game.js`.** Seat/thrower split, singles still working
+   throughout — a team of one is a singles player, so nothing needs a special
+   case. Rotation is `game.js:1119`, which is already modular over
+   `players.length`.
+2. **Recorder: four seats, `team` column, migration.** Including every
+   `=== seat` win comparison listed in 3a — this is the part that silently
+   halves if it is missed.
+3. **Stats: decide the singles-averages rule, bump `ENGINE_VERSION`.**
+4. **`online.js`:** seat/thrower split, then the roster in `hello`/
+   `match_config`.
+5. **Turn rotation online, and the undo window widening** to "anyone on the
+   other team throws".
+6. **Lobby: pair formation. This is the biggest single piece and is easy to
    under-estimate** — until it exists, doubles is invite-code only, which is a
    perfectly good first release.
