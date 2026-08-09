@@ -8,15 +8,17 @@ it.
 sixth is online-only and blocks nothing, and the Freeze Rule — which opened as a
 seventh and larger question — now has a sourced answer in 7a.
 
-**The seat model differs by game, and that is the headline.** Cricket doubles
-shares one score and one set of marks between partners (evidenced by a
-photographed Arachnid Galaxy 3 running Cricket /200 doubles); partners x01 gives
-every player their **own** score and uses the team only for the win condition and
-the freeze. See 3a for the table and 7a for the rule.
+**The seat model differs by game AND by variant, and that is the headline.**
+There are two models, not one: freeze-ON partners x01 gives every player their
+own score (four scores, one index space), while freeze-OFF partners x01 and
+Cricket doubles both share a team total (two scores, two index spaces). So the
+Freeze Rule is not a rule modifying a game — it is a format selecting a data
+model. See the table in 3a and the rule in 7a.
 
-That inverts the build order this document previously recommended: **x01 doubles
-first**, because four separate scores means one index space instead of two, and
-`game.js` already runs four-handed x01. See 7b.
+Build order: **freeze-ON x01 doubles first** as a thin first step where every
+error is visible, then the shared-total model once, serving freeze-OFF x01 and
+Cricket together. 7b sets out the honest argument against that ordering, which is
+that it ships the niche variant before the expected one.
 
 ---
 
@@ -118,8 +120,9 @@ this document.**
 
 | Game | Rules seats | Recorder seats | Index spaces |
 | --- | --- | --- | --- |
-| **Cricket doubles** | **2** — the team shares marks and points | 4 — one per person | **Two.** The split described below. |
-| **x01 doubles (4-score, freeze)** | **4** — every player has their own remaining | 4 — one per person | **One.** Same as today. |
+| **x01 doubles, freeze ON** | **4** — every player has their own remaining | 4 — one per person | **One.** Same as today. |
+| **x01 doubles, freeze OFF** | **2** — 2v2 with a shared team total | 4 — one per person | **Two.** |
+| **Cricket doubles** | **2** — the team shares marks and points | 4 — one per person | **Two.** |
 
 Recorder seats are PEOPLE in both, joined to teams by a `team` column. What
 varies is whether the *rules* layer sees teams at all, and it does so only in
@@ -564,50 +567,74 @@ unreachable rather than merely rare. This is the clearest example so far of the
 app being able to beat the machine it takes its rules from, and it costs almost
 nothing.
 
-**The freeze is a GAME VERSION, not a property of partners x01.** Confirmed: not
-all four-or-more-player x01 games carry it. So it is selectable, and it belongs
-exactly where the other selectable x01 rules already live — in the leg
-descriptor. `medley.js` legs are `{game:"x01", score, rules}` and `rules` already
-carries the in/out matrix, so the freeze is one more key beside them, defaulting
-off. That is the whole integration: `normalizeLeg` gains a default, the format
-picker gains a checkbox, and nothing else learns a new concept.
+**The freeze is a GAME VERSION, and it selects the SCORING STRUCTURE.** Not all
+four-or-more-player x01 games carry it. Confirmed:
 
-This matters more than it sounds, because it means **the freeze must not be
-wired into the team model.** The tempting shortcut is "partners x01 ⇒ freeze",
-and it is wrong: a partners game without the freeze is an ordinary four-player
-x01 with a team win condition. Keeping them independent is what stops teams and
-the freeze from having to be built in the same change.
+- **Freeze ON** — four separate scores, one per player. The team exists only for
+  the win condition and the freeze test.
+- **Freeze OFF** — 2v2 with a **shared team total**, the ordinary doubles most
+  people picture.
 
-**Still unconfirmed, and it is the one question left on x01:** does the *non*-
-freeze partners x01 also use four separate scores, or does it share one team
-score? The source ties four scores to the freeze version specifically. If
-non-freeze partners x01 shares a score, then the 3a table needs a third row and
-x01 doubles has both seat models depending on a checkbox — which is worth
-knowing before the controller is written, though it changes nothing about
-building the freeze version first.
+**A correction to an earlier revision of this section**, which called the freeze
+"one more key beside the in/out matrix" and said "nothing else learns a new
+concept". That was wrong, and wrong in the direction that matters. The in/out
+rules change what a dart *does*; this changes **how many scores exist on the
+board**. It is a format that selects a data model, not a rule that modifies one,
+and treating it as a mere flag would mean discovering halfway through the
+controller that the scoreboard has a different number of lines depending on a
+checkbox.
 
-### 7b. Which game to build first — the answer has changed
+It still lives in the leg descriptor — `{game:"x01", score, rules}`, with the
+freeze beside the in/out matrix in `rules` — because that is where a format
+belongs and `normalizeLeg` is already where legacy shapes are absorbed. What
+changes is that reading it is not optional for anything downstream: the
+controller, the scoreboard and the recorder's team join all branch on it.
 
-The previous revision said **build Cricket doubles first**, on the reasoning that
-3a fully specified it while the freeze question left x01 undefined. That
-reasoning is now spent, and the conclusion inverts.
+The shortcut to avoid is still "partners x01 ⇒ freeze". Both partners x01
+variants exist, and they are different games.
 
-**Build x01 doubles first.** It has **one index space** rather than two, which
-removes the single most dangerous thing about team play — the silently
-mis-attributed dart of 3b, which cannot happen when each player has their own
-score, because a dart credited to the wrong partner now shows up immediately as
-the wrong score on the wrong line. `game.js` already runs four-handed x01 with
-four separate scores, so the throwing half is close to done.
+**The useful consequence: freeze-OFF x01 doubles and Cricket doubles have the
+SAME seat model.** Two rules seats, four recorder seats, joined by `team`. So the
+two-index work described in the rest of 3a is done **once** and serves both, and
+the freeze-ON variant is the only one that escapes it. That is what makes the
+build order in 7b coherent rather than arbitrary.
 
-What it adds is a pure predicate and a win condition, both of which are exactly
-the kind of thing this codebase is set up to test. Cricket doubles then follows
-with the two-index split as its own, separable piece of work, by which point the
-team grouping and the recorder's `team` column already exist and are proven.
+### 7b. Which game to build first — and the one honest tension in this document
+
+There are now **two** seat models to build, not three: freeze-ON x01 stands
+alone, while freeze-OFF x01 and Cricket share one. The order is therefore a
+choice between starting with the easy model or the important one, and they are
+not the same.
+
+**Recommendation: freeze-ON x01 doubles first, as a deliberately thin first
+step.** It is the only variant with **one index space**, so it proves turn
+rotation, team grouping, the team win condition and the recorder's `team` column
+in a setting where **every mistake is visible**. The silently mis-attributed dart
+of 3b cannot happen when each player has their own score — credit a dart to the
+wrong partner and it lands on the wrong line immediately. `game.js` already runs
+four-handed x01 with four separate scores, so the throwing half is close to done,
+and the genuinely new part is a pure predicate that is trivial to test.
+
+Then the shared-total model **once**, serving freeze-OFF x01 doubles and Cricket
+doubles together.
+
+**The honest argument against, which you should weigh rather than take my word
+on.** The variant I am recommending building first is the *niche* one. What most
+people mean by "2v2 darts" is the shared team total — freeze OFF — and that is
+also the model Cricket needs. So this order ships the unusual variant first and
+defers the expected one. If what you want is the most-wanted feature soonest, go
+straight at the shared-total model and accept that the first team code written is
+also the code carrying the invisible-failure risk of 3b.
+
+I would still take the thin first step, because the risk it retires is
+specifically the one this codebase treats as most dangerous — a statistics error
+with no visible symptom — and it retires it for a few days' work rather than by
+being careful. But it is a judgement, not a deduction.
 
 The roadmap's ordering was right all along, and for a reason now visible: it
 lists the Freeze Rule as needing teams as a **prerequisite** rather than as a
 flag. It is a prerequisite in the strong sense — the rule is unstatable without
-partners, and partners x01 is where teams are cheapest to build.
+partners.
 
 ---
 
@@ -629,19 +656,22 @@ This is a recommendation, not a decided point.
    of the four scores, and a test file beside `checkout.test.js`. It is the only
    genuinely new *rule* in team play and it is the cheapest thing here to get
    right first.
-2. **Local x01 doubles in `game.js`.** Teams grouping and turn rotation —
-   rotation is `game.js:1119`, already modular over `players.length` — plus the
-   team win condition and the frozen-checkout outcome. Singles keeps working
-   throughout: a team of one is a singles player, so nothing needs a special
-   case. **x01 rather than Cricket** because it has one index space rather than
-   two (3a) and `game.js` already runs four-handed x01 with four scores; see 7b.
+2. **Local x01 doubles, freeze ON, in `game.js`.** Team grouping and turn
+   rotation — rotation is `game.js:1119`, already modular over `players.length`
+   — plus the team win condition and the frozen-checkout outcome. Singles keeps
+   working throughout: a team of one is a singles player, so nothing needs a
+   special case. This variant specifically because it is the only one with a
+   single index space, so every error is visible; see 7b.
 3. **Recorder: four seats, `team` column, migration.** Including every
    `=== seat` win comparison listed in 3a — this is the part that silently
    halves if it is missed.
 4. **Tell the player they are frozen** (`checkouthint.js`), which the reference
    machines do not do. Cheap, and it removes the worst outcome in the game.
-5. **Local Cricket doubles**, which is where the two-index split of 3a is
-   introduced — by now against a recorder that already understands teams.
+5. **The shared-total model, once** — the two-index split of 3a, delivering
+   freeze-OFF x01 doubles **and** Cricket doubles together, against a recorder
+   that by now already understands teams. This is the step that carries 3b's
+   invisible-failure risk, which is why it is here rather than first, and why
+   the thrower index gets tests rather than care.
 6. **Stats: decide the singles-averages rule, bump `ENGINE_VERSION`.**
 7. **`online.js`:** seat/thrower split, then the roster in `hello`/
    `match_config`.
