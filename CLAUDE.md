@@ -746,6 +746,46 @@ parses frames has opinions about fragmentation, ping/pong, close codes and
 extensions, and each one is a chance for two ends to disagree about a protocol
 neither is speaking to us in.
 
+**Updates exist because of determinism, not convenience.** The accounts, lobby,
+signaling and TURN halves are forwarded to production and so are always current
+— but the FRONT-END is baked into the package at build time, and the front-end
+is where the pure rules live. An installed copy that never updates is a peer
+running different rules against a web player running the newest, which is the
+silent scoreboard disagreement the whole design exists to prevent.
+`electron-updater` therefore downloads in the background and **installs on quit,
+never mid-session**: restarting between visits would end a match, and
+`checkForUpdatesAndNotify` uses a native notification rather than a dialog so
+nothing steals focus from a throw. Every failure path is a warning and nothing
+more — no network, a rate limit, a missing release: none of those is a reason to
+interrupt someone playing darts.
+
+`desktop-release.yml` publishes on `v*` tags, **the same tags
+`docker-build.yml` already uses**, so one version number covers the container
+and the app. Two things about that are easy to get wrong:
+
+- **The GitHub Release IS the update feed.** `electron-updater` reads
+  `latest.yml` from the assets of the *latest* release. This repo's existing
+  releases (up to `v1.1.0`) are notes-only with no assets, so an installed app
+  404s on every check until a tag has been through this workflow. Harmless — it
+  warns and carries on — but it means a release published by hand, without the
+  workflow running, silently switches updates off for everyone.
+- **`releaseType: release`, not electron-builder's default draft.** A draft is
+  invisible to the updater, so a forgotten "publish" button is indistinguishable
+  from a broken feed. Set it back to `draft` if you would rather check an
+  installer before it reaches machines — but then publishing it is a step that
+  must actually happen.
+
+The version comes from the tag, set in CI with `npm version --no-git-tag-version`
+rather than committed, because a hand-bumped `desktop/package.json` eventually
+disagrees with the tag it shipped under and that number is exactly what decides
+whether an install is out of date.
+
+**The installer is unsigned, and that matters more for the updater than for the
+installer itself.** SmartScreen is a one-time annoyance; an unsigned update
+channel is a standing one, since anything able to serve a release gets code
+execution. GitHub Releases over HTTPS makes that hard, but signing is the actual
+mitigation and it costs money.
+
 **Packaging is exclusion-based, so a new front-end file needs no edit here** —
 `electron-builder` copies the repo minus infrastructure, the same approach the
 Dockerfile and the Android workflow take. `sw.js`'s `PRECACHE` and the Android

@@ -10,7 +10,11 @@
     "prepack": "node stamp.js",
     "predist": "node stamp.js",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "release": "electron-builder --win nsis --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.0"
   },
   "devDependencies": {
     "electron": "^38.0.0",
@@ -25,7 +29,16 @@
     },
     "files": [
       "main.js",
-      "package.json"
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "pearmannick-prog",
+        "repo": "AIO-Darts",
+        "releaseType": "release"
+      }
     ],
     "extraResources": [
       {

@@ -1,0 +1,104 @@
+name: Release Windows desktop app
+
+# Builds the Electron app and publishes it to a GitHub Release, which is also
+# the update feed: electron-updater in desktop/main.js reads the same release
+# to decide whether an installed copy is out of date. So this workflow is not
+# only how a build is distributed, it is how every existing install learns
+# there is a newer one.
+#
+# Triggered by version tags, the same ones docker-build.yml already uses, so a
+# `v1.2.3` tag ships the container and the desktop app together and there is one
+# version number for the project rather than two that drift.
+#
+# workflow_dispatch is here because a release workflow that can only be tested
+# by tagging is one that gets debugged in production tags.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 1.2.3). Not published - dispatch runs upload an artifact instead."
+        required: false
+        default: "0.0.0-dev"
+
+# Needed to create the release and upload to it. `contents: write` is a real
+# escalation over the read-only default and is the minimum electron-builder's
+# GitHub publisher requires.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # The version shipped must be the version tagged, and electron-builder
+      # takes it from desktop/package.json rather than from the tag. Setting it
+      # here rather than committing it keeps the tag as the single source of
+      # truth - a package.json version that has to be bumped by hand is one that
+      # eventually disagrees with the tag it was released under, and
+      # electron-updater compares exactly this number to decide whether an
+      # installed copy is behind.
+      - name: Set version from the tag
+        shell: bash
+        working-directory: desktop
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "Building version $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      # The server's one runtime dependency. It is NOT part of desktop/'s
+      # dependency tree - it belongs to server/, which extraResources copies
+      # whole - so without this the packaged app starts and the server dies
+      # immediately on `import { WebSocketServer } from "ws"`.
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci --omit=dev
+
+      # Publishes on a tag; on a manual dispatch it only builds, so the workflow
+      # can be exercised without minting a release.
+      - name: Build and publish
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ("${{ github.event_name }}" -eq "push") {
+            npm run release
+          } else {
+            npm run dist
+          }
+
+      # Fail loudly rather than publishing a release whose installer is missing
+      # or whose update feed has no metadata. latest.yml is the file
+      # electron-updater actually fetches; an installer without it is a download
+      # nobody's existing copy will ever be told about.
+      - name: Verify the build output
+        shell: bash
+        working-directory: desktop
+        run: |
+          ls -la dist/
+          test -f dist/latest.yml || { echo "MISSING dist/latest.yml - the update feed"; exit 1; }
+          ls dist/*.exe >/dev/null 2>&1 || { echo "MISSING installer"; exit 1; }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: aio-darts-windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/latest.yml
+          if-no-files-found: error
+          retention-days: 30
