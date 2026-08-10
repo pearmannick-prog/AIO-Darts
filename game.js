@@ -45,6 +45,7 @@ import {
   chooseBermudaTarget, chooseCountUpTarget,
 } from "./botplayer.js";
 import { createRecorder } from "./matchrecorder.js";
+import { partnerSeat, refreshPartnerSeats } from "./accountui.js";
 import {
   recordMatch, getState as accountState, subscribe as subscribeToAccount,
   getPartner, recordMatchForPartner,
@@ -192,6 +193,9 @@ function refreshPlayerRows() {
   });
   el.playerInputs.classList.toggle("at-minimum", rows.length <= MIN_PLAYERS);
   refreshTeamsSetup(rows);
+  // The partner seat picker names the people actually in the match, so it is
+  // rebuilt whenever the rows change.
+  refreshPartnerSeats();
 }
 
 // Partners is only offered at exactly four seats. Adding a fifth player with
@@ -241,6 +245,13 @@ subscribeToAccount(({ user }) => {
 
 el.addPlayerBtn.addEventListener("click", () => addPlayerRow());
 
+// Typing a name changes what the partner seat picker should say about that
+// seat. The BINDING does not move - it is a seat, not a name - but the label
+// has to follow, or the picker names somebody who is no longer in that chair.
+el.playerInputs.addEventListener("input", (event) => {
+  if (event.target.classList.contains("player-input")) refreshPartnerSeats();
+});
+
 // Ticking the box only redraws the badges - nothing about the match is decided
 // until Start Game reads it.
 el.teamsToggle?.addEventListener("change", () => refreshPlayerRows());
@@ -267,6 +278,9 @@ el.startGameBtn.addEventListener("click", () => {
   // it, so a match must not be able to change shape halfway through because
   // somebody tidied the setup.
   state.teams = Boolean(el.teamsToggle?.checked) && canPlayTeams(names.length);
+  // Which seat the signed-in partner is playing, read once here - see
+  // uploadPartnerCopy for why it is not read at the end of the match.
+  state.partnerSeat = partnerSeat();
 
   // Every game mode plays in partners now. Cricket, Count Up and Bermuda all
   // share one score per side, and x01 shares one unless the Freeze Rule is on
@@ -924,17 +938,22 @@ function currentlyFrozen() {
 
 // A signed-in partner's own copy of the match, filed under their account.
 //
-// Their seat is found by NAME, because that is the only thing tying the person
-// signed in to a seat at this board - they typed their name into a row, or it
-// was filled in for them when they signed in. No match, no upload: crediting
-// the wrong seat would put someone else's darts in their record, which is
-// worse than not recording theirs.
+// The seat is BOUND, not inferred. It used to be found by matching the
+// partner's display name against the player rows, which broke silently the
+// moment a row was renamed after they signed in: nothing matched, the upload
+// simply never happened, and the only symptom was darts missing from someone
+// else's statistics days later. A seat is what is being bound, so a seat is
+// what is chosen and what is read here.
+//
+// Captured at Start Game rather than read now, for the same reason the
+// partners toggle is: the setup form stays in the DOM behind the game and a
+// rematch never returns to it, so a finished match must not be able to file
+// itself against a seat somebody re-picked while it was being played.
 function uploadPartnerCopy(document) {
-  const partner = getPartner();
-  if (!partner) return;
-  const seat = (state.playerNames ?? [])
-    .findIndex((n) => n.trim().toLowerCase() === partner.displayName.trim().toLowerCase());
-  if (seat < 0 || seat === state.selfSeat) return;
+  if (!getPartner()) return;
+  const seat = state.partnerSeat;
+  if (!Number.isInteger(seat) || seat === state.selfSeat) return;
+  if (!state.playerNames?.[seat]) return;
   recordMatchForPartner(document, seat).catch(() => {});
 }
 

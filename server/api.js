@@ -585,7 +585,16 @@ const routes = {
     // match, where both players record their own copy and neither is the
     // authority. client_uuid is scoped to the user, so the two rows are
     // legitimately their own rather than a duplicate.
-    const user = ctx.user || userForBearer(req);
+    //
+    // THE BEARER WINS. The board owner's cookie is sent on every request the
+    // page makes, so preferring it meant the partner's copy was filed under
+    // the OWNER's account - the exact misattribution this feature exists to
+    // prevent, and silent, because both uploads returned 201 and the owner's
+    // history simply grew a match they had already recorded.
+    //
+    // The order is the right way round on the merits too: a cookie is ambient,
+    // while a bearer token is an explicit statement of whose darts these are.
+    const user = userForBearer(req) || ctx.user;
     if (!user) throw unauthorized("Sign in to save this match.");
     const body = await readJsonBody(req);
     const { id, duplicate } = insertMatch(user.id, body.match);

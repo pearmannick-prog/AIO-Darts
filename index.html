@@ -1116,6 +1116,8 @@
   .partner-account-form input { flex: 1 1 160px; min-width: 0; }
   .partner-account-who { font-size: 13px; opacity: 0.8; margin-left: 8px; }
   .partner-account-note { font-size: 12px; opacity: 0.7; margin: 6px 0 0; }
+  .partner-seat-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+  .partner-note-warn { color: var(--danger, #d9534f); opacity: 1; }
   .setup-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
   /* Flex children refuse to shrink below their content by default, which is
      what pushes a narrow screen into sideways scrolling. */
@@ -4360,7 +4362,7 @@
 
                Rendered only when there is an accounts API behind it, like
                everything else account-shaped. -->
-          <div class="partner-account hidden" data-partner-account>
+          <div class="partner-account hidden" data-partner-account data-partner-scope="local">
             <button type="button" class="btn-secondary btn-soft" data-partner-signin>
               Partner: sign in
             </button>
@@ -4372,6 +4374,21 @@
               <button type="button" class="btn-secondary btn-soft" data-partner-cancel>Cancel</button>
             </form>
             <p class="partner-account-note hint" data-partner-note></p>
+            <!-- WHICH SEAT is the signed-in partner, stated rather than
+                 guessed. This used to be matched by display name, which broke
+                 silently the moment a row was renamed after signing in: no
+                 seat matched, so their darts were simply never uploaded and
+                 nothing said so. A seat is the thing being bound, so a seat is
+                 what is chosen.
+
+                 Defaults to player 2 - under the alternating convention seats
+                 1 and 3 are one team, so the person at seat 1 has their
+                 partner at seat 3 on screen. The picker is rebuilt from the
+                 player rows whenever they change. -->
+            <label class="partner-seat-row hidden" data-partner-seat-row>
+              <span>Partner is</span>
+              <select data-partner-seat></select>
+            </label>
           </div>
         </div>
         <div class="setup-actions">

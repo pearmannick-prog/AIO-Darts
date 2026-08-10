@@ -873,6 +873,22 @@ password-checking surface on the same accounts and leaving it open would make
 the throttle on the first one decorative. Signing in as the account already
 signed in here is refused: it would record both seats against one person.
 
+**The partner is bound to a SEAT, not matched by name.** The first cut found
+their seat by comparing their display name against the player rows, which broke
+silently the moment a row was renamed after they signed in: nothing matched, no
+upload happened, and the only symptom was darts missing from someone else's
+statistics days later. A seat is what is being bound, so a seat is what is
+chosen — a picker, defaulting to the natural partner seat, rebuilt from the
+player rows and read once at Start Game. Online needs no picker: the seat there
+is exact (`myIndex + 2`).
+
+Binding explicitly moves the failure rather than removing it — a seat CAN be
+pointed at the wrong person, and that would file their darts under the
+partner's name, which is worse than no upload. It cannot be prevented, since
+the seat is the player's to choose, so it is said out loud: the picker shows
+the name, and a mismatch between that name and the signed-in partner is called
+out in red.
+
 **The upload is the shape that already existed.** The same match document is
 sent twice with `isSelf` on a different seat — exactly what an online match has
 always done, where both players record their own copy and neither is the

@@ -1492,6 +1492,7 @@ function wirePartnerAccounts() {
       who.textContent = partner ? `Signed in as ${partner.displayName}` : "";
       btn.textContent = partner ? "Partner: sign out" : "Partner: sign in";
       if (partner) form.classList.add("hidden");
+      block.querySelector("[data-partner-seat-row]")?.classList.toggle("hidden", !partner);
     }
   };
 
@@ -1513,6 +1514,11 @@ function wirePartnerAccounts() {
       if (!form.classList.contains("hidden")) email.focus();
     });
 
+    block.querySelector("[data-partner-seat]")?.addEventListener("change", (event) => {
+      event.target.dataset.touched = "1";
+      warnIfSeatLooksWrong(block);
+    });
+
     block.querySelector("[data-partner-cancel]").addEventListener("click", () => {
       form.classList.add("hidden");
       note.textContent = "";
@@ -1530,7 +1536,7 @@ function wirePartnerAccounts() {
         note.textContent = "Their darts will be saved to their account.";
         // Their own name is the one that should appear as the partner, so the
         // two cannot disagree about who is standing here.
-        fillPartnerName(partner.displayName);
+        fillPartnerName(partner.displayName, block);
         paint();
       } catch (err) {
         note.textContent = err?.message || "Could not sign in.";
@@ -1544,6 +1550,7 @@ function wirePartnerAccounts() {
     for (const block of blocks) block.classList.toggle("hidden", !available);
     paint();
   });
+  refreshPartnerSeats();
   paint();
 }
 
@@ -1551,17 +1558,96 @@ function wirePartnerAccounts() {
 // play takes the names from the player rows, so the partner's name is put into
 // the first seat that is still a placeholder rather than overwriting anything
 // somebody typed - the same rule the account's own name follows for seat one.
-function fillPartnerName(displayName) {
+function fillPartnerName(displayName, block) {
   const online = document.getElementById("online-partner");
   if (online && !online.value.trim()) {
     online.value = displayName;
     online.dispatchEvent(new Event("change"));
   }
 
+  // Local play: put their name on the seat they are BOUND to, rather than
+  // hunting for a spare row and hoping the two agree later.
+  const seat = partnerSeat(block);
+  if (seat === null) return;
   const rows = [...document.querySelectorAll("#player-inputs .player-input")];
-  if (rows.some((r) => r.value.trim().toLowerCase() === displayName.toLowerCase())) return;
-  const spare = rows.find((r, i) => i > 0 && (!r.value.trim() || r.value === `Player ${i + 1}`));
-  if (spare) spare.value = displayName;
+  const row = rows[seat];
+  if (row && (!row.value.trim() || row.value === `Player ${seat + 1}`)) {
+    row.value = displayName;
+  }
+}
+
+// The seat the signed-in partner occupies, read from the picker. Null when
+// this block has none (the online panel, where the seat is exact) or when
+// nobody is signed in.
+// The binding is a seat, so it CAN point at somebody else - and if it does,
+// that person's darts would be filed under the partner's account, which is
+// worse than the missing upload this replaced. It cannot be prevented (the
+// seat is the player's to choose), so it is said out loud instead: the picker
+// already shows the name, and this says plainly that the two disagree.
+function warnIfSeatLooksWrong(block) {
+  const note = block?.querySelector("[data-partner-note]");
+  const select = block?.querySelector("[data-partner-seat]");
+  const partner = getPartner();
+  if (!note || !select || !partner) return;
+
+  const seat = Number(select.value);
+  const name = [...document.querySelectorAll("#player-inputs .player-input")][seat]?.value.trim();
+  if (!name) return;
+  if (name.toLowerCase() === partner.displayName.trim().toLowerCase()) {
+    note.textContent = "Their darts will be saved to their account.";
+    note.classList.remove("partner-note-warn");
+  } else {
+    note.textContent =
+      `That seat is "${name}", not ${partner.displayName} - their darts would be saved as ${partner.displayName}'s.`;
+    note.classList.add("partner-note-warn");
+  }
+}
+
+export function partnerSeat(block = document.querySelector('[data-partner-scope="local"]')) {
+  const select = block?.querySelector("[data-partner-seat]");
+  if (!select) return null;
+  const seat = Number(select.value);
+  return Number.isInteger(seat) ? seat : null;
+}
+
+// Rebuilt from the player rows whenever they change, so the options always
+// name the people actually in the match. The current choice survives a rebuild
+// where it still exists - retyping a name must not silently move the binding.
+export function refreshPartnerSeats() {
+  const block = document.querySelector('[data-partner-scope="local"]');
+  const select = block?.querySelector("[data-partner-seat]");
+  const row = block?.querySelector("[data-partner-seat-row]");
+  if (!select) return;
+
+  const names = [...document.querySelectorAll("#player-inputs .player-input")]
+    .map((input, i) => input.value.trim() || `Player ${i + 1}`);
+  const previous = select.value;
+
+  select.innerHTML = "";
+  names.forEach((name, seat) => {
+    // Seat 0 is the account holder's own seat by convention, so it is not
+    // offered: a partner who is you is not a partner.
+    if (seat === 0) return;
+    const option = document.createElement("option");
+    option.value = String(seat);
+    option.textContent = `Player ${seat + 1} - ${name}`;
+    select.appendChild(option);
+  });
+
+  // A choice the player actually made is kept. A default is re-derived, so
+  // adding players after signing a partner in does not leave the binding on
+  // whichever seat happened to exist at the time - which is how it ended up
+  // defaulting to seat 2 when there were only two rows on screen.
+  const chosen = select.dataset.touched === "1"
+    && [...select.options].some((o) => o.value === previous);
+  // Seat 3 (index 2) is the natural partner of seat 1 under the alternating
+  // convention - 1 and 3 are one team - so it is the default when it exists.
+  const fallback = [...select.options].find((o) => o.value === "2")?.value
+    ?? select.options[0]?.value ?? "";
+  select.value = chosen ? previous : fallback;
+
+  row?.classList.toggle("hidden", !getPartner());
+  warnIfSeatLooksWrong(block);
 }
 
 wirePartnerAccounts();
