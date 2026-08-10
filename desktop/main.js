@@ -164,6 +164,11 @@ function createWindow(port) {
     minHeight: 600,
     backgroundColor: "#1c1c1c",
     title: "AIO Darts",
+    // The PWA icon, reused rather than duplicated - one dartboard, and it
+    // cannot drift from the one the web app shows. Only affects the window and
+    // taskbar when run unpackaged; the packaged .exe carries the icon
+    // electron-builder converts from this same file.
+    icon: path.join(APP_ROOT, "icon-512.png"),
     autoHideMenuBar: true,
     webPreferences: {
       // Nothing in the front-end wants Node, and this page talks to the

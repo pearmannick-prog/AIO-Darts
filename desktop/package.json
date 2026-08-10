@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.aiodarts.desktop",
     "productName": "AIO Darts",
+    "icon": "../icon-512.png",
     "directories": {
       "output": "dist"
     },
