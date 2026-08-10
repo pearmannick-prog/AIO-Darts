@@ -385,9 +385,21 @@ their own seat rather than pushing everyone along.
 1. **`webrtc.js`:** `PeerLink` stays 1:1; the host holds three of them. The
    transceiver slot contract ("video m-line 0 is the main camera") is written
    for one remote and needs re-reading per link.
-2. **The sequencer** (option (b) below) — the correctness core, and the thing
-   that makes four peers as deterministic as two. Buildable and testable
-   without any UI.
+2. ~~**The sequencer**~~ **DONE** — `sequencer.js`, with 13 tests in
+   `server/sequencer.test.js`. The host stamps every game message with a
+   monotonic number and rebroadcasts; everyone applies strictly in that order,
+   so the determinism argument works again word for word. It never inspects a
+   message, only numbers it, so "the server never sees a dart" and "both sides
+   compute the result themselves" are both untouched.
+
+   **The accepted cost, stated so nobody optimises it away:** a guest's own
+   dart is not applied until it comes back stamped — one round trip. Applying
+   it locally first and reconciling later is the rollback this project does not
+   have, and in Cricket it would mean showing marks that a later message takes
+   away. There is a test asserting the delay exists.
+
+   Not yet wired into `online.js`; it is a module with a test harness, which is
+   deliberate — it can be proved correct before anything depends on it.
 3. **`online.js`:** `me`/`opp` becomes a seat array, and the 22 binary
    `side === "me"` branches become seat lookups. The big one.
 4. **The media budget** — four cameras in a mesh is the cost that eventually

@@ -31,7 +31,7 @@
 // Network-first does NOT protect against this on its own. It governs what
 // happens once the new worker is in control; until then the OLD worker is
 // serving, and a returning visitor gets whatever it has.
-const CACHE = "aio-darts-v4";
+const CACHE = "aio-darts-v5";
 
 // Cached up front so a first-run install works offline immediately, rather
 // than only after the player has happened to load each file once.
@@ -88,6 +88,7 @@ const PRECACHE = [
   "./botplayer.js",
   "./medley.js",
   "./teams.js",
+  "./sequencer.js",
   // Shared UI components
   "./dartboard.js",
   "./cricketboard.js",
