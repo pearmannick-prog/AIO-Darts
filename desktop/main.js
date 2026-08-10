@@ -97,6 +97,11 @@ function startServer(port) {
         ...process.env,
         ELECTRON_RUN_AS_NODE: "1",
         PORT: String(port),
+        // Loopback ONLY. This server exists to give our own window a secure
+        // context; it is not a service anyone else should find. Left on all
+        // interfaces it would offer the local network a signaling relay and an
+        // unauthenticated forwarder to the upstream site.
+        HOST: "127.0.0.1",
         // The front-end is served from the repo root, not a build directory -
         // this app has no build step and that is deliberate.
         PUBLIC_DIR: APP_ROOT,
