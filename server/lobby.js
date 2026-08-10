@@ -204,6 +204,7 @@ export function createLobby() {
       hasAvatar: entry.hasAvatar,
       status: entry.status,
       preferredGame: entry.preferredGame,
+      partner: entry.partner,
       roomId: entry.roomId,
       isFriend: friends.has(entry.userId),
       isSelf: entry.userId === userId,
@@ -570,12 +571,28 @@ export function createLobby() {
   function handle(userId, socket, message) {
     switch (message.type) {
       case "status": {
+        // An ABSENT status keeps the one already held; only an unrecognised
+        // one falls back to the lobby. The difference matters because this
+        // message now carries the partner too, and a client updating only that
+        // would otherwise knock the player out of "Open to challenges" - or
+        // out of the room they are standing in - as a side effect of typing a
+        // name. That is the same shape as the write-only status bug the rooms
+        // work already had to fix once.
+        const current = presence.get(userId)?.status;
         const status = Object.values(STATUS).includes(message.status)
           ? message.status
-          : STATUS.LOBBY;
+          : (message.status === undefined ? (current ?? STATUS.LOBBY) : STATUS.LOBBY);
         presence.update(userId, {
           status,
           preferredGame: message.preferredGame ?? presence.get(userId)?.preferredGame ?? null,
+          // Typed by the player, shown to every other player, so it is bounded
+          // here as well as escaped at render. An empty string means "playing
+          // alone" and must CLEAR a partner rather than leave a stale one
+          // advertised; `undefined` means this message was not about the
+          // partner at all and leaves it as it was.
+          partner: message.partner === undefined
+            ? (presence.get(userId)?.partner ?? null)
+            : (String(message.partner || "").trim().slice(0, 40) || null),
         });
         return;
       }

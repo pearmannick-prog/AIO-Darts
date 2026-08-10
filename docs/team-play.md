@@ -838,6 +838,38 @@ This is a recommendation, not a decided point.
    window needed **no widening at all**: the two stacks are per SIDE, and in
    local doubles a side *is* a team, so "the window closes when the other side
    throws" was already "when anyone on the other team throws".
-9. **Lobby: pair formation. This is the biggest single piece and is easy to
-   under-estimate** — until it exists, doubles is invite-code only, which is a
-   perfectly good first release.
+9. ~~**Lobby: pair formation. This is the biggest single piece and is easy to
+   under-estimate.**~~ **MOSTLY NOT A THING — see 8a.** The lobby now shows a
+   pair as a pair, which is what local doubles actually needed. Forming a pair
+   with a REMOTE partner is a remote-doubles feature and is blocked on remote
+   doubles existing.
+
+### 8a. Pair formation was the wrong shape of problem
+
+This document called lobby pair formation "the biggest single piece" of team
+play, and estimated it as comparable to the rooms work. That was wrong, and the
+reason is worth keeping because it is the same mistake in miniature that
+section 0 renames away from.
+
+**In local doubles your partner is standing next to you.** They need no
+account, no connection, no presence entry and nothing for the lobby to link to
+— their name is a string you type. "Invite a partner, form a pair, then
+challenge another pair" describes finding a partner who is somewhere else,
+which is REMOTE doubles, and it cannot be built before remote doubles exists
+because there would be nothing for the formed pair to do.
+
+Doubles through the lobby already worked before any of this: a challenge mints
+an ordinary invite code, and the rosters ride in `hello`/`match_config` exactly
+as they do on the invite-code path.
+
+What was genuinely missing was **visibility** — pairs need to be able to find
+pairs, because challenging someone who is playing alone gets you a singles
+match rather than the game you were looking for. So presence carries a
+`partner` name, the lobby row reads "Ann & Cat" with a doubles tag, and that is
+the whole feature.
+
+One bug found on the way in, of a shape this lobby has now had twice: the
+`status` message defaulted an ABSENT status to "lobby", so a client updating
+only its partner would have knocked the player out of "Open to challenges", or
+out of the room they were standing in, as a side effect of typing a name. An
+absent status now keeps the current one; only an unrecognised one falls back.

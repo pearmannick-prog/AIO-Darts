@@ -274,8 +274,16 @@ function handle(message) {
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
-export function setStatus(status, preferredGame) {
-  send({ type: "status", status, preferredGame });
+export function setStatus(status, preferredGame, partner) {
+  send({ type: "status", status, preferredGame, partner });
+}
+
+// Advertise (or clear) the partner standing at this board, without touching
+// status or preferred game. Sent whenever the Partner box changes, so the
+// lobby shows a pair as a pair before they have challenged anybody - which is
+// the whole point of putting it there: pairs need to be able to FIND pairs.
+export function setPartner(partner) {
+  send({ type: "status", partner, status: undefined, preferredGame: undefined });
 }
 
 export function challengePlayer(toUserId, legs) {

@@ -173,8 +173,23 @@ function personRow(player) {
   const middle = document.createElement("div");
   const name = document.createElement("div");
   name.className = "person-name clickable";
-  name.textContent = player.displayName + (player.isSelf ? " (you)" : "");
+  // A pair reads as a pair. The partner is someone else's typing arriving over
+  // the wire, so it goes in as text and never as markup - see the stored XSS
+  // this file already had once, where a display name was interpolated into
+  // innerHTML and ran in the challenged player's session.
+  name.textContent = player.partner
+    ? `${player.displayName} & ${player.partner}`
+    : player.displayName + (player.isSelf ? " (you)" : "");
   name.addEventListener("click", () => openCard(player));
+  if (player.partner) {
+    // Said as well as shown, because "A & B" alone could be one person with an
+    // ampersand in their name, and challenging a pair when you have nobody
+    // beside you gets you a singles match rather than the game you wanted.
+    const tag = document.createElement("span");
+    tag.className = "board-you-tag";
+    tag.textContent = "doubles";
+    name.appendChild(tag);
+  }
   if (player.isFriend && !player.isSelf) {
     const tag = document.createElement("span");
     tag.className = "board-you-tag";

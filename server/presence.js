@@ -72,6 +72,12 @@ export function createPresence() {
           hasAvatar: Boolean(user.avatar_blob),
           status: STATUS.ONLINE,
           preferredGame: user.pref_format || null,
+          // The name of whoever is standing at this player's board with them,
+          // or null. LOCAL doubles only, which is why it is a bare string and
+          // not a user id: a partner shares a board, so they need no account,
+          // no connection and no presence of their own. See
+          // docs/team-play.md section 0.
+          partner: null,
           roomId: null,
           since: Date.now(),
         });

@@ -23,7 +23,9 @@ import {
 } from "./bermuda.js";
 import { createRecorder } from "./matchrecorder.js";
 import { recordMatch, getState as accountState } from "./accountstore.js";
-import { onMatchReady, reportMatchOver, pushMatchState } from "./lobbyclient.js";
+import {
+  onMatchReady, reportMatchOver, pushMatchState, setPartner,
+} from "./lobbyclient.js";
 import { getPref, setPref, VISIT_HOLD_MS } from "./prefs.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
@@ -472,6 +474,20 @@ function readPartnerName() {
   online.partnerName = cleanPartnerName(elPartner?.value);
   return online.partnerName;
 }
+
+// Tell the lobby who is standing here, so a pair shows as a pair BEFORE they
+// have challenged anybody. That is the whole reason the partner reaches the
+// lobby at all: pairs need to be able to find pairs, and challenging someone
+// who is playing alone gets you a singles match rather than the game you were
+// looking for.
+//
+// The partner is a bare name, never a user id, because in local doubles they
+// are at your board - no account, no connection, nothing for the lobby to
+// link to. Inviting a REMOTE partner is a different feature and needs remote
+// doubles first; see docs/team-play.md section 0.
+elPartner?.addEventListener("change", () => {
+  setPartner(readPartnerName() || "");
+});
 
 // Same cricket board component as local play, so the two modes can't drift.
 wireCricketBoard(el.cricketBoard, (segment) => {
