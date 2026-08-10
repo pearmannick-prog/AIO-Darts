@@ -111,7 +111,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aio-darts-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
