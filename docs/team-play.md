@@ -797,11 +797,16 @@ This is a recommendation, not a decided point.
 4. ~~**Tell the player they are frozen.**~~ **DONE** as part of step 2 — it is
    one line in the turn label once the predicate exists, and deferring it would
    have meant shipping the worst outcome in the game with no warning attached.
-5. **The shared-total model, once** — the two-index split of 3a, delivering
-   freeze-OFF x01 doubles **and** Cricket doubles together, against a recorder
-   that by now already understands teams. This is the step that carries 3b's
-   invisible-failure risk, which is why it is here rather than first, and why
-   the thrower index gets tests rather than care.
+5. ~~**The shared-total model, once**~~ **DONE**, delivering freeze-OFF x01
+   doubles **and** Cricket, Count Up and Bermuda doubles together — every game
+   mode plays in partners now, and a medley may mix the two models freely
+   because which one applies is decided per LEG, not per match.
+
+   `isSharedTotal()` is that decision and `recorderSeat()` is the only bridge
+   between the two index spaces. `scoring.js`, `cricket.js` and `bermuda.js`
+   were not touched at all: with a shared total they are handed a players array
+   of length two, exactly as in singles, which is the purity rule paying out
+   for the last time in this feature.
 
    **Already true ONLINE, for free.** `online.me` / `online.opp` have always
    held one score per *side*, which is the shared-total shape exactly — so

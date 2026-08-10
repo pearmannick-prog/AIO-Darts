@@ -267,20 +267,11 @@ el.startGameBtn.addEventListener("click", () => {
   // somebody tidied the setup.
   state.teams = Boolean(el.teamsToggle?.checked) && canPlayTeams(names.length);
 
-  // PARTNERS IS x01 ONLY FOR NOW. Cricket doubles is a different seat model -
-  // the team shares one set of marks, where partners x01 gives everyone their
-  // own score - and it is the next piece of work rather than something this
-  // one covers. Refusing the format is the honest failure: the alternative is
-  // a medley that starts fine and then reaches a Cricket leg with a leg tally
-  // sized for teams and a rules module expecting people, which would go wrong
-  // several minutes into a match rather than before it.
-  if (state.teams && legs.map(normalizeLeg).some((l) => l.game !== "x01")) {
-    alert(
-      "Partners play currently supports x01 legs only.\n\n"
-      + "Remove the other games from the format, or turn Partners off.",
-    );
-    return;
-  }
+  // Every game mode plays in partners now. Cricket, Count Up and Bermuda all
+  // share one score per side, and x01 shares one unless the Freeze Rule is on
+  // - which is the one variant that needs a score each. A medley may mix them
+  // freely, because which model applies is decided per LEG in startLeg rather
+  // than once for the match.
 
   // LEGS ARE WON BY TEAMS. createMatch sizes legsWon at call time, so passing
   // the team count is the whole of what a partners match needs from medley.js
@@ -591,6 +582,11 @@ function snapshot() {
       // as the result, or the label keeps saying somebody went out frozen
       // after the throw that did it has been taken back.
       legConceded: state.legConceded,
+      // Whose go it is WITHIN each side. Without this an undo that crosses a
+      // visit boundary would hand the next dart to the wrong partner - and
+      // with a shared total that is invisible, because the score would still
+      // be right. See recorderSeat.
+      throwerIndexes: state.throwerIndexes,
       throwLog: state.throwLog,
     })),
     // Rides along in the same snapshot rather than keeping a second stack, so
@@ -636,7 +632,18 @@ function startLeg(names) {
   const start = state.legConfig.score ?? STARTING_SCORE;
   const rules = rulesFor(state.legConfig.rules);
 
-  state.players = names.map((name) => {
+  // Who the rules layer plays between. With a shared total that is the two
+  // TEAMS, named as pairs - so cricket.js gets a players array of length two
+  // and needs no idea that partners exist. Otherwise it is the people, exactly
+  // as it always was.
+  const shared = isSharedTotal(state.legConfig);
+  state.rosters = shared
+    ? [0, 1].map((team) => names.filter((_n, seat) => teamOf(seat) === team))
+    : names.map((n) => [n]);
+  state.throwerIndexes = state.rosters.map(() => 0);
+  const seatNames = shared ? state.rosters.map((r) => r.join(" & ")) : names;
+
+  state.players = seatNames.map((name) => {
     if (state.gameType === "cricket") return createCricketPlayer(name);
     if (state.gameType === "countup") return createCountUpPlayer(name);
     if (state.gameType === "bermuda") return createBermudaPlayer(name);
@@ -647,8 +654,11 @@ function startLeg(names) {
   // Offset by the rematch count so the opening throw alternates between
   // MATCHES as well as between legs. Without it the same seat opened every
   // rematch, which is a real advantage in a short format and free to fix.
+  // Over the RULES seats, not the people - with a shared total there are two
+  // of them, and alternating over four would leave the same side opening two
+  // legs running.
   state.currentPlayerIndex = startingPlayerForLeg(
-    state.match.currentLeg + (state.rematchCount || 0), names.length);
+    state.match.currentLeg + (state.rematchCount || 0), state.players.length);
   state.dartsThisTurn = [];
   state.startOfTurnRemaining = start;
   state.gameOver = false;
@@ -791,7 +801,7 @@ function applyHit(rawSegment) {
     bust: isBust,
   });
 
-  state.recorder?.dart(state.currentPlayerIndex, segment, {
+  state.recorder?.dart(recorderSeat(), segment, {
     remainingBefore,
     remainingAfter: isBust ? state.startOfTurnRemaining : Math.max(after, 0),
     bust: isBust,
@@ -821,7 +831,7 @@ function applyHit(rawSegment) {
       cueCheckout();
       finishLeg(
         state.teams ? teamOf(state.currentPlayerIndex) : state.currentPlayerIndex,
-        { finisherSeat: state.currentPlayerIndex },
+        { finisherSeat: recorderSeat() },
       );
     } else if (state.dartsThisTurn.length >= 3) {
       endTurn();
@@ -829,6 +839,53 @@ function applyHit(rawSegment) {
   }
 
   render();
+}
+
+// ---------------------------------------------------------------------------
+// The two partners models, and the one place they differ
+// ---------------------------------------------------------------------------
+// SHARED TOTAL: the pair throws into one score, or one set of Cricket marks.
+// A rules seat is then a TEAM, and `state.players` has two entries in a
+// four-handed game - which is why nothing in cricket.js, scoring.js or
+// bermuda.js changes: they are handed two players, exactly as in singles.
+//
+// The other model is freeze-ON partners x01, where every player carries their
+// own remaining and a rules seat is still a person. Which one applies is
+// decided by the LEG, not by the match, so a medley can hold both.
+//
+// This is the two-index split docs/team-play.md 3a warned about, and it is
+// live from here down: the rules index is a team, the recorder index is a
+// person, and recorderSeat() is the only bridge between them.
+function isSharedTotal(legConfig = state.legConfig) {
+  if (!state.teams) return false;
+  if (legConfig?.game !== "x01") return true;      // Cricket, Count Up, Bermuda
+  return !legConfig.freeze;                        // x01 shares unless frozen
+}
+
+// The absolute PERSON seat currently at the oche - what the recorder counts.
+//
+// Seats alternate, 0 and 2 against 1 and 3, the same convention teams.js and
+// online.js use, so a doubles match reads back identically however it was
+// played. In the shared-total model currentPlayerIndex is a team, so the
+// thrower within that team supplies the rest; in every other case a rules seat
+// is already a person and this returns it unchanged.
+//
+// GETTING THIS WRONG IS SILENT. Both partners score into the same total, so a
+// dart credited to the wrong one leaves the scoreboard, the leg and the winner
+// all correct and only the per-person averages wrong - see 3b.
+function recorderSeat(index = state.currentPlayerIndex) {
+  if (!isSharedTotal()) return index;
+  return index + (state.throwerIndexes?.[index] ?? 0) * 2;
+}
+
+// Everyone on one side, in throwing order.
+function rosterOf(index) {
+  return state.rosters?.[index] ?? [state.players[index]?.name ?? "Player"];
+}
+
+function throwerNameOf(index) {
+  const names = rosterOf(index);
+  return names[(state.throwerIndexes?.[index] ?? 0) % names.length];
 }
 
 // The freeze half of a throw's options, or nothing at all when this is not a
@@ -839,7 +896,10 @@ function applyHit(rawSegment) {
 // - so there is exactly one place that derives them, shared with the online
 // controller when that arrives. teams.js does the actual pairing arithmetic.
 function freezeOptions() {
-  if (!state.teams || !state.legConfig?.freeze) return { freeze: false };
+  // Only the four-score model has a partner score to compare against. With a
+  // shared total there is one number per side and the rule cannot be stated,
+  // which is exactly why the freeze version keeps separate scores.
+  if (!state.teams || !state.legConfig?.freeze || isSharedTotal()) return { freeze: false };
   const remainings = state.players.map((p) => p.remaining);
   return {
     freeze: true,
@@ -917,7 +977,7 @@ function applyQuickTotal(totalValue) {
 
   hideMarker(el.dartboardMarker); // no single position to show for a turn total
 
-  state.recorder?.quickTotal(state.currentPlayerIndex, {
+  state.recorder?.quickTotal(recorderSeat(), {
     total: totalValue,
     remainingBefore,
     remainingAfter: isBust ? state.startOfTurnRemaining : Math.max(after, 0),
@@ -936,7 +996,7 @@ function applyQuickTotal(totalValue) {
     if (isWin) {
       finishLeg(
         state.teams ? teamOf(state.currentPlayerIndex) : state.currentPlayerIndex,
-        { finisherSeat: state.currentPlayerIndex },
+        { finisherSeat: recorderSeat() },
       );
     } else {
       endTurn(); // always finalizes, regardless of dartsThisTurn count
@@ -965,6 +1025,11 @@ function applyQuickTotal(totalValue) {
 function sideNames() {
   const names = state.players.map((p) => p.name);
   if (!state.teams) return names;
+  // With a shared total the rules seats ARE the sides, and they were named as
+  // pairs when the leg was built - so this is already the answer. Rebuilding
+  // it by seat parity here would pair up two pair-names and produce
+  // "Ann & Cat & Ben & Dan".
+  if (isSharedTotal()) return names;
   return Array.from({ length: TEAM_COUNT }, (_, team) =>
     names.filter((_n, seat) => teamOf(seat) === team).join(" & "));
 }
@@ -1058,7 +1123,7 @@ function applyCountUpTotal(totalValue) {
 
   const rounds = state.legConfig.rounds ?? DEFAULT_ROUNDS;
   if (isLegComplete(state.players, rounds)) {
-    finishLeg(checkCountUpWin(state.players, rounds));
+    finishLeg(checkCountUpWin(state.players, rounds), { finisherSeat: recorderSeat() });
   } else {
     endTurn();
   }
@@ -1082,7 +1147,7 @@ function applyCountUpHit(segment) {
     bust: false,
   });
 
-  state.recorder?.dart(state.currentPlayerIndex, segment, {
+  state.recorder?.dart(recorderSeat(), segment, {
     scored: result.points,
     extra: { points: result.points, total: player.total },
   });
@@ -1094,7 +1159,8 @@ function applyCountUpHit(segment) {
     if (isLegComplete(state.players, state.legConfig.rounds ?? DEFAULT_ROUNDS)) {
       // checkCountUpWin returns null on a tie - finishLeg passes that through
       // to medley.js, which credits the leg to nobody.
-      finishLeg(checkCountUpWin(state.players, state.legConfig.rounds ?? DEFAULT_ROUNDS));
+      finishLeg(checkCountUpWin(state.players, state.legConfig.rounds ?? DEFAULT_ROUNDS),
+        { finisherSeat: recorderSeat() });
     } else {
       endTurn();
     }
@@ -1123,7 +1189,7 @@ function applyBermudaHit(segment) {
     bust: false,
   });
 
-  state.recorder?.dart(state.currentPlayerIndex, segment, {
+  state.recorder?.dart(recorderSeat(), segment, {
     scored: result.points,
     extra: { target: target?.label ?? null, hit: result.hit, points: result.points },
   });
@@ -1145,7 +1211,7 @@ function applyBermudaHit(segment) {
     }
 
     if (isBermudaComplete(state.players)) {
-      finishLeg(checkBermudaWin(state.players));
+      finishLeg(checkBermudaWin(state.players), { finisherSeat: recorderSeat() });
     } else {
       endTurn();
     }
@@ -1176,7 +1242,7 @@ function applyCricketHit(segment) {
   // Cricket's per-dart detail: which target, how many marks it was worth, how
   // many of those actually counted, and what it scored. Everything MPR, white
   // horses and hat tricks are computed from later comes from these.
-  state.recorder?.dart(state.currentPlayerIndex, segment, {
+  state.recorder?.dart(recorderSeat(), segment, {
     scored: result.points,
     extra: {
       target: result.target,
@@ -1190,7 +1256,10 @@ function applyCricketHit(segment) {
   moveMarker(el.dartboardMarker, segment);
 
   if (checkCricketWin(state.players, state.currentPlayerIndex)) {
-    finishLeg(state.currentPlayerIndex);
+    // currentPlayerIndex is the RULES seat, which with a shared total is
+    // already the team - so it serves as the winner either way. The finishing
+    // PERSON is separate, and is what marks the closing visit as theirs.
+    finishLeg(state.currentPlayerIndex, { finisherSeat: recorderSeat() });
   } else if (state.dartsThisTurn.length >= 3) {
     endTurn();
   }
@@ -1209,7 +1278,9 @@ function applyCricketHit(segment) {
 let botTimer = null;
 
 function currentBot() {
-  return state.bots[state.currentPlayerIndex] ?? null;
+  // By person, not by rules seat: with a shared total the rules seat is a
+  // team, and two people on one side can be a human and a computer.
+  return state.bots[recorderSeat()] ?? null;
 }
 
 function cancelBot() {
@@ -1308,9 +1379,17 @@ function commitTurn({ busted = false } = {}) {
   }
   // The seat is passed BEFORE currentPlayerIndex moves below - the visit being
   // closed is the one that has just been thrown, not the one about to start.
-  state.recorder?.endTurn(state.currentPlayerIndex);
+  state.recorder?.endTurn(recorderSeat());
   state.dartsThisTurn = [];
   clearHold();
+  // The next visit on THIS side belongs to the other partner. Advanced before
+  // the side moves on, so it is the side that has just thrown that rotates -
+  // together with the line below, that produces the standard A1 B1 A2 B2.
+  if (isSharedTotal()) {
+    const roster = rosterOf(state.currentPlayerIndex).length || 1;
+    state.throwerIndexes[state.currentPlayerIndex] =
+      ((state.throwerIndexes[state.currentPlayerIndex] ?? 0) + 1) % roster;
+  }
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   // Cricket players have no `remaining` - there's nothing to revert to,
   // since it has no bust rule.
@@ -1390,7 +1469,7 @@ function render() {
 
   const current = state.players[state.currentPlayerIndex];
   el.bigScore.textContent = scoreOf(current);
-  renderLiveAverage(el.ocheStat, state.recorder?.liveStats(state.currentPlayerIndex));
+  renderLiveAverage(el.ocheStat, state.recorder?.liveStats(recorderSeat()));
   renderCheckoutHint(el.checkoutHint, {
     // x01 only: Cricket has no "remaining", Count Up counts upwards, and
     // Bermuda's target is fixed by the round, so there is nothing to suggest.
@@ -1431,10 +1510,13 @@ function render() {
     el.turnLabel.textContent =
       `${current.name}'s turn · round ${Math.min(current.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(current)}`;
   } else if (state.teams) {
-    // Partners: say which team is at the oche as well as who, because the
-    // score on screen belongs to a person and the leg belongs to a pair.
-    el.turnLabel.textContent =
-      `${current.name}'s turn · ${teamLabel(state.currentPlayerIndex)}`;
+    // Partners. With a shared total `current.name` is the PAIR, so the thrower
+    // has to be named separately - it is the one thing a doubles scoreboard
+    // has to say that a singles one does not, and with both partners throwing
+    // into one score nothing else on screen reveals whose go it is.
+    el.turnLabel.textContent = isSharedTotal()
+      ? `${throwerNameOf(state.currentPlayerIndex)} to throw · ${current.name}`
+      : `${current.name}'s turn · ${teamLabel(state.currentPlayerIndex)}`;
   } else {
     el.turnLabel.textContent = `${current.name}'s turn`;
   }
