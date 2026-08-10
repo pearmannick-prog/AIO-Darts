@@ -403,7 +403,10 @@ their own seat rather than pushing everyone along.
 3. **`online.js`:** `me`/`opp` becomes a seat array, and the 22 binary
    `side === "me"` branches become seat lookups. The big one.
 4. **The media budget** — four cameras in a mesh is the cost that eventually
-   forces an SFU. See below; this is a decision, not a task.
+   forces an SFU. See below; this is a decision, not a task. Partly narrowed:
+   showing only the thrower was asked and answered, and the answer is *bitrate
+   per link, not on and off* — which buys headroom and TURN spend, and does not
+   avoid the SFU.
 5. **Lobby party formation** — the real version of it, now that there is
    something for a formed pair to do (8a explains why it was not that before).
 6. **Rematch across four**, and **question 6**: what happens when one of four
@@ -492,6 +495,67 @@ Options, none free:
 And TURN: relayed traffic multiplies by the number of links. `README.md` already
 warns that a relayed 1v1 with cameras is "a video call's worth of traffic". A
 relayed four-way is six of them.
+
+### Show only the thrower? — asked and answered, 9 August 2026
+
+**The question:** can the budget be avoided by showing only the player whose turn
+it is, switching feeds as the turn passes? **The answer: it is a real
+optimisation and not an escape, and it is worth writing down which of the two it
+is before anyone builds it expecting the other.**
+
+First, the scope. **None of this applies to Shape A**, where four players are
+still two ends and therefore still two viewpoints (section 3). The switching idea
+is a Shape B question only, and it is easy to reach for it while thinking about
+"doubles online", where there is no cost to avoid.
+
+**It has to be a SEND-side decision, and `enabled` is the wrong lever.** Hiding a
+tile saves nothing — the packets already crossed the wire. Turning the camera off
+with `setMediaEnabled` is also wrong here: it flips `track.enabled`, and in a mesh
+one track feeds three senders, so it turns you off for *everybody* rather than for
+the two people not watching you. The per-link primitive is
+`sender.setParameters({ encodings: [{ active: false }] })` — no SDP change and no
+renegotiation, so the design in `webrtc.js` survives intact. Nothing in the
+codebase calls `setParameters` today.
+
+**It does not reduce peak upstream, which is the number that decides who can
+play.** The worry above is 1.5–3 Mbps of upstream per person. Under
+turn-switching the thrower still uploads three copies of themselves for the length
+of their visit — the ceiling is identical, it has merely moved around in time so a
+different person meets it each visit. A connection that cannot sustain it now
+fails one visit in four instead of continuously, which is not obviously the better
+failure. **What it genuinely saves is downstream and TURN.** Each viewer receives
+one stream instead of three, and downstream is the abundant direction on domestic
+lines; but twelve relayed streams becoming three is roughly 4× off the TURN bill,
+and TURN is live in production. So the saving is real, and it is money and
+headroom rather than admission.
+
+**It costs the reason the cameras are there.** Nobody sees anyone react to a 180.
+The score arrives over the DataChannel; the cameras are the social half, and
+"watch only the person throwing" spends exactly that half to buy bandwidth.
+
+**And the stall lands on the worst moment.** A reactivated sender needs a keyframe
+and a bandwidth re-ramp: somewhere between half a second and two seconds of black
+or blocky video *at the start of a visit*, which is when the throw happens. The
+app already owns the fix — the ten-second hold before the turn passes is a
+pre-roll window. Warm the next thrower's senders when the hold begins, not when
+the turn changes.
+
+**The version to build, if any: switch bitrate, not on and off.** Keep every feed
+alive at a thumbnail rate (~180p, low frame rate) and boost the active thrower to
+the current 640×480, through the same `setParameters` call via `maxBitrate` and
+`scaleResolutionDownBy`. Same primitive and same no-renegotiation guarantee, but
+no black tiles, no keyframe stall, and everyone stays on screen. Three thumbnails
+plus one full feed is around 1 Mbps up against 2.25, so most of the saving
+survives, and it degrades honestly: a collapse in available bandwidth gives soft
+thumbnails rather than a dead grid. It composes with the two cheaper options
+listed above — dropping the second m-line in team play, and lowering the base
+resolution past two connections, which the four-up tile layout hides anyway.
+
+**Bottom line: mesh upload scales with N whichever way this is shaded.** At five
+or six ends the arithmetic is back where it started, and the SFU line above is
+still where *"no server in the middle"* ends. Feed switching buys headroom and a
+smaller TURN bill inside Shape B. It does not change which topology Shape B
+eventually needs.
 
 ### Everything else that quietly assumes two
 
