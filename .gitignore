@@ -6,6 +6,11 @@ android/
 # Portable Node downloaded by the local Windows launcher
 node/
 
+# The packaged Windows build. electron-builder output, plus the Electron binary
+# it unpacks - hundreds of megabytes, all of it reproducible from desktop/
+# with `npm install && npm run dist`.
+desktop/dist/
+
 # The accounts/statistics SQLite database, and any scratch copy of it. Local
 # data, never committed - along with the -wal/-shm files WAL mode writes beside
 # it.
