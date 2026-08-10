@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # Capacitor 8's CLI declares engines.node >= 22 - Node 20 fails here.
           node-version: "22"
