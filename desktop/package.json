@@ -1,0 +1,46 @@
+{
+  "name": "aio-darts-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows desktop wrapper for AIO Darts. Runs the app's own server on a loopback port and points a Chromium window at it, which is what gives Web Bluetooth the secure context the Granboard needs.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.aiodarts.desktop",
+    "productName": "AIO Darts",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "app",
+        "filter": [
+          "**/*",
+          "!desktop/**",
+          "!.git/**",
+          "!.github/**",
+          "!android/**",
+          "!node_modules/**",
+          "!data/**",
+          "!**/*.test.js",
+          "!Dockerfile",
+          "!docker-compose.yml",
+          "!*.bat"
+        ]
+      }
+    ]
+  }
+}
