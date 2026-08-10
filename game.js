@@ -47,6 +47,7 @@ import {
 import { createRecorder } from "./matchrecorder.js";
 import {
   recordMatch, getState as accountState, subscribe as subscribeToAccount,
+  getPartner, recordMatchForPartner,
 } from "./accountstore.js";
 
 const STARTING_SCORE = 501;
@@ -734,6 +735,7 @@ function finishLeg(winnerIndex, { conceded = false, finisherSeat = null } = {}) 
     // held back from this until the statistics understood sides rather than
     // seats; they no longer are (ENGINE_VERSION 9).
     recordMatch(document);
+    uploadPartnerCopy(document);
     state.recorder = null;
   }
 }
@@ -918,6 +920,22 @@ function currentlyFrozen() {
   // and a second copy of it is a second thing to get backwards - which would
   // show as the warning disagreeing with what the throw then does.
   return isFrozen(opts.partnerRemaining, opts.opponentsCombined);
+}
+
+// A signed-in partner's own copy of the match, filed under their account.
+//
+// Their seat is found by NAME, because that is the only thing tying the person
+// signed in to a seat at this board - they typed their name into a row, or it
+// was filled in for them when they signed in. No match, no upload: crediting
+// the wrong seat would put someone else's darts in their record, which is
+// worse than not recording theirs.
+function uploadPartnerCopy(document) {
+  const partner = getPartner();
+  if (!partner) return;
+  const seat = (state.playerNames ?? [])
+    .findIndex((n) => n.trim().toLowerCase() === partner.displayName.trim().toLowerCase());
+  if (seat < 0 || seat === state.selfSeat) return;
+  recordMatchForPartner(document, seat).catch(() => {});
 }
 
 function opposingTeamOf(seat) {

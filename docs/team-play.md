@@ -844,6 +844,47 @@ This is a recommendation, not a decided point.
    with a REMOTE partner is a remote-doubles feature and is blocked on remote
    doubles existing.
 
+### 8b. A partner can sign in, so their darts reach their own account
+
+**Built.** Until this, a partner was only a NAME: their visits were recorded in
+the board owner's match document with `isSelf` false, uploaded to the owner's
+account, and their own statistics never saw a dart they threw. For a feature
+whose whole justification is per-person figures (3a), that was the gap.
+
+`POST /api/auth/partner` signs the second person in, and three things about it
+are deliberate:
+
+- **No `Set-Cookie`.** The session cookie is HttpOnly and there is one per
+  browser, so issuing one would sign the OWNER of the board out in order to
+  sign their guest in. The token comes back in the body and the page holds it
+  in memory.
+- **Hours, not thirty days** (`PARTNER_SESSION_HOURS`). Nobody means to stay
+  signed in on somebody else's board. A reload, a tab close, or the owner
+  signing out all end it too, because it is never written to `localStorage` —
+  persisting a guest's credential on hardware they do not own is the one thing
+  this must not do.
+- **One capability, not a session.** Only `POST /api/matches` accepts the
+  bearer token. A partner can have their darts counted and can do nothing else
+  — not read statistics, not change a password, not touch the lobby. Widening
+  that is a decision to make on purpose rather than by adding a caller.
+
+It is throttled on the same counter as login, because it is a second
+password-checking surface on the same accounts and leaving it open would make
+the throttle on the first one decorative. Signing in as the account already
+signed in here is refused: it would record both seats against one person.
+
+**The upload is the shape that already existed.** The same match document is
+sent twice with `isSelf` on a different seat — exactly what an online match has
+always done, where both players record their own copy and neither is the
+authority. `client_uuid` is scoped per user, so the two rows are legitimately
+their own rather than a duplicate.
+
+One accepted limitation: the partner's upload is **best-effort and not
+queued**. The offline queue lives in `localStorage`, and queuing this would
+mean writing their credential to disk to retry it later. A failed partner
+upload is lost, which is a better trade than persisting somebody else's session
+on your board.
+
 ### 8a. Pair formation was the wrong shape of problem
 
 This document called lobby pair formation "the biggest single piece" of team

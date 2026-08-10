@@ -19,6 +19,7 @@ import {
   fetchBoardCatalogue, fetchLeaderboard, fetchFriends, searchPlayers,
   friendAction, createClub, joinClub, leaveClub,
   queuedMatchCount, queuedMatches, flushQueue, takeUnlocks,
+  signInPartner, signOutPartner, getPartner,
 } from "./accountstore.js";
 import { gameLabel } from "./medley.js";
 import { lineChart, barChart, chartTable } from "./charts.js";
@@ -1465,3 +1466,102 @@ export function rankBadge(rating) {
   badge.append(letters, value);
   return badge;
 }
+
+
+// ---------------------------------------------------------------------------
+// Partner sign-in
+// ---------------------------------------------------------------------------
+// The second person at one board, signing in so their darts reach their own
+// account. Wired here rather than in game.js or online.js because it is an
+// ACCOUNT concern and both setup panels carry the same control - two copies of
+// this logic is two places for it to drift.
+//
+// Every block is found by data attribute and wired identically, so adding a
+// third one is markup and nothing else.
+function wirePartnerAccounts() {
+  const blocks = [...document.querySelectorAll("[data-partner-account]")];
+  if (!blocks.length) return;
+
+  const paint = () => {
+    const partner = getPartner();
+    for (const block of blocks) {
+      const btn = block.querySelector("[data-partner-signin]");
+      const who = block.querySelector("[data-partner-who]");
+      const form = block.querySelector("[data-partner-form]");
+      // textContent, never markup: a display name is typed by a person.
+      who.textContent = partner ? `Signed in as ${partner.displayName}` : "";
+      btn.textContent = partner ? "Partner: sign out" : "Partner: sign in";
+      if (partner) form.classList.add("hidden");
+    }
+  };
+
+  for (const block of blocks) {
+    const btn = block.querySelector("[data-partner-signin]");
+    const form = block.querySelector("[data-partner-form]");
+    const note = block.querySelector("[data-partner-note]");
+    const email = block.querySelector("[data-partner-email]");
+    const password = block.querySelector("[data-partner-password]");
+
+    btn.addEventListener("click", () => {
+      if (getPartner()) {
+        signOutPartner();
+        note.textContent = "";
+        paint();
+        return;
+      }
+      form.classList.toggle("hidden");
+      if (!form.classList.contains("hidden")) email.focus();
+    });
+
+    block.querySelector("[data-partner-cancel]").addEventListener("click", () => {
+      form.classList.add("hidden");
+      note.textContent = "";
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      note.textContent = "Signing in…";
+      try {
+        const partner = await signInPartner(email.value.trim(), password.value);
+        // The password never stays on screen on a board other people are
+        // standing at.
+        password.value = "";
+        email.value = "";
+        note.textContent = "Their darts will be saved to their account.";
+        // Their own name is the one that should appear as the partner, so the
+        // two cannot disagree about who is standing here.
+        fillPartnerName(partner.displayName);
+        paint();
+      } catch (err) {
+        note.textContent = err?.message || "Could not sign in.";
+      }
+    });
+  }
+
+  // Only offered when there is an accounts API behind it, exactly like the
+  // account tab and the header chip.
+  subscribe(({ available }) => {
+    for (const block of blocks) block.classList.toggle("hidden", !available);
+    paint();
+  });
+  paint();
+}
+
+// The partner's name, wherever it is asked for. Online has a text field; local
+// play takes the names from the player rows, so the partner's name is put into
+// the first seat that is still a placeholder rather than overwriting anything
+// somebody typed - the same rule the account's own name follows for seat one.
+function fillPartnerName(displayName) {
+  const online = document.getElementById("online-partner");
+  if (online && !online.value.trim()) {
+    online.value = displayName;
+    online.dispatchEvent(new Event("change"));
+  }
+
+  const rows = [...document.querySelectorAll("#player-inputs .player-input")];
+  if (rows.some((r) => r.value.trim().toLowerCase() === displayName.toLowerCase())) return;
+  const spare = rows.find((r, i) => i > 0 && (!r.value.trim() || r.value === `Player ${i + 1}`));
+  if (spare) spare.value = displayName;
+}
+
+wirePartnerAccounts();

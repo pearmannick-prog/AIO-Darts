@@ -71,10 +71,20 @@ function hashToken(token) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function createSession(userId, userAgent) {
+// A PARTNER SESSION is hours, not thirty days.
+//
+// It exists so the second person at one board can have their own darts land in
+// their own account, and it is fundamentally different from a sign-in on your
+// own device: the board is shared, the person is a guest at it, and nobody
+// intends to stay signed in there. Long enough for an evening of darts, short
+// enough that a forgotten one is dead by morning.
+const PARTNER_SESSION_HOURS = 12;
+
+export function createSession(userId, userAgent, { hours = null } = {}) {
   const token = randomBytes(TOKEN_BYTES).toString("hex");
   const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 86400_000);
+  const expires = new Date(now.getTime()
+    + (hours ? hours * 3600_000 : SESSION_DAYS * 86400_000));
 
   getDatabase()
     .prepare(
@@ -102,6 +112,37 @@ export function userForRequest(req) {
        WHERE s.token = ? AND s.expires_at > ?`
     )
     .get(hashToken(token), new Date().toISOString());
+
+  return row || null;
+}
+
+export { PARTNER_SESSION_HOURS };
+
+// Resolves a BEARER token to a user row, or null.
+//
+// This is the partner's path, and it is separate from userForRequest for one
+// reason: the cookie is HttpOnly, one per browser, so a second person signing
+// in on the same machine would sign the first one out. Their token therefore
+// travels in a header the page can set, which means the page can also read it
+// - so it is deliberately NOT a general-purpose way to authenticate.
+//
+// Only the match upload honours it (see api.js). A partner is at this board to
+// throw darts, and the one thing they need from the server is for those darts
+// to be counted; they cannot read anyone's statistics, change a password, or
+// touch the lobby with it. Widening this later is a decision to make on
+// purpose, not by adding a second caller.
+export function userForBearer(req) {
+  const header = String(req.headers.authorization || "");
+  const match = /^Bearer\s+([A-Za-z0-9]+)$/.exec(header.trim());
+  if (!match) return null;
+
+  const row = getDatabase()
+    .prepare(
+      `SELECT u.* FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token = ? AND s.expires_at > ?`
+    )
+    .get(hashToken(match[1]), new Date().toISOString());
 
   return row || null;
 }

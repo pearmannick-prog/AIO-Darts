@@ -22,7 +22,9 @@ import {
   describeBermudaResult, BERMUDA_ROUNDS,
 } from "./bermuda.js";
 import { createRecorder } from "./matchrecorder.js";
-import { recordMatch, getState as accountState } from "./accountstore.js";
+import {
+  recordMatch, recordMatchForPartner, getState as accountState,
+} from "./accountstore.js";
 import {
   onMatchReady, reportMatchOver, pushMatchState, setPartner,
 } from "./lobbyclient.js";
@@ -1943,6 +1945,10 @@ function finishOnlineLeg(side) {
       drawn: Boolean(online.match.drawn),
     });
     recordMatch(document);
+    // The partner standing at THIS board gets their own copy, filed under
+    // their account. Their seat is known exactly here - it is the second seat
+    // on this end - so unlike local play there is no name to match.
+    if (online.teams) recordMatchForPartner(document, online.myIndex + 2).catch(() => {});
     online.recorder = null;
   }
 }

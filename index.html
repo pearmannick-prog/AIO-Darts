@@ -1111,6 +1111,11 @@
     font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
     opacity: 0.7; min-width: 52px; text-align: right;
   }
+  .partner-account { margin-top: 10px; }
+  .partner-account-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .partner-account-form input { flex: 1 1 160px; min-width: 0; }
+  .partner-account-who { font-size: 13px; opacity: 0.8; margin-left: 8px; }
+  .partner-account-note { font-size: 12px; opacity: 0.7; margin: 6px 0 0; }
   .setup-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
   /* Flex children refuse to shrink below their content by default, which is
      what pushes a narrow screen into sideways scrolling. */
@@ -4341,6 +4346,33 @@
           <p class="teams-note hint">
             Seats alternate: players 1 &amp; 3 against players 2 &amp; 4.
           </p>
+
+          <!-- The partner can sign in, so THEIR darts land in THEIR account.
+               Without this a partner is only a name: their visits are recorded
+               in the board owner's match document and their own statistics
+               never see them.
+
+               Not a second signed-in user - the app has one of those, and the
+               session cookie is HttpOnly and one per browser, so signing a
+               guest in that way would sign the owner out. This is a separate,
+               short-lived token held in memory and good for exactly one thing:
+               filing their darts under their name. See POST /api/auth/partner.
+
+               Rendered only when there is an accounts API behind it, like
+               everything else account-shaped. -->
+          <div class="partner-account hidden" data-partner-account>
+            <button type="button" class="btn-secondary btn-soft" data-partner-signin>
+              Partner: sign in
+            </button>
+            <span class="partner-account-who" data-partner-who></span>
+            <form class="partner-account-form hidden" data-partner-form>
+              <input type="email" placeholder="Partner's email" autocomplete="off" data-partner-email>
+              <input type="password" placeholder="Password" autocomplete="off" data-partner-password>
+              <button type="submit" class="btn-primary">Sign in</button>
+              <button type="button" class="btn-secondary btn-soft" data-partner-cancel>Cancel</button>
+            </form>
+            <p class="partner-account-note hint" data-partner-note></p>
+          </div>
         </div>
         <div class="setup-actions">
           <button id="start-game-btn" class="btn-primary">Start Game</button>
@@ -4604,6 +4636,33 @@
             opponents must name a partner too, or the match is played as
             singles.
           </p>
+
+          <!-- The partner can sign in, so THEIR darts land in THEIR account.
+               Without this a partner is only a name: their visits are recorded
+               in the board owner's match document and their own statistics
+               never see them.
+
+               Not a second signed-in user - the app has one of those, and the
+               session cookie is HttpOnly and one per browser, so signing a
+               guest in that way would sign the owner out. This is a separate,
+               short-lived token held in memory and good for exactly one thing:
+               filing their darts under their name. See POST /api/auth/partner.
+
+               Rendered only when there is an accounts API behind it, like
+               everything else account-shaped. -->
+          <div class="partner-account hidden" data-partner-account>
+            <button type="button" class="btn-secondary btn-soft" data-partner-signin>
+              Partner: sign in
+            </button>
+            <span class="partner-account-who" data-partner-who></span>
+            <form class="partner-account-form hidden" data-partner-form>
+              <input type="email" placeholder="Partner's email" autocomplete="off" data-partner-email>
+              <input type="password" placeholder="Password" autocomplete="off" data-partner-password>
+              <button type="submit" class="btn-primary">Sign in</button>
+              <button type="button" class="btn-secondary btn-soft" data-partner-cancel>Cancel</button>
+            </form>
+            <p class="partner-account-note hint" data-partner-note></p>
+          </div>
         </div>
 
         <!-- Optional, and collapsed by default: nobody who plays without a
