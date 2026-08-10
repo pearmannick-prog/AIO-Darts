@@ -13,10 +13,15 @@ the app, it does not compile it — `npm start` there serves this same working
 tree, so an edit and a refresh work exactly as they do in a browser. The only
 build step is producing an installer.
 
-There is one test file, `server/statsengine.test.js` (`node --test`), covering the
-pure statistics arithmetic and nothing else. That is deliberate: a scoring bug shows
-up immediately on a board you are looking at, but a checkout percentage that is five
-points too high looks exactly like one that is right, for months.
+Tests are `node --test`, seven files in `server/`, and what they cover is chosen
+rather than sampled: the **arithmetic and the parsing**, never the UI. That is the
+whole principle — a scoring bug shows up immediately on a board you are looking at,
+but a checkout percentage that is five points too high looks exactly like one that
+is right, for months. So `statsengine`, `checkout`, `freeze` and `matchrecorder`
+test numbers whose wrongness is invisible; `dartnotation` and `scorerlink` test
+input from hardware nobody has to hand; `sequencer` tests an ordering guarantee
+that only breaks under a race. Everything a human would notice in one leg is left
+to the human.
 
 ## Commands
 
@@ -67,9 +72,16 @@ fine, so the app takes sign-ups and then deletes them. Unset means "try", so
 every existing deployment is unaffected. Tests: `/healthz` reports
 `accounts:false`, `/api/*` 503s, the lobby doesn't start.
 
-Tests: `node --test server/dartnotation.test.js server/statsengine.test.js
-server/checkout.test.js server/matchrecorder.test.js server/freeze.test.js
-server/sequencer.test.js`.
+Tests: `node --test "server/*.test.js"` — 120 of them across seven files.
+
+**Quote the glob.** Node expands it itself, so the one command works in bash and
+PowerShell alike and picks up a new test file on its own. It replaced a
+hand-written list of six paths, which had already gone stale: `scorerlink.test.js`
+was missing from it, so the documented command silently skipped a file for as long
+as it existed. Do not expand this back into a list. Note also that a bare
+directory (`node --test server/`) is NOT the same thing and hangs — it descends
+into `server/node_modules`.
+
 Note that **CI does not run these** — `docker-build.yml` builds the image and
 nothing else — so they are a manual gate, which is worth knowing before
 trusting a green check on a PR.
