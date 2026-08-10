@@ -6,6 +6,9 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "stamp": "node stamp.js",
+    "prepack": "node stamp.js",
+    "predist": "node stamp.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win nsis"
   },
@@ -41,6 +44,10 @@
           "!docker-compose.yml",
           "!*.bat"
         ]
+      },
+      {
+        "from": "version.json",
+        "to": "app/version.json"
       }
     ]
   }
