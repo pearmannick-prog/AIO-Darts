@@ -82,6 +82,12 @@ export function createRecorder({ mode, format, players }) {
   let leg = null;
   let turn = null;
   let turnCounter = 0;
+  // Set when a QUICK TOTAL has already finalised the visit, cleared the moment
+  // a new one opens. endTurn needs it to tell two states apart that look
+  // identical from here - "no open turn because all three darts missed", which
+  // must be recorded, and "no open turn because the visit is already closed",
+  // which must not be recorded again. See endTurn.
+  let closedByQuick = false;
 
   // Cricket's running MPR needs marks and completed rounds per seat, which is
   // per-leg state rather than something a single visit knows. Kept here so the
@@ -98,6 +104,7 @@ export function createRecorder({ mode, format, players }) {
   // threw - and inventing one would mean two places to keep in step.
   function openTurn(seat, remainingBefore, entry) {
     if (turn && turn.seat === seat) return turn;
+    closedByQuick = false;
     turn = {
       turnIndex: turnCounter++,
       seat,
@@ -378,6 +385,7 @@ export function createRecorder({ mode, format, players }) {
       t.bust = Boolean(bust);
       t.isCheckout = Boolean(isCheckout);
       closeTurn();
+      closedByQuick = true;
     },
 
     // A VISIT IS THREE DARTS. Ending a turn asserts the visit is over, and the
@@ -401,6 +409,17 @@ export function createRecorder({ mode, format, players }) {
     // from the denominator and their MPR goes UP for missing.
     endTurn(seat) {
       if (!leg) return;
+      // A quick total has already recorded the whole visit and closed it, so
+      // there is nothing left to end. Without this the controllers' ordinary
+      // "the visit is over" call landed on an empty recorder and the
+      // all-missed rule below invented a SECOND visit for the same three
+      // darts - scoring zero, counting three darts, and halving every average
+      // of anyone who scores by whole-turn totals. It read as a plausible
+      // record of someone who missed every other visit.
+      if (!turn && closedByQuick) {
+        closedByQuick = false;
+        return;
+      }
       if (!turn && seat !== null && seat !== undefined) openTurn(seat, null, "dart");
       if (turn && !turn.isCheckout) turn.darts = Math.max(turn.darts || 0, DARTS_PER_VISIT);
       closeTurn();
@@ -478,6 +497,7 @@ export function createRecorder({ mode, format, players }) {
         turnCount: leg ? leg.turns.length : 0,
         turnCounter,
         turn: turn ? { ...turn, throws: turn.throws.slice() } : null,
+        closedByQuick,
         cricket: [...cricketTally.entries()].map(([seat, v]) => [seat, { ...v }]),
       };
     },
@@ -489,6 +509,7 @@ export function createRecorder({ mode, format, players }) {
       if (leg) leg.turns.length = Math.min(leg.turns.length, snap.turnCount);
       turnCounter = snap.turnCounter;
       turn = snap.turn ? { ...snap.turn, throws: snap.turn.throws.slice() } : null;
+      closedByQuick = Boolean(snap.closedByQuick);
       cricketTally = new Map(snap.cricket.map(([seat, v]) => [seat, { ...v }]));
     },
   };
