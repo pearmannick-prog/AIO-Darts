@@ -52,6 +52,17 @@ import {
 const UPSTREAM = upstreamOrigin();
 
 const PORT = Number(process.env.PORT || 8080);
+// Which interfaces to accept connections on. Unset means all of them, which is
+// what a container wants and must stay the default - binding a Docker image to
+// loopback makes it unreachable from outside itself, which presents as a
+// deployment that starts perfectly and answers nothing.
+//
+// The desktop build sets this to 127.0.0.1, and needs to. There the server
+// exists solely to give the app's own window a secure context, and anything
+// else on the network reaching it would find this machine offering a signaling
+// relay and - with UPSTREAM_ORIGIN set - an unauthenticated forwarder to
+// somebody else's site. Neither is a thing to leave open on a laptop in a pub.
+const HOST = process.env.HOST || undefined;
 const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || "./public");
 const SIGNALING_PATH = process.env.SIGNALING_PATH || "/signaling";
 // The lobby's own socket. Separate from signaling on purpose: the relay is
@@ -673,7 +684,7 @@ httpServer.on("upgrade", (req, socket, head) => {
   socket.destroy();
 });
 
-httpServer.listen(PORT, async () => {
+httpServer.listen(PORT, HOST, async () => {
   console.log(`AIO Darts listening on port ${PORT}`);
   console.log(`  static files : ${PUBLIC_DIR}`);
   console.log(`  signaling    : ${SIGNALING_PATH} (same port)`);
