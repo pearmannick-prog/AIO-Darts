@@ -359,7 +359,47 @@ your instinct.
 
 ---
 
-## 4. Shape B — four separate houses
+## 4. Remote doubles — four separate houses
+
+### 4z. Where the build has got to
+
+**Step 1 of several is done: the signaling layer.** Rooms are no longer
+hard-wired to two sockets — the first joiner sizes the room (2 by default, 4
+maximum), each peer gets a **slot**, and a relayed message may name its
+recipient with `to`.
+
+That last part is the substance rather than the plumbing. With two peers,
+"relay to everyone else" and "relay to the other one" are the same sentence, so
+the server broadcast. With four they are not: an offer meant for one peer would
+arrive at all three and each would answer it. Messages without a `to` still
+broadcast, which is what keeps the existing 1v1 path byte-for-byte unchanged.
+
+Two rules worth keeping: **only the first joiner sizes a room** — a guest
+cannot widen a 1v1 by asking, nor narrow a four-way by arriving with an older
+build that never sends a size — and a leaver's slot is **named** in `peer-left`
+and **reused** by the next joiner, so a player who drops and comes back takes
+their own seat rather than pushing everyone along.
+
+**What remains, in the order it has to happen:**
+
+1. **`webrtc.js`:** `PeerLink` stays 1:1; the host holds three of them. The
+   transceiver slot contract ("video m-line 0 is the main camera") is written
+   for one remote and needs re-reading per link.
+2. **The sequencer** (option (b) below) — the correctness core, and the thing
+   that makes four peers as deterministic as two. Buildable and testable
+   without any UI.
+3. **`online.js`:** `me`/`opp` becomes a seat array, and the 22 binary
+   `side === "me"` branches become seat lookups. The big one.
+4. **The media budget** — four cameras in a mesh is the cost that eventually
+   forces an SFU. See below; this is a decision, not a task.
+5. **Lobby party formation** — the real version of it, now that there is
+   something for a formed pair to do (8a explains why it was not that before).
+6. **Rematch across four**, and **question 6**: what happens when one of four
+   drops. Still unanswered, and it will happen.
+
+---
+
+### The rest of section 4 as originally written
 
 This is where it stops being an extension and starts being a different app.
 

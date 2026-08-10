@@ -459,8 +459,26 @@ function send(ws, obj) {
   }
 }
 
+// A signaling room is a Map of slot -> socket rather than a Set, and its size
+// is fixed by whoever opens it.
+//
+// TWO IS NO LONGER THE ONLY ANSWER. Local doubles is still two browsers - two
+// people share a board, so their end is one peer - but REMOTE doubles is four
+// people on four setups, and that needs four sockets in the room. See
+// docs/team-play.md section 0.
+//
+// The slot is the point. With two peers "relay to everyone else" and "relay to
+// the other one" are the same sentence, so the old code broadcast. With four
+// they are not: an offer meant for one peer would arrive at all three, and
+// each would answer it. So a message may name its recipient, and only a
+// message that does not is broadcast - which is what keeps the existing 1v1
+// path working unchanged.
+const DEFAULT_ROOM_SIZE = 2;
+const MAX_ROOM_SIZE = 4;
+
 wss.on("connection", (ws) => {
   let joinedCode = null;
+  let mySlot = null;
 
   ws.on("message", (raw) => {
     let msg;
@@ -476,36 +494,65 @@ wss.on("connection", (ws) => {
 
       let room = rooms.get(code);
       if (!room) {
-        room = new Set();
+        // Only the FIRST joiner sizes the room, because only they know what
+        // kind of match this is. Everyone after takes the room as they find
+        // it: a guest cannot widen a 1v1 by asking, and cannot narrow a
+        // four-way by arriving with an older build that never sends a size.
+        const wanted = Number(msg.size);
+        const size = Number.isInteger(wanted) && wanted >= 2 && wanted <= MAX_ROOM_SIZE
+          ? wanted
+          : DEFAULT_ROOM_SIZE;
+        room = { size, slots: new Map() };
         rooms.set(code, room);
       }
 
-      if (room.size >= 2) {
+      if (room.slots.size >= room.size) {
         send(ws, { type: "room-full" });
         return;
       }
 
-      const isHost = room.size === 0;
-      room.add(ws);
+      // The lowest free slot, so a player who drops and rejoins takes their
+      // own seat back rather than pushing everyone along.
+      let slot = 0;
+      while (room.slots.has(slot)) slot += 1;
+      room.slots.set(slot, ws);
       joinedCode = code;
+      mySlot = slot;
 
-      send(ws, { type: "joined", role: isHost ? "host" : "guest" });
+      const isHost = slot === 0;
+      send(ws, {
+        type: "joined",
+        role: isHost ? "host" : "guest",
+        slot,
+        size: room.size,
+        // Who is already here. A four-way needs this: the arriving peer has to
+        // open a connection to each of them, and without it would have to
+        // guess how many to expect.
+        peers: [...room.slots.keys()].filter((s) => s !== slot),
+      });
 
-      if (!isHost) {
-        for (const peer of room) {
-          if (peer !== ws) send(peer, { type: "peer-joined" });
-        }
+      for (const [peerSlot, peer] of room.slots) {
+        if (peerSlot !== slot) send(peer, { type: "peer-joined", slot });
       }
       return;
     }
 
-    // Anything else (offer/answer/ice) is relayed to the other socket in the
-    // same room - this server doesn't need to understand it.
+    // Anything else (offer/answer/ice) is relayed - this server still does not
+    // need to understand any of it. `to` names a slot when the sender means
+    // one peer in particular; without it the message goes to everyone else,
+    // which is what the 1v1 path has always done and still does.
     if (joinedCode) {
       const room = rooms.get(joinedCode);
       if (room) {
-        for (const peer of room) {
-          if (peer !== ws) send(peer, msg);
+        const stamped = mySlot === null ? msg : { ...msg, from: mySlot };
+        const to = Number(msg.to);
+        if (Number.isInteger(to)) {
+          const peer = room.slots.get(to);
+          if (peer && peer !== ws) send(peer, stamped);
+        } else {
+          for (const [peerSlot, peer] of room.slots) {
+            if (peerSlot !== mySlot) send(peer, stamped);
+          }
         }
       }
     }
@@ -515,9 +562,12 @@ wss.on("connection", (ws) => {
     if (!joinedCode) return;
     const room = rooms.get(joinedCode);
     if (!room) return;
-    room.delete(ws);
-    for (const peer of room) send(peer, { type: "peer-left" });
-    if (room.size === 0) rooms.delete(joinedCode);
+    room.slots.delete(mySlot);
+    // Which slot left, because with four peers "somebody left" is not enough
+    // to know whose connection to tear down. The 1v1 path ignores it exactly
+    // as it always has.
+    for (const peer of room.slots.values()) send(peer, { type: "peer-left", slot: mySlot });
+    if (room.slots.size === 0) rooms.delete(joinedCode);
   });
 });
 
