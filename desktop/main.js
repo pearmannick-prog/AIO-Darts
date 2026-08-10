@@ -20,6 +20,7 @@
 // down with it.
 
 const { app, BrowserWindow, shell, session } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const { spawn } = require("node:child_process");
 const { createServer } = require("node:net");
 const path = require("node:path");
@@ -247,6 +248,46 @@ function createWindow(port) {
   });
 }
 
+// Updates matter here more than for most desktop apps, and the reason is the
+// sync strategy rather than convenience. The accounts, lobby, signaling and
+// TURN halves are forwarded to production and so are always current - but the
+// FRONT-END is baked into the package at build time, and the front-end is where
+// the pure rules live. Determinism is what keeps two browsers in step; an
+// installed copy that never updates is a peer running a different version of
+// the rules against a web player who has the newest, which is exactly the
+// silent disagreement the whole design is built to avoid.
+//
+// INSTALL ON QUIT, NEVER MID-SESSION. electron-updater's default is to download
+// in the background and apply on exit, which is the only acceptable behaviour
+// for something someone is standing at a board using: restarting the app
+// between visits would end a match. `checkForUpdatesAndNotify` surfaces a
+// native notification rather than a dialog, so nothing steals focus from a
+// throw either.
+function startUpdater() {
+  // Only a packaged build has anything to update, and asking in development
+  // just produces an error about a missing app-update.yml.
+  if (!app.isPackaged) return;
+
+  autoUpdater.logger = {
+    info: (m) => console.log(`[updater] ${m}`),
+    warn: (m) => console.warn(`[updater] ${m}`),
+    error: (m) => console.error(`[updater] ${m}`),
+    debug: () => {},
+  };
+
+  autoUpdater.on("update-downloaded", ({ version }) => {
+    console.log(`[updater] ${version} ready - installing when the app quits`);
+  });
+  // Never fatal. No network, a rate-limited API, a release that isn't there
+  // yet: none of those are reasons to interrupt someone playing darts, and the
+  // app is completely usable without ever seeing an update.
+  autoUpdater.on("error", (err) => {
+    console.warn(`[updater] check failed: ${err?.message || err}`);
+  });
+
+  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+}
+
 app.whenReady().then(async () => {
   const port = await freePort();
   serverProcess = startServer(port);
@@ -256,6 +297,10 @@ app.whenReady().then(async () => {
     console.error(err.message);
   }
   createWindow(port);
+
+  // After the window, deliberately. The board and the scoreboard are what
+  // someone opened this for; an update check is never worth a slower start.
+  startUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(port);
