@@ -1,0 +1,67 @@
+{
+  "name": "aio-darts-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows desktop wrapper for AIO Darts. Runs the app's own server on a loopback port and points a Chromium window at it, which is what gives Web Bluetooth the secure context the Granboard needs.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "stamp": "node stamp.js",
+    "prepack": "node stamp.js",
+    "predist": "node stamp.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis",
+    "release": "electron-builder --win nsis --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.0"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.aiodarts.desktop",
+    "productName": "AIO Darts",
+    "icon": "../icon-512.png",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "pearmannick-prog",
+        "repo": "AIO-Darts",
+        "releaseType": "release"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "app",
+        "filter": [
+          "**/*",
+          "!desktop/**",
+          "!.git/**",
+          "!.github/**",
+          "!android/**",
+          "!node_modules/**",
+          "!data/**",
+          "!**/*.test.js",
+          "!Dockerfile",
+          "!docker-compose.yml",
+          "!*.bat"
+        ]
+      },
+      {
+        "from": "version.json",
+        "to": "app/version.json"
+      }
+    ]
+  }
+}

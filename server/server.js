@@ -36,8 +36,33 @@ import { purgeExpiredSessions } from "./auth.js";
 import { handleApiRequest } from "./api.js";
 import { createLobby } from "./lobby.js";
 import { guardRequest, isAllowed, gateEnabled } from "./gate.js";
+import {
+  upstreamOrigin,
+  proxyApiRequest,
+  proxyUpgrade,
+  upstreamIceServers,
+} from "./apiproxy.js";
+
+// When set, the accounts half of the app is not served from here at all - it
+// is forwarded to another deployment. This is how the desktop build signs in
+// to a real aiodarts.com account while serving the front-end from a local
+// port; see apiproxy.js for why forwarding beats letting the page call the
+// remote origin directly. Unset - which is every server deployment, including
+// production - and nothing changes.
+const UPSTREAM = upstreamOrigin();
 
 const PORT = Number(process.env.PORT || 8080);
+// Which interfaces to accept connections on. Unset means all of them, which is
+// what a container wants and must stay the default - binding a Docker image to
+// loopback makes it unreachable from outside itself, which presents as a
+// deployment that starts perfectly and answers nothing.
+//
+// The desktop build sets this to 127.0.0.1, and needs to. There the server
+// exists solely to give the app's own window a secure context, and anything
+// else on the network reaching it would find this machine offering a signaling
+// relay and - with UPSTREAM_ORIGIN set - an unauthenticated forwarder to
+// somebody else's site. Neither is a thing to leave open on a laptop in a pub.
+const HOST = process.env.HOST || undefined;
 const PUBLIC_DIR = resolve(process.env.PUBLIC_DIR || "./public");
 const SIGNALING_PATH = process.env.SIGNALING_PATH || "/signaling";
 // The lobby's own socket. Separate from signaling on purpose: the relay is
@@ -213,7 +238,18 @@ async function buildConfig() {
     .map((u) => u.trim())
     .filter(Boolean);
 
-  const iceServers = stunUrls.length ? [{ urls: stunUrls }] : [];
+  // With an upstream, that deployment's relay configuration is the one this
+  // build should use - it is the deployment we are a client of. Its servers are
+  // fetched below; the default Google STUN is then not added, because it is a
+  // fallback for having nothing rather than something to stack on top. An
+  // operator who set STUN_URLS explicitly meant it, so that still applies.
+  const upstreamIce = UPSTREAM ? await upstreamIceServers(UPSTREAM) : null;
+  const stunConfigured = Boolean(process.env.STUN_URLS);
+
+  const iceServers =
+    stunUrls.length && (stunConfigured || !upstreamIce?.length)
+      ? [{ urls: stunUrls }]
+      : [];
 
   if (process.env.TURN_URL) {
     iceServers.push({
@@ -228,6 +264,11 @@ async function buildConfig() {
   // Both can be configured at once; a browser simply tries all of them.
   const cloudflare = await cloudflareIceServers();
   if (cloudflare) iceServers.push(...cloudflare);
+
+  // Appended last, and whole, for the same reason Cloudflare's are: they arrive
+  // with their own urls, username and credential. A browser simply tries
+  // everything it is given.
+  if (upstreamIce?.length) iceServers.push(...upstreamIce);
 
   return {
     // Empty string means "same origin" - the front-end fills it in itself.
@@ -376,6 +417,15 @@ const httpServer = createServer(async (req, res) => {
     // returns false for anything that isn't its business, so an unknown path
     // still falls through to the front-end exactly as it did before.
     if (bare.startsWith("/api/")) {
+      // Forwarding comes FIRST, and before the accounts check in particular:
+      // when there is an upstream, this server has no database of its own and
+      // `accountsEnabled` is correctly false, so checking it first would 503
+      // every request that was about to be answered perfectly well by someone
+      // else.
+      if (UPSTREAM) {
+        proxyApiRequest(req, res, UPSTREAM);
+        return;
+      }
       if (!accountsEnabled) {
         res.writeHead(503, {
           "Content-Type": "application/json; charset=utf-8",
@@ -567,6 +617,15 @@ httpServer.on("upgrade", (req, socket, head) => {
     return;
   }
 
+  // The lobby is presence, challenges and chat, all of which are keyed to an
+  // account - so where the accounts are is where the lobby has to be. Same
+  // ordering argument as /api/*: with an upstream there is no local `lobby` to
+  // hand this to, and falling through would destroy the socket.
+  if (UPSTREAM && path === LOBBY_PATH) {
+    proxyUpgrade(req, socket, head, UPSTREAM);
+    return;
+  }
+
   if (lobby && path === LOBBY_PATH) {
     lobby.handleUpgrade(req, socket, head);
     return;
@@ -575,10 +634,17 @@ httpServer.on("upgrade", (req, socket, head) => {
   socket.destroy();
 });
 
-httpServer.listen(PORT, async () => {
+httpServer.listen(PORT, HOST, async () => {
   console.log(`AIO Darts listening on port ${PORT}`);
   console.log(`  static files : ${PUBLIC_DIR}`);
   console.log(`  signaling    : ${SIGNALING_PATH} (same port)`);
+  // Said out loud for the same reason the Litestream line is: forwarding
+  // accounts somewhere else is invisible from the outside - the app looks
+  // completely normal either way - and "which database am I signing in to"
+  // is the first thing worth knowing when it looks like it didn't take.
+  if (UPSTREAM) {
+    console.log(`  accounts     : forwarded to ${UPSTREAM.origin} (/api/* and ${LOBBY_PATH})`);
+  }
   await loadBakedVersion();
   const { sha, source } = buildVersion();
   // Printed at startup so the logs answer "which build is this?" without

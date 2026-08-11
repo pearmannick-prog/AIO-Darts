@@ -8,10 +8,19 @@ A zero-build-step darts app: plain ES modules served as static files, plus one s
 Node server. There is no bundler, transpiler, or linter. Editing a `.js` file at the
 repo root and refreshing the browser is the entire dev loop.
 
-There is one test file, `server/statsengine.test.js` (`node --test`), covering the
-pure statistics arithmetic and nothing else. That is deliberate: a scoring bug shows
-up immediately on a board you are looking at, but a checkout percentage that is five
-points too high looks exactly like one that is right, for months.
+That still holds with the Windows desktop build in the tree. `desktop/` packages
+the app, it does not compile it — `npm start` there serves this same working
+tree, so an edit and a refresh work exactly as they do in a browser. The only
+build step is producing an installer.
+
+Tests are `node --test` over the files in `server/`, and what they cover is chosen
+rather than sampled: the **arithmetic and the parsing**, never the UI. That is the
+whole principle — a scoring bug shows up immediately on a board you are looking at,
+but a checkout percentage that is five points too high looks exactly like one that
+is right, for months. So `statsengine`, `checkout` and `matchrecorder` test numbers
+whose wrongness is invisible, and `dartnotation` and `scorerlink` test input from
+hardware nobody has to hand. Everything a human would notice in one leg is left to
+the human.
 
 ## Commands
 
@@ -40,6 +49,14 @@ docker compose up -d            # pull + run published image  (http://localhost:
 docker compose up -d --build    # build from this source instead
 ```
 
+Windows desktop app (Electron — see the section below):
+
+```
+cd desktop && npm install
+npm start          # run it from the working tree
+npm run dist       # NSIS installer into desktop/dist/
+```
+
 Health probe: `GET /healthz` → `{"ok":true,rooms,clients,accounts}`. `accounts` is
 false when the database could not be opened; `ok` stays true, because the app can
 still serve darts.
@@ -54,8 +71,20 @@ fine, so the app takes sign-ups and then deletes them. Unset means "try", so
 every existing deployment is unaffected. Tests: `/healthz` reports
 `accounts:false`, `/api/*` 503s, the lobby doesn't start.
 
-Tests: `node --test server/dartnotation.test.js server/statsengine.test.js
-server/checkout.test.js server/matchrecorder.test.js`.
+Tests: `node --test "server/*.test.js"` — every test file in `server/`.
+
+**Quote the glob.** Node expands it itself, so the one command works in bash and
+PowerShell alike and picks up a new test file on its own. It replaced a
+hand-written list of paths which had already gone stale — `scorerlink.test.js`
+was missing from it, so the documented command silently skipped a file for as
+long as it existed. Do not expand this back into a list, and do not write the
+count here either: that is the same failure one step removed. Note also that a
+bare directory (`node --test server/`) is NOT the same thing and hangs — it
+descends into `server/node_modules`.
+
+Note that **CI does not run these** — `docker-build.yml` builds the image and
+nothing else — so they are a manual gate, which is worth knowing before
+trusting a green check on a PR.
 
 **Password reset is the only mail this app sends, and it works with no mail
 provider.** `server/email.js` posts to Resend when `EMAIL_API_KEY`, `EMAIL_FROM`
@@ -627,6 +656,142 @@ which threw each one away before it was useful. It is set to 720h, giving
 point-in-time restore across thirty days. That number is a storage judgement —
 thirty snapshots of a 400MB database would exceed R2's free tier — so revisit
 it as the database grows rather than treating it as a constant.
+
+## The Windows desktop build
+
+`desktop/` is an Electron wrapper, and it is **not a second copy of the app**. It
+starts the SAME `server/server.js` the Docker image runs, on a loopback port, and
+points a window at it. "One process, one port" is untouched — this supplies the
+process and opens the window.
+
+**Serving over HTTP is not a stylistic choice, it is the whole architecture.**
+`file://` is not a secure context in Chromium and Web Bluetooth is refused
+outside one, so the obvious Electron build — load `index.html` off disk — runs
+perfectly and never sees the Granboard, which is most of the point of darts on a
+machine plugged into a board. `http://127.0.0.1` IS a secure context. The same
+fact **disqualifies Tauri**, which would otherwise be the better-sized tool: it
+renders in WebView2, which does not implement Web Bluetooth at all. Don't
+revisit that without checking WebView2 again first.
+
+The server is spawned with `ELECTRON_RUN_AS_NODE`, so it runs on Electron's own
+Node and **a packaged build needs no Node installed** — the one dependency a
+desktop app must not have. The port is taken from the OS rather than fixed,
+because `start-aio-darts.bat` already uses 8000 and someone may have it open
+alongside.
+
+**`HOST` binds the listener, and its default must stay "all interfaces".**
+Unset is what a container needs; binding a Docker image to loopback makes it
+unreachable from outside itself, which presents as a deployment that starts
+perfectly, logs nothing wrong and answers nothing. The desktop build sets
+`127.0.0.1` and needs to: there the server exists only to give our own window a
+secure context, and on all interfaces it offers the local network a signaling
+relay plus — with `UPSTREAM_ORIGIN` set — an unauthenticated forwarder to
+somebody else's site. A stranger cannot reach the player's *account* that way,
+since the session is a cookie in one browser and the proxy carries no
+credentials of its own; they can still reach aiodarts.com through a laptop that
+never volunteered to be a relay.
+
+**`select-bluetooth-device` is the trap, and it fails by lying about who
+cancelled.** Electron ships no device chooser, so `requestDevice()` hangs
+forever unless that event is answered — but it fires ONCE PER DISCOVERY UPDATE,
+and the first fire routinely carries an empty list because the radio has turned
+nothing up yet. Answering `""` means *cancel*, so replying to that first empty
+fire aborts the chooser milliseconds after it opens and the page reports **"User
+cancelled the requestDevice() chooser"** when the user did nothing and the board
+never had a chance to appear. An empty list means KEEP WAITING. A 30s deadline,
+started on the first fire only so discovery updates cannot push it back, turns
+that message into a true one when the board really is absent. The callback is
+answered exactly once — Electron treats a second answer as an error, and there
+are three routes in: device found, scan timed out, window closed mid-scan.
+
+Picking the first device is safe **only** because `granboard.js` filters by the
+Granboard service UUID, so Chromium has already excluded everything that is not
+a board. Two boards in range would be guessed at; that is where a chooser window
+would go.
+
+**The desktop app is a CLIENT of aiodarts.com.** `UPSTREAM_ORIGIN` in
+`server/apiproxy.js` forwards `/api/*` and the lobby socket to another
+deployment, so sign-in, statistics, friends and the lobby are the real ones.
+Unset — every server deployment, production included — and none of it runs. Keep
+it that way: this is the same file that serves aiodarts.com, and a proxy that
+switched itself on there would forward the site somewhere else.
+
+Three things about it are load-bearing:
+
+- **Forwarding, not letting the page call the remote origin.** Direct would make
+  every `/api/*` request cross-site: production grows a CORS policy naming a
+  localhost origin, and the session cookie has to become `SameSite=None; Secure`
+  to be sent at all — relaxing a live deployment's security, permanently and for
+  everyone, to suit a local build. Forwarding keeps the page same-origin with its
+  API exactly as on the web, so `accountstore.js` needs **no change at all**: its
+  single `apiFetch` choke point and `credentials: "same-origin"` stay literally
+  true.
+- **TURN is borrowed, never configured.** Cloudflare Realtime issues no
+  long-lived credentials — you hold an API token and mint short-lived ones, which
+  is why `server.js` takes `TURN_KEY_ID`/`TURN_KEY_API_TOKEN` rather than a
+  username and password. Putting that token in a desktop package ships a live
+  production secret to every player's machine. Asking upstream for the
+  already-minted credential gives the same relay with nothing to leak. Only
+  `iceServers` is taken: the upstream's `signalingUrl` is the empty string meaning
+  "same origin", true there and false here, and adopting it would resolve to
+  `127.0.0.1` and make every challenge code joinable from one machine.
+- **Both proxy hooks come BEFORE their local equivalents**, and that ordering is
+  the bug waiting to happen. With an upstream there is no local database and no
+  local lobby, so `accountsEnabled` is correctly false and the socket has no
+  handler — checking those first would 503 and destroy requests someone else was
+  about to answer perfectly well.
+
+The WebSocket relay copies bytes rather than using `ws` as a client. A relay that
+parses frames has opinions about fragmentation, ping/pong, close codes and
+extensions, and each one is a chance for two ends to disagree about a protocol
+neither is speaking to us in.
+
+**Updates exist because of determinism, not convenience.** The accounts, lobby,
+signaling and TURN halves are forwarded to production and so are always current
+— but the FRONT-END is baked into the package at build time, and the front-end
+is where the pure rules live. An installed copy that never updates is a peer
+running different rules against a web player running the newest, which is the
+silent scoreboard disagreement the whole design exists to prevent.
+`electron-updater` therefore downloads in the background and **installs on quit,
+never mid-session**: restarting between visits would end a match, and
+`checkForUpdatesAndNotify` uses a native notification rather than a dialog so
+nothing steals focus from a throw. Every failure path is a warning and nothing
+more — no network, a rate limit, a missing release: none of those is a reason to
+interrupt someone playing darts.
+
+`desktop-release.yml` publishes on `v*` tags, **the same tags
+`docker-build.yml` already uses**, so one version number covers the container
+and the app. Two things about that are easy to get wrong:
+
+- **The GitHub Release IS the update feed.** `electron-updater` reads
+  `latest.yml` from the assets of the *latest* release. This repo's existing
+  releases (up to `v1.1.0`) are notes-only with no assets, so an installed app
+  404s on every check until a tag has been through this workflow. Harmless — it
+  warns and carries on — but it means a release published by hand, without the
+  workflow running, silently switches updates off for everyone.
+- **`releaseType: release`, not electron-builder's default draft.** A draft is
+  invisible to the updater, so a forgotten "publish" button is indistinguishable
+  from a broken feed. Set it back to `draft` if you would rather check an
+  installer before it reaches machines — but then publishing it is a step that
+  must actually happen.
+
+The version comes from the tag, set in CI with `npm version --no-git-tag-version`
+rather than committed, because a hand-bumped `desktop/package.json` eventually
+disagrees with the tag it shipped under and that number is exactly what decides
+whether an install is out of date.
+
+**The installer is unsigned, and that matters more for the updater than for the
+installer itself.** SmartScreen is a one-time annoyance; an unsigned update
+channel is a standing one, since anything able to serve a release gets code
+execution. GitHub Releases over HTTPS makes that hard, but signing is the actual
+mitigation and it costs money.
+
+**Packaging is exclusion-based, so a new front-end file needs no edit here** —
+`electron-builder` copies the repo minus infrastructure, the same approach the
+Dockerfile and the Android workflow take. `sw.js`'s `PRECACHE` and the Android
+verify step remain the only hand-maintained file lists. The installer is
+unsigned, so SmartScreen challenges it on first run, and it carries a whole
+Chromium: a ~94MB installer that unpacks to ~327MB on disk.
 
 ## Conventions worth preserving
 
