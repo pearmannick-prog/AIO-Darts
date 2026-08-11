@@ -68,6 +68,37 @@ function answerBluetooth(deviceId) {
   if (callback) callback(deviceId);
 }
 
+// ONE INSTANCE, and this is not tidiness. Without the lock every launch spawns
+// its own server on its own port and opens its own window - two scoreboards,
+// two cookie jars pointed at the same account, and two boardlink consumers
+// racing for the one physical Granboard over Bluetooth. It reads to the player
+// as the app opening itself, because the second window looks identical to the
+// first and nothing says which is which.
+//
+// It happens by ordinary means: double-clicking the Start Menu entry, or
+// clicking it again while the app is already open behind something.
+//
+// The check sits at module top on purpose - BEFORE app.whenReady(), so a second
+// instance quits without ever spawning a server or binding a port. Doing it
+// inside the ready handler would still leave a stray server alive for the
+// moment it took to notice. `return` at the top level of a CommonJS module is
+// legal (the module body is a function), and it keeps everything below at one
+// level of indentation rather than wrapped in an else.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  return;
+}
+
+// Somebody tried to open a second copy: give them the window they already have.
+// Restoring first matters - a minimized window cannot take focus, so focus()
+// alone silently does nothing and looks exactly like the click being ignored.
+app.on("second-instance", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 // Ask the OS for a free port by binding zero and looking at what we got. Fixed
 // ports are how a desktop app collides with whatever else the player happens
 // to be running - and this app's own start-aio-darts.bat uses 8000, which is
