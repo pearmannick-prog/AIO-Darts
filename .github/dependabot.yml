@@ -39,6 +39,41 @@ updates:
       capacitor:
         patterns: ["*"]
 
+  # The Windows desktop build. A separate entry from the Capacitor one above,
+  # even though both are npm at a path, because the review question is not the
+  # same. The APK's toolchain never runs on anyone's machine; Electron is a
+  # whole browser engine that does, and an advisory against it is an advisory
+  # against something PEOPLE HAVE INSTALLED. A server is fixed by redeploying
+  # it. An installed app is fixed only if a release goes out and the updater
+  # reaches it, which is a longer road and a reason to see these promptly -
+  # hence weekly rather than monthly.
+  #
+  # Deliberately NOT grouped the way Capacitor is. `electron` gets its own PR:
+  # it carries the Chromium version and therefore the security surface, and its
+  # majors have already broken things this app depends on - the whole
+  # select-bluetooth-device contract lives on that boundary, and reading one
+  # changelog carefully is the point. The packaging pair IS grouped, because
+  # "does it still produce an installer that updates" is genuinely one question.
+  #
+  # Note this entry is NOT what protects against a known CVE. Security alerts
+  # and their automatic fix PRs are a repository setting, not this file, and
+  # they already scan every manifest in the repo including this one - a desktop
+  # Electron advisory opened a PR here before this entry existed. What this adds
+  # is the ROUTINE half: staying current so that the next security bump is a
+  # patch rather than a major.
+  - package-ecosystem: npm
+    directory: /desktop
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(desktop)"
+    groups:
+      electron-packaging:
+        patterns:
+          - "electron-builder"
+          - "electron-updater"
+
   # The GitHub Actions themselves. Easy to forget because they are not in any
   # package.json, and a compromised or abandoned action runs with access to the
   # build - which for this repo means the image that gets published.
