@@ -501,7 +501,7 @@ const httpServer = createServer(async (req, res) => {
 // saw a bare WebSocket error and the server logged nothing at all. Routing
 // upgrades in one place is the documented way to share a port.
 const wss = new WebSocketServer({ noServer: true });
-const rooms = new Map(); // code -> Set<WebSocket>
+const rooms = new Map(); // code -> { size, slots: Map<slot, WebSocket> }
 
 function send(ws, obj) {
   if (ws.readyState === ws.OPEN) {
@@ -595,7 +595,13 @@ wss.on("connection", (ws) => {
       const room = rooms.get(joinedCode);
       if (room) {
         const stamped = mySlot === null ? msg : { ...msg, from: mySlot };
-        const to = Number(msg.to);
+        // typeof, not Number(). `Number(null)` and `Number("")` are both 0,
+        // which IS an integer - so a sender writing `to: peerSlot ?? null` to
+        // mean "everyone", the natural shape for the four-way client this was
+        // built for, would have had every broadcast delivered privately to slot
+        // 0 instead. Unreachable from today's webrtc.js, which sends no `to` at
+        // all and so lands in the else branch by absence rather than by test.
+        const to = typeof msg.to === "number" ? msg.to : null;
         if (Number.isInteger(to)) {
           const peer = room.slots.get(to);
           if (peer && peer !== ws) send(peer, stamped);

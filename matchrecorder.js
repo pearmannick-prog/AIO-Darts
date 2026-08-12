@@ -304,6 +304,16 @@ export function createRecorder({ mode, format, players }) {
       closeTurn();
       cricketTally = new Map();
       turnCounter = 0;
+      // Per-LEG state, and this flag is per-visit state that can outlive its
+      // leg. Checking out with a quick total goes quickTotal -> finishLeg ->
+      // endLeg, which never passes through the endTurn that would clear it, so
+      // it was still set when the next leg began. The first visit of that leg
+      // in which nobody entered a dart - all three missed, "End turn" pressed -
+      // then looked exactly like the double-count endTurn guards against, and
+      // was silently dropped: the visit vanished from the MPR and average
+      // denominators, which is the failure the seat argument to endTurn exists
+      // to prevent. Cleared here because endTurn cannot read it without a leg.
+      closedByQuick = false;
       leg = {
         legIndex,
         game,

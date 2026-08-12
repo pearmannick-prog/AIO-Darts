@@ -288,11 +288,6 @@ el.startGameBtn.addEventListener("click", () => {
   // freely, because which model applies is decided per LEG in startLeg rather
   // than once for the match.
 
-  // LEGS ARE WON BY TEAMS. createMatch sizes legsWon at call time, so passing
-  // the team count is the whole of what a partners match needs from medley.js
-  // - the leg tally, "best of five", the clinch and the draw all then work on
-  // teams without knowing that is what they are counting.
-  state.match = createMatch(legs, state.teams ? TEAM_COUNT : names.length);
   state.playerNames = names;
 
   // Which seat belongs to the person whose account this is. Pass-and-play has
@@ -315,6 +310,33 @@ el.startGameBtn.addEventListener("click", () => {
   // rather than re-deriving it from a form that may since have been edited.
   state.selfSeat = selfSeat;
 
+  state.rematchCount = 0;
+  beginMatch(names, legs);
+});
+
+// The part of starting a match that a rematch repeats. Split out so the two
+// cannot drift: everything a rematch needs is already in `state` when a match
+// ends - the names, the bots, the format - so it replays this rather than
+// reading the setup form again.
+//
+// THE MATCH AND THE RECORDER ARE BUILT HERE, not at the two call sites, which
+// is what makes that promise worth anything. They were duplicated for a while
+// and both copies drifted in the way partners play made expensive: the rematch
+// sized legsWon by SEATS rather than teams, so a 2v2 rematch printed four
+// scores into a two-sided match bar, and it left `team` off the recorded
+// players, so endLeg's filter matched nobody and saved a match in which no
+// player had won a single leg. Neither is visible in singles, which is why
+// both survived being read.
+function beginMatch(names, legs) {
+  // LEGS ARE WON BY TEAMS. createMatch sizes legsWon at call time, so passing
+  // the team count is the whole of what a partners match needs from medley.js
+  // - the leg tally, "best of five", the clinch and the draw all then work on
+  // teams without knowing that is what they are counting.
+  state.match = createMatch(legs, state.teams ? TEAM_COUNT : names.length);
+
+  // A fresh recorder, because a rematch is a new match rather than a
+  // continuation. The finished one has already been saved and cleared by the
+  // end of the last leg - see finishLeg.
   state.recorder = createRecorder({
     // A match against a computer is practice, and saying so in the record is
     // what lets the statistics count the darts (they are real darts, thrown at
@@ -324,7 +346,10 @@ el.startGameBtn.addEventListener("click", () => {
     format: legs,
     players: names.map((name, seat) => ({
       displayName: name,
-      isSelf: seat === selfSeat && !state.bots[seat],
+      // state.selfSeat rather than a value read from the setup form, so a
+      // rematch marks the same seat as you without re-deriving it from inputs
+      // that may since have been edited.
+      isSelf: seat === state.selfSeat && !state.bots[seat],
       // Explicit, never re-derived from seat parity. The pairing is worked out
       // once in teams.js from an order the player can see, and every consumer
       // of the record is told the answer rather than being trusted to
@@ -335,15 +360,6 @@ el.startGameBtn.addEventListener("click", () => {
     })),
   });
 
-  state.rematchCount = 0;
-  beginMatch(names, legs);
-});
-
-// The part of starting a match that a rematch repeats. Split out so the two
-// cannot drift: everything a rematch needs is already in `state` when a match
-// ends - the names, the bots, the format - so it replays this rather than
-// reading the setup form again.
-function beginMatch(names, legs) {
   startLeg(names);
   undoStack = [];
 
@@ -368,19 +384,6 @@ el.rematchBtn?.addEventListener("click", () => {
   // opened every single time - a real advantage in a short format, and free to
   // fix.
   state.rematchCount = (state.rematchCount || 0) + 1;
-  state.match = createMatch(legs, names.length);
-
-  // A fresh recorder, because this is a new match rather than a continuation.
-  // The finished one has already been saved and cleared by the end of the last
-  // leg - see finishMatch.
-  state.recorder = createRecorder({
-    mode: state.bots.some(Boolean) ? "practice" : "local",
-    format: legs,
-    players: names.map((name, seat) => ({
-      displayName: name,
-      isSelf: seat === state.selfSeat && !state.bots[seat],
-    })),
-  });
 
   beginMatch(names, legs);
 });
@@ -703,6 +706,19 @@ function startLeg(names) {
 // state.winnerIndex has to know which, so sideNames() below is the only place
 // that turns it back into something to show.
 function finishLeg(winnerIndex, { conceded = false, finisherSeat = null } = {}) {
+  // A DRAWN LEG HAS NO FINISHER. Count Up and Bermuda end on a fixed number of
+  // rounds rather than on a checkout, so their win checks return null for a
+  // tie - but they pass the seat that happened to throw last regardless, which
+  // is the only seat they have. Taken at face value that seat is credited with
+  // winning the leg (endLeg falls through to the singles branch, since a draw
+  // sets no winnerTeam) and its open visit is marked as a checkout. So the
+  // last person to throw won a leg nobody won.
+  //
+  // Normalised HERE rather than at the three call sites: "who finished it" is
+  // only a question worth asking once there is a winner, and a fourth game
+  // mode ending on rounds would otherwise arrive with the same bug.
+  if (winnerIndex === null || winnerIndex === undefined) finisherSeat = null;
+
   state.gameOver = true;
   state.winnerIndex = winnerIndex;
   state.legConceded = conceded;
@@ -902,6 +918,22 @@ function rosterOf(index) {
 function throwerNameOf(index) {
   const names = rosterOf(index);
   return names[(state.throwerIndexes?.[index] ?? 0) % names.length];
+}
+
+// Who the turn label names, which is not the same question as whose score is on
+// screen. With a shared total `state.players[i].name` is the PAIR, so the person
+// at the oche has to be named separately: it is the one thing a doubles
+// scoreboard has to say that a singles one does not, and with both partners
+// throwing into one score nothing else on screen reveals whose go it is.
+//
+// A function rather than a line inside one branch of render(), because every
+// game mode's label needs it and only two of them had it - Bermuda and Count Up
+// both announced "Ann & Cat's turn" for a whole leg and never said which of
+// them was throwing.
+function turnWhoLabel(current) {
+  return isSharedTotal()
+    ? `${throwerNameOf(state.currentPlayerIndex)} to throw · ${current.name}`
+    : `${current.name}'s turn`;
 }
 
 // The freeze half of a throw's options, or nothing at all when this is not a
@@ -1392,7 +1424,14 @@ function holdSecondsLeft() {
 function endTurn(opts = {}) {
   // A computer opponent never needs a chance to undo, and holding after its
   // visit would add ten seconds to every round of a practice game.
-  const thrower = state.bots[state.currentPlayerIndex];
+  //
+  // recorderSeat(), not currentPlayerIndex: with a shared total that index is a
+  // TEAM, and state.bots is indexed by PERSON. currentBot() was moved across
+  // and this was not, so a doubles practice game read the wrong seat and got
+  // the answer backwards in both directions - a bot at seat 2 held for ten
+  // seconds every round, and a human sharing a side with a bot at seat 0 got no
+  // undo window at all. See the two-index note above recorderSeat.
+  const thrower = state.bots[recorderSeat()];
   if (!getPref("localHold") || thrower || state.gameOver) {
     commitTurn(opts);
     return;
@@ -1537,7 +1576,7 @@ function render() {
     // label sits, with the round number for pacing.
     const target = bermudaTarget(current.round);
     el.turnLabel.textContent =
-      `${current.name}'s turn · round ${Math.min(current.round + 1, BERMUDA_ROUNDS)} of ${BERMUDA_ROUNDS}` +
+      `${turnWhoLabel(current)} · round ${Math.min(current.round + 1, BERMUDA_ROUNDS)} of ${BERMUDA_ROUNDS}` +
       ` · throw at ${target?.label ?? "-"}`;
   } else if (countup) {
     // Rounds remaining and the running average are the two numbers that
@@ -1545,17 +1584,15 @@ function render() {
     const rounds = state.legConfig.rounds ?? DEFAULT_ROUNDS;
     const left = Math.max(0, rounds - current.roundsPlayed);
     el.turnLabel.textContent =
-      `${current.name}'s turn · round ${Math.min(current.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(current)}`;
+      `${turnWhoLabel(current)} · round ${Math.min(current.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(current)}`;
   } else if (state.teams) {
-    // Partners. With a shared total `current.name` is the PAIR, so the thrower
-    // has to be named separately - it is the one thing a doubles scoreboard
-    // has to say that a singles one does not, and with both partners throwing
-    // into one score nothing else on screen reveals whose go it is.
+    // Partners x01 with the Freeze Rule keeps a score each, so the name on
+    // screen is already a person and only the side needs adding.
     el.turnLabel.textContent = isSharedTotal()
-      ? `${throwerNameOf(state.currentPlayerIndex)} to throw · ${current.name}`
-      : `${current.name}'s turn · ${teamLabel(state.currentPlayerIndex)}`;
+      ? turnWhoLabel(current)
+      : `${turnWhoLabel(current)} · ${teamLabel(state.currentPlayerIndex)}`;
   } else {
-    el.turnLabel.textContent = `${current.name}'s turn`;
+    el.turnLabel.textContent = turnWhoLabel(current);
   }
 
   // FROZEN, SAID OUT LOUD. The reference machines do not do this - their own

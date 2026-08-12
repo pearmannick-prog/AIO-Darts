@@ -68,7 +68,15 @@ const modules = [x01Stats, cricketStats, countupStats, bermudaStats];
 //    to two people. The win-percentage denominator moved with it: singles wins
 //    over every match played, doubles included, would report a lower win rate
 //    for having played doubles at all.
-export const ENGINE_VERSION = 9;
+// 10: two places where 9 was applied to the stats page and not to everything
+//    reading the same figures. The win-percentage LEADERBOARD still divided by
+//    every match played, so a player's own page and the board disagreed about
+//    one history under one label - and its qualification could be met entirely
+//    with doubles. And "every turn that is not mine" was still standing in for
+//    "every turn thrown against me", which put your PARTNER among the
+//    opponents: Cricket's points prevented credited you with defence your own
+//    side played.
+export const ENGINE_VERSION = 10;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);
@@ -161,6 +169,20 @@ function legContexts(matches) {
 
   for (const match of matches) {
     const seat = selfSeat(match);
+    // YOUR PARTNER IS NOT AN OPPONENT. "Every turn that is not mine" is the
+    // same set as "every turn thrown against me" only in singles. In doubles it
+    // swept the partner in, and the one consumer - Cricket's points prevented,
+    // which counts an opponent's marks on a number that was already closed -
+    // then credited you with defence your own side played.
+    //
+    // `turns` stays strictly mine: a partner's darts are theirs, they are
+    // recorded in their own copy of the match, and counting them as mine would
+    // double every per-dart figure this side of the split.
+    const myTeam = teamOfSeat(match, seat);
+    const isOpponent = (t) => (myTeam === null
+      ? t.seat !== seat
+      : teamOfSeat(match, t.seat) !== myTeam);
+
     for (const leg of match.legs ?? []) {
       const turns = leg.turns ?? [];
       const context = {
@@ -168,7 +190,7 @@ function legContexts(matches) {
         leg,
         seat,
         turns: turns.filter((t) => t.seat === seat),
-        opponentTurns: turns.filter((t) => t.seat !== seat),
+        opponentTurns: turns.filter(isOpponent),
         won: legWonBy(match, leg, seat),
       };
       if (!byGame.has(leg.game)) byGame.set(leg.game, []);
@@ -475,9 +497,21 @@ export const CAREER_BOARDS = [
     key: "career-winpct",
     label: "Win percentage",
     format: "percent",
-    // Without this, the top of the board is whoever won their only match.
-    minimum: { label: "20 matches", test: (raw) => raw.played >= 20 },
-    value: (raw) => (raw.played ? Number(((raw.won / raw.played) * 100).toFixed(1)) : 0),
+    // DECIDED, not played - the same denominator careerStats uses for the
+    // identically-labelled figure on the stats page. `won` counts singles wins
+    // only (a doubles win belongs to two people), so dividing it by every match
+    // played reported a lower win rate for having played any doubles at all,
+    // and the player's own page and this board then disagreed about the same
+    // history: 10 wins from 20 singles plus 10 doubles is 50% there and 33.3%
+    // here. Two numbers under one label is the drift ENGINE_VERSION exists to
+    // prevent, and it was reintroduced one file away from the fix.
+    //
+    // The qualification counts the same matches for the same reason. On
+    // `played` it could be met entirely with doubles, which would put someone
+    // who has won their single singles match at the top of the board on 100% -
+    // exactly what the minimum is here to stop.
+    minimum: { label: "20 singles matches", test: (raw) => raw.decided >= 20 },
+    value: (raw) => (raw.decided ? Number(((raw.won / raw.decided) * 100).toFixed(1)) : 0),
   },
   { key: "career-darts", label: "Most darts thrown", format: "integer",
     value: (raw) => raw.darts },

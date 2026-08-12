@@ -1494,6 +1494,7 @@ function wirePartnerAccounts() {
       if (partner) form.classList.add("hidden");
       block.querySelector("[data-partner-seat-row]")?.classList.toggle("hidden", !partner);
     }
+    bindOnlinePartnerField(partner);
   };
 
   for (const block of blocks) {
@@ -1554,17 +1555,45 @@ function wirePartnerAccounts() {
   paint();
 }
 
-// The partner's name, wherever it is asked for. Online has a text field; local
-// play takes the names from the player rows, so the partner's name is put into
-// the first seat that is still a placeholder rather than overwriting anything
-// somebody typed - the same rule the account's own name follows for seat one.
-function fillPartnerName(displayName, block) {
-  const online = document.getElementById("online-partner");
-  if (online && !online.value.trim()) {
-    online.value = displayName;
-    online.dispatchEvent(new Event("change"));
-  }
+// ONLINE'S PARTNER FIELD IS BOUND TO THE SESSION, not merely pre-filled from
+// it. There is exactly one partner seat online - `online.myIndex + 2`, the
+// second seat at this end - so the name in the box does not decide where the
+// darts go; the partner's TOKEN does. Filling the box only when it was empty
+// therefore left the two free to disagree: type "Dave", sign in as Sarah, and
+// seat 2 was recorded as Dave and uploaded to Sarah's account. Nothing on
+// screen said so, and both uploads returned 201.
+//
+// Local play solves the same problem with an explicit seat picker (see
+// partnerSeat and warnIfSeatLooksWrong). This is its online equivalent: one
+// person is signed in, the field says who, and it is read-only until they are
+// signed out. A partner who is NOT signed in - a guest whose darts nobody is
+// filing - types whatever they like, exactly as before.
+function bindOnlinePartnerField(partner) {
+  const field = document.getElementById("online-partner");
+  if (!field) return;
 
+  if (!partner) {
+    field.readOnly = false;
+    field.title = "";
+    return;
+  }
+  if (field.value !== partner.displayName) {
+    field.value = partner.displayName;
+    // online.js reads this on `change`, so the lobby learns about the pair the
+    // same way it would if somebody had typed it.
+    field.dispatchEvent(new Event("change"));
+  }
+  field.readOnly = true;
+  field.title = "The signed-in partner's name - sign them out to change it";
+}
+
+// The partner's name, wherever it is asked for. Local play takes the names from
+// the player rows, so the partner's name is put into the seat they are bound to
+// rather than overwriting anything somebody typed elsewhere. The online field
+// is not touched here - bindOnlinePartnerField owns it, because two places
+// setting one value is how it came to disagree with the session in the first
+// place.
+function fillPartnerName(displayName, block) {
   // Local play: put their name on the seat they are BOUND to, rather than
   // hunting for a spare row and hoping the two agree later.
   const seat = partnerSeat(block);

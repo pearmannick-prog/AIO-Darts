@@ -371,9 +371,17 @@ export function signOutPartner() {
 export async function recordMatchForPartner(document, seat) {
   if (!partnerSession) return { uploaded: false, reason: "no-partner" };
 
+  // The seat is named after the ACCOUNT this copy is being filed under, not
+  // after whatever was typed into a name box. The token decides where these
+  // darts land, so anything else on that seat is a label that can disagree with
+  // its own destination - and did: a partner signed in as one person while the
+  // name box still held another produced a match in their history whose "self"
+  // seat carried somebody else's name.
   const theirs = {
     ...document,
-    players: (document.players ?? []).map((p) => ({ ...p, isSelf: p.seat === seat })),
+    players: (document.players ?? []).map((p) => (p.seat === seat
+      ? { ...p, isSelf: true, displayName: partnerSession.displayName || p.displayName }
+      : { ...p, isSelf: false })),
   };
 
   try {

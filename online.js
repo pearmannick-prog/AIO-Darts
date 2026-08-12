@@ -460,6 +460,11 @@ const onlineMedleyBuilder = createMedleyBuilder({
   preset: el.formatSelect,
   bull: document.getElementById("online-bull-mode"),
   chips: document.getElementById("online-format-chips"),
+  // No Freeze Rule online. This side scores with resolveThrow and never
+  // resolvePartnersThrow, and online doubles shares one total, so the rule has
+  // nothing to act on here - offering it would put "· freeze" in the match bar
+  // of a match that plays without it.
+  freeze: false,
 });
 
 function selectedOnlineLegs() {

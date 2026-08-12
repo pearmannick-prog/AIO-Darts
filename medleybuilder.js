@@ -72,8 +72,20 @@ function sameLeg(a, b) {
 
 // els: { legs, addBtn, preset } - any may be absent, in which case the
 // builder degrades quietly rather than throwing.
+//
+// `freeze` says whether this instance may offer the Freeze Rule, and it is a
+// per-instance option precisely because this is a factory: the local picker
+// offers it and the online one must not. Online play has no freeze - online.js
+// calls resolveThrow and never resolvePartnersThrow, and online doubles is
+// shared-total only - so offering the control there produced a match LABELLED
+// "· freeze" in the match bar (gameLabel reads the leg, which faithfully said
+// so) and played, by both peers, entirely without the rule. A setting that is
+// carried, displayed and then ignored is worse than one that is absent.
 export function createMedleyBuilder(els) {
-  const { legs: legsEl, addBtn, preset, bull: bullEl, chips: chipsEl } = els || {};
+  const {
+    legs: legsEl, addBtn, preset, bull: bullEl, chips: chipsEl,
+    freeze: allowFreeze = true,
+  } = els || {};
 
   // Bull mode is stored per leg (so it crosses the wire with the rest of the
   // config) but chosen once for the whole match - a fifth dropdown on every
@@ -111,11 +123,12 @@ export function createMedleyBuilder(els) {
         <select class="leg-score${isX01 ? "" : " hidden"}">${scoreOptions}</select>
         <select class="leg-rules${isX01 ? "" : " hidden"}">${rulesOptions}</select>
         <select class="leg-rounds${isCountUp ? "" : " hidden"}">${roundOptions}</select>
+        ${allowFreeze ? `
         <select class="leg-freeze${isX01 ? "" : " hidden"}" title="The Freeze Rule - partners x01 only">
           <option value="off"${isX01 && !leg.freeze ? " selected" : ""}>No freeze</option>
           <option value="loss"${isX01 && leg.freeze && leg.frozenFinish !== "bust" ? " selected" : ""}>Freeze &middot; out = lose leg</option>
           <option value="bust"${isX01 && leg.freeze && leg.frozenFinish === "bust" ? " selected" : ""}>Freeze &middot; out = bust</option>
-        </select>
+        </select>` : ""}
         <button type="button" class="leg-remove" title="Remove this leg">&times;</button>
       </div>`;
     }).join("");
@@ -142,8 +155,10 @@ export function createMedleyBuilder(els) {
       //
       // It has no effect at all outside partners play - game.js only consults
       // it when the match is 2 v 2 - and is left visible rather than tied to
-      // the partners toggle because the format picker is shared with the
-      // online panel, where there is no such toggle to tie it to.
+      // the partners toggle, because the local panel's toggle can be switched
+      // on after the format is chosen. The ONLINE instance renders no control
+      // at all (see allowFreeze), and reads "off" here by its absence rather
+      // than by a second test.
       const freeze = row.querySelector(".leg-freeze")?.value || "off";
       return {
         game: "x01",

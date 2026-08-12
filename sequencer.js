@@ -37,6 +37,17 @@
 //
 // Pure and side-effect-free: it holds no sockets, no DOM and no game state. It
 // is given two callbacks and told what arrives.
+//
+// NOTHING CALLS THIS YET, and that is deliberate rather than an oversight. The
+// races it removes only exist above two peers, and there is no three-or-four
+// peer mode in the app: `online.js` runs one DataChannel to one opponent, where
+// the channel's own ordering already provides the total order this rebuilds.
+// Wiring it into the 1v1 path would buy nothing and cost a round trip on every
+// dart the guest throws (see THE COST above), so it waits for the mode it is
+// for - the sized rooms and slot routing in server.js are the other half of the
+// same unfinished feature. It is tested (server/sequencer.test.js) and
+// precached because the alternative is writing it later under time pressure,
+// against a race that reproduces once a fortnight.
 
 // `submit`  - a message this peer wants applied, from its own play
 // `receive` - a message that arrived from another peer

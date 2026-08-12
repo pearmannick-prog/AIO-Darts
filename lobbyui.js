@@ -177,9 +177,14 @@ function personRow(player) {
   // the wire, so it goes in as text and never as markup - see the stored XSS
   // this file already had once, where a display name was interpolated into
   // innerHTML and ran in the challenged player's session.
-  name.textContent = player.partner
+  // "(you)" is appended in BOTH cases. It used to hang off the singles branch
+  // of this ternary, so the moment you had a partner beside you your own row
+  // stopped being marked - in a lobby of pairs, which is exactly where the
+  // rows look most alike, there was then nothing at all to say which one was
+  // yours.
+  name.textContent = (player.partner
     ? `${player.displayName} & ${player.partner}`
-    : player.displayName + (player.isSelf ? " (you)" : "");
+    : player.displayName) + (player.isSelf ? " (you)" : "");
   name.addEventListener("click", () => openCard(player));
   if (player.partner) {
     // Said as well as shown, because "A & B" alone could be one person with an

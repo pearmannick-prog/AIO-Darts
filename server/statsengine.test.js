@@ -15,7 +15,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeStats } from "../statsengine.js";
+import { computeStats, leaderboardByKey } from "../statsengine.js";
 
 // ---------------------------------------------------------------------------
 // Builders - so a test reads as the match it describes
@@ -365,6 +365,34 @@ const nineDarter = (seat) => [
 
 const careerRaw = (stats) => stats.career.raw;
 
+// A Cricket visit of three darts into a 20 that is already closed and dead:
+// every mark overflows and nothing is scored, which is exactly what "points
+// prevented" measures when the OPPOSITION throws it.
+const deadMarks = (seat) => [
+  turn(seat, 0, [0, 1, 2].map(() => dart(60, {
+    multiplier: 3, section: "20",
+    extra: { target: "20", marks: 3, marksApplied: 0, points: 0 },
+  }))),
+];
+
+const cricketLeg = (turns, winnerTeam) => ({
+  legIndex: 0, game: "cricket", x01Start: null, rules: null, bull: "split",
+  rounds: null, winnerSeat: winnerTeam === undefined ? 0 : null,
+  winnerTeam: winnerTeam ?? null, turns,
+});
+
+const cricketSingles = (turns) => ({
+  ...match({ winnerSeat: 0 }), legs: [cricketLeg(turns)],
+});
+
+const cricketDoubles = (turns) => ({
+  ...doublesMatch({ winnerTeam: 0 }), legs: [cricketLeg(turns, 0)],
+});
+
+const preventedIn = (doc) => computeStats([doc]).games
+  .find((g) => g.key === "cricket")
+  .metrics.find((m) => m.key === "pointsPrevented").value;
+
 test("doubles darts count toward your totals and averages", () => {
   const stats = computeStats([doublesMatch({ turns: nineDarter(0) })]);
   // Three darts, 180 scored. The match is doubles, but the darts were thrown.
@@ -431,6 +459,38 @@ test("the partner's seat is not mistaken for the opponent's", () => {
     turns: [...nineDarter(0), ...nineDarter(2), ...nineDarter(1), ...nineDarter(3)],
   })]);
   assert.equal(careerRaw(stats).darts, 3);
+});
+
+// Two things ENGINE_VERSION 9 changed on the stats page and did not change in
+// the places reading the same figures. Both are the drift the version number
+// exists to catch, and both are invisible from the screen they are wrong on.
+test("the win-percentage LEADERBOARD uses the same denominator as the stats page", () => {
+  // 10 wins from 20 singles, plus 10 doubles matches. The page divides by the
+  // matches that could be won as an individual; the board divided by every
+  // match played, so one history read as 50% in one place and 33.3% in the
+  // other - under the identical label.
+  const raw = { played: 30, won: 10, decided: 20, doubles: 10 };
+  const board = leaderboardByKey("career-winpct");
+  assert.equal(board.value(raw), 50);
+
+  // The qualification counts the same matches for the same reason: on `played`
+  // it could be met entirely with doubles, putting someone who has won their
+  // one and only singles match at the top of the board on 100%.
+  assert.equal(board.minimum.test(raw), true);
+  assert.equal(board.minimum.test({ played: 21, won: 1, decided: 1, doubles: 20 }), false);
+});
+
+test("your PARTNER is not one of the opponents", () => {
+  // Points prevented counts opponent marks that scored nothing because you had
+  // closed the number. "Every turn that is not mine" swept the partner in, so
+  // your own side's darts into a dead number were credited to you as defence.
+  //
+  // Four visits of three darts, each dart three overflow marks on a closed 20:
+  // 3 x 3 x 20 = 180 a visit. Mine never count, so singles sees three opposing
+  // visits (540) and doubles must see two (360) - the partner's 180 dropped.
+  const deadTurns = [deadMarks(0), deadMarks(1), deadMarks(2), deadMarks(3)].flat();
+  assert.equal(preventedIn(cricketSingles(deadTurns)), 540);
+  assert.equal(preventedIn(cricketDoubles(deadTurns)), 360);
 });
 
 test("singles matches are untouched by any of this", () => {
