@@ -60,7 +60,23 @@ const modules = [x01Stats, cricketStats, countupStats, bermudaStats];
 //    read as a PPD of 60 rather than 20 - and Cricket gained the rounds where
 //    all three darts missed, which previously left no record at all and so were
 //    dropped from the MPR denominator entirely.
-export const ENGINE_VERSION = 8;
+// 9: partners play. A leg and a match are won by a SIDE, which is a seat in
+//    singles and a team in doubles, so every "winnerSeat === seat" test became
+//    a side test. Doubles DARTS feed your averages - they are real darts at a
+//    real board - while doubles WINS stay out of the singles win count, win
+//    percentage, streaks and the win achievements, because the result belongs
+//    to two people. The win-percentage denominator moved with it: singles wins
+//    over every match played, doubles included, would report a lower win rate
+//    for having played doubles at all.
+// 10: two places where 9 was applied to the stats page and not to everything
+//    reading the same figures. The win-percentage LEADERBOARD still divided by
+//    every match played, so a player's own page and the board disagreed about
+//    one history under one label - and its qualification could be met entirely
+//    with doubles. And "every turn that is not mine" was still standing in for
+//    "every turn thrown against me", which put your PARTNER among the
+//    opponents: Cricket's points prevented credited you with defence your own
+//    side played.
+export const ENGINE_VERSION = 10;
 
 export function registerGameModule(module) {
   if (!modules.some((m) => m.key === module.key)) modules.push(module);
@@ -101,6 +117,49 @@ export function selfSeat(match) {
   return self ? self.seat : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Sides: a seat in singles, a team in partners
+// ---------------------------------------------------------------------------
+// A LEG OR MATCH IS WON BY A SIDE, and until partners play existed a side and
+// a seat were the same thing. They are not any more, and the difference is
+// invisible if it is got wrong: a doubles leg would simply be credited to
+// whichever partner threw last, and every figure derived from it would still
+// look like a plausible record of a real match.
+//
+// These four functions are the only place that knows the difference. Every
+// `winnerSeat === seat` comparison in this file used to be its own copy of the
+// question, which is what made widening it a five-place job rather than a
+// one-place one - see docs/team-play.md 3a.
+
+// Does this match have teams at all? Read off the players rather than a flag
+// on the match: the team is per seat, and a match that has one has them.
+export function isTeamMatch(match) {
+  return (match.players ?? []).some((p) => Number.isInteger(p.team));
+}
+
+function teamOfSeat(match, seat) {
+  const player = (match.players ?? []).find((p) => p.seat === seat);
+  return Number.isInteger(player?.team) ? player.team : null;
+}
+
+// Did the side containing `seat` win this match? Partners matches record a
+// winning TEAM and no winning seat, because a pair won it.
+export function matchWonBy(match, seat = selfSeat(match)) {
+  if (match.drawn) return false;
+  const team = teamOfSeat(match, seat);
+  if (team === null) return match.winnerSeat === seat;
+  return match.winnerTeam === team;
+}
+
+// The same question for a single leg. A leg can have a winning team and NO
+// winning seat: reaching zero while frozen hands it to the opposition without
+// anybody checking out (scoring.js, docs/team-play.md 7a).
+export function legWonBy(match, leg, seat = selfSeat(match)) {
+  const team = teamOfSeat(match, seat);
+  if (team === null) return leg.winnerSeat === seat;
+  return leg.winnerTeam === team;
+}
+
 // One entry per leg of one game, carrying everything a module could want: the
 // leg itself, the match it belongs to, which seat is "me", and the turns split
 // into mine and the opponents'. Splitting here rather than in every module is
@@ -110,6 +169,20 @@ function legContexts(matches) {
 
   for (const match of matches) {
     const seat = selfSeat(match);
+    // YOUR PARTNER IS NOT AN OPPONENT. "Every turn that is not mine" is the
+    // same set as "every turn thrown against me" only in singles. In doubles it
+    // swept the partner in, and the one consumer - Cricket's points prevented,
+    // which counts an opponent's marks on a number that was already closed -
+    // then credited you with defence your own side played.
+    //
+    // `turns` stays strictly mine: a partner's darts are theirs, they are
+    // recorded in their own copy of the match, and counting them as mine would
+    // double every per-dart figure this side of the split.
+    const myTeam = teamOfSeat(match, seat);
+    const isOpponent = (t) => (myTeam === null
+      ? t.seat !== seat
+      : teamOfSeat(match, t.seat) !== myTeam);
+
     for (const leg of match.legs ?? []) {
       const turns = leg.turns ?? [];
       const context = {
@@ -117,8 +190,8 @@ function legContexts(matches) {
         leg,
         seat,
         turns: turns.filter((t) => t.seat === seat),
-        opponentTurns: turns.filter((t) => t.seat !== seat),
-        won: leg.winnerSeat === seat,
+        opponentTurns: turns.filter(isOpponent),
+        won: legWonBy(match, leg, seat),
       };
       if (!byGame.has(leg.game)) byGame.set(leg.game, []);
       byGame.get(leg.game).push(context);
@@ -153,12 +226,33 @@ function careerStats(matches) {
   let drawn = 0;
   let darts = 0;
   let ms = 0;
+  // DOUBLES DARTS COUNT, DOUBLES WINS DO NOT. The darts are real darts thrown
+  // at a real board, so leaving them out would under-report how much you have
+  // played and take a genuine part of your average with it. The win belongs to
+  // two people, so counting it as a singles win overstates you by exactly one
+  // partner.
+  //
+  // This is the first PARTIAL split in this file, and it is why it could not
+  // reuse the practice mechanism: a practice match is filtered out at the door
+  // (see isPractice below), where a doubles match has to stay in and be
+  // skipped only by the win-counting. `decided` is the denominator that goes
+  // with `won` for the same reason - dividing singles wins by every match
+  // played, doubles included, would quietly report a lower win rate for
+  // playing doubles at all.
+  let doubles = 0;
+  let decided = 0;
   const legsByGame = new Map();
 
   for (const match of matches) {
     const seat = selfSeat(match);
-    if (match.drawn) drawn += 1;
-    else if (match.winnerSeat === seat) won += 1;
+    const isDoubles = isTeamMatch(match);
+    if (isDoubles) {
+      doubles += 1;
+    } else {
+      decided += 1;
+      if (match.drawn) drawn += 1;
+      else if (matchWonBy(match, seat)) won += 1;
+    }
 
     ms += match.durationMs || 0;
 
@@ -185,14 +279,21 @@ function careerStats(matches) {
     metrics: [
       metric("played", "Matches played", played, "integer"),
       metric("won", "Matches won", won, "integer"),
-      metric("winPct", "Win percentage", percent(won, played), "percent"),
+      // Against the matches that could be won as an individual, not against
+      // every match played. The hint says so rather than leaving someone to
+      // work out why 12 wins from 40 matches reads as 40%.
+      metric("winPct", "Win percentage", percent(won, decided), "percent",
+        doubles ? "Singles only - doubles results are not counted as individual wins" : null),
       metric("currentStreak", "Current win streak", streaks.current, "integer"),
       metric("longestStreak", "Longest win streak", streaks.longest, "integer"),
       metric("darts", "Total darts thrown", darts, "integer"),
       metric("hours", "Hours played", ratio(ms, 3600_000, 1), "decimal"),
       metric("favourite", "Favourite game", favourite ? gameLabelFor(favourite) : "—", "text"),
+      // Only shown once there is one to show, the same way a game nobody has
+      // played is left off the page entirely rather than displayed as zeroes.
+      ...(doubles ? [metric("doubles", "Doubles played", doubles, "integer")] : []),
     ],
-    raw: { played, won, drawn, darts, durationMs: ms, favourite, ...streaks },
+    raw: { played, won, drawn, decided, doubles, darts, durationMs: ms, favourite, ...streaks },
   };
 }
 
@@ -206,7 +307,11 @@ function winStreaks(matches) {
   let current = 0;
 
   for (const match of ordered) {
-    const isWin = !match.drawn && match.winnerSeat === selfSeat(match);
+    // A doubles match is SKIPPED, not counted as a loss. It is not a win, but
+    // it is not a defeat either, and breaking a run on it would make playing
+    // doubles with a friend cost you a streak you never lost.
+    if (isTeamMatch(match)) continue;
+    const isWin = matchWonBy(match, selfSeat(match));
     running = isWin ? running + 1 : 0;
     longest = Math.max(longest, running);
     current = running;
@@ -261,7 +366,7 @@ function trendBuckets(matches, grain) {
     if (!buckets.has(key)) {
       buckets.set(key, {
         key,
-        played: 0, won: 0,
+        played: 0, won: 0, decided: 0, doubles: 0,
         x01Scored: 0, x01Darts: 0,
         checkouts: 0, checkoutChances: 0,
         cricketMarks: 0, cricketRounds: 0,
@@ -271,8 +376,15 @@ function trendBuckets(matches, grain) {
 
     const bucket = buckets.get(key);
     const seat = selfSeat(match);
+    // Played and its darts count for every match; only the win is withheld
+    // from a doubles one, and the denominator with it - the same split as
+    // careerStats, for the same reason.
     bucket.played += 1;
-    if (!match.drawn && match.winnerSeat === seat) bucket.won += 1;
+    if (isTeamMatch(match)) bucket.doubles += 1;
+    else {
+      bucket.decided += 1;
+      if (matchWonBy(match, seat)) bucket.won += 1;
+    }
 
     for (const leg of match.legs ?? []) {
       for (const turn of leg.turns ?? []) {
@@ -304,7 +416,7 @@ function trendBuckets(matches, grain) {
     .sort((a, b) => a.key.localeCompare(b.key))
     .map((b) => ({
       ...b,
-      winPct: percent(b.won, b.played),
+      winPct: percent(b.won, b.decided),
       threeDartAverage: ratio(b.x01Scored * 3, b.x01Darts),
       checkoutPct: percent(b.checkouts, b.checkoutChances),
       mpr: ratio(b.cricketMarks, b.cricketRounds),
@@ -385,9 +497,21 @@ export const CAREER_BOARDS = [
     key: "career-winpct",
     label: "Win percentage",
     format: "percent",
-    // Without this, the top of the board is whoever won their only match.
-    minimum: { label: "20 matches", test: (raw) => raw.played >= 20 },
-    value: (raw) => (raw.played ? Number(((raw.won / raw.played) * 100).toFixed(1)) : 0),
+    // DECIDED, not played - the same denominator careerStats uses for the
+    // identically-labelled figure on the stats page. `won` counts singles wins
+    // only (a doubles win belongs to two people), so dividing it by every match
+    // played reported a lower win rate for having played any doubles at all,
+    // and the player's own page and this board then disagreed about the same
+    // history: 10 wins from 20 singles plus 10 doubles is 50% there and 33.3%
+    // here. Two numbers under one label is the drift ENGINE_VERSION exists to
+    // prevent, and it was reintroduced one file away from the fix.
+    //
+    // The qualification counts the same matches for the same reason. On
+    // `played` it could be met entirely with doubles, which would put someone
+    // who has won their single singles match at the top of the board on 100% -
+    // exactly what the minimum is here to stop.
+    minimum: { label: "20 singles matches", test: (raw) => raw.decided >= 20 },
+    value: (raw) => (raw.decided ? Number(((raw.won / raw.decided) * 100).toFixed(1)) : 0),
   },
   { key: "career-darts", label: "Most darts thrown", format: "integer",
     value: (raw) => raw.darts },
@@ -633,7 +757,7 @@ export function computeMatchStats(match) {
         seat,
         turns: (leg.turns ?? []).filter((t) => t.seat === seat),
         opponentTurns: (leg.turns ?? []).filter((t) => t.seat !== seat),
-        won: leg.winnerSeat === seat,
+        won: legWonBy(match, leg, seat),
       }));
     if (legs.length) out[module.key] = module.lifetime(legs);
   }

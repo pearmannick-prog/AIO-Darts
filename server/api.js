@@ -26,7 +26,8 @@ import { buildLeaderboard } from "./leaderboard.js";
 import { leaderboardCatalogue } from "../statsengine.js";
 import {
   hashPassword, verifyPassword, createSession, destroySession,
-  userForRequest, sessionCookie, clearedCookie,
+  userForRequest, userForBearer, sessionCookie, clearedCookie,
+  PARTNER_SESSION_HOURS, SCOPE_PARTNER,
 } from "./auth.js";
 import { sendPasswordReset } from "./email.js";
 import { randomBytes, createHash } from "node:crypto";
@@ -302,6 +303,62 @@ const routes = {
     });
   },
 
+  // The SECOND person at one board, signing in so their darts reach their own
+  // account. Local doubles only - see docs/team-play.md section 0.
+  //
+  // Three things make this different from a login, and all three are the
+  // point:
+  //
+  //   NO Set-Cookie. The session cookie is HttpOnly and there is one per
+  //   browser, so issuing one here would sign the OWNER of the board out in
+  //   order to sign their guest in. The token goes back in the body instead,
+  //   and the page holds it in memory.
+  //
+  //   Hours, not thirty days. Nobody means to stay signed in on somebody
+  //   else's board.
+  //
+  //   It buys one capability, not a session. Only POST /api/matches accepts
+  //   the token (see userForBearer), so a partner can have their darts counted
+  //   and can do nothing else at all with it. That is enforced by the session's
+  //   SCOPE, which userForRequest refuses - it was a comment for a while, and a
+  //   comment is not a restriction: the token was an ordinary session row, so
+  //   pasting it into document.cookie made the guest's whole account available
+  //   to whoever was standing at the board.
+  //
+  // Throttled on the same counter as login, deliberately: this is a second
+  // password-checking surface on the same accounts, and leaving it open would
+  // make the throttle on the first one decorative.
+  "POST /api/auth/partner": async (req, res) => {
+    const body = await readJsonBody(req);
+    const email = normalizeEmail(body.email);
+    const password = String(body.password ?? "");
+
+    const key = throttleKey(req, email);
+    checkThrottle(key);
+
+    const db = getDatabase();
+    const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+    const ok = user && (await verifyPassword(password, user.password_hash, user.password_salt));
+    if (!ok) {
+      recordFailure(key);
+      throw new ApiError(401, "Email or password is incorrect.");
+    }
+
+    // A partner cannot be the person already signed in on this board. It would
+    // record both seats against one account, which is not a doubles match -
+    // and it is far more likely to be a mistake than an intention.
+    if (userForRequest(req)?.id === user.id) {
+      throw new ApiError(400, "That is the account already signed in here.");
+    }
+
+    attempts.delete(key);
+    const { token } = createSession(user.id, req.headers["user-agent"], {
+      hours: PARTNER_SESSION_HOURS,
+      scope: SCOPE_PARTNER,
+    });
+    sendJson(res, 200, { user: publicUser(user), token, expiresInHours: PARTNER_SESSION_HOURS });
+  },
+
   "POST /api/auth/logout": async (req, res) => {
     destroySession(req);
     sendJson(res, 200, { ok: true }, { "Set-Cookie": clearedCookie(req) });
@@ -527,14 +584,30 @@ const routes = {
   // account for it to belong to, which is how a guest's history survives to
   // become theirs at sign-up.
   "POST /api/matches": async (req, res, ctx) => {
-    if (!ctx.user) throw unauthorized("Sign in to save this match.");
+    // The ONLY route that honours a partner's bearer token. A doubles match is
+    // uploaded twice, once by each end of the board, with isSelf pointing at a
+    // different seat - which is exactly what already happens in an online
+    // match, where both players record their own copy and neither is the
+    // authority. client_uuid is scoped to the user, so the two rows are
+    // legitimately their own rather than a duplicate.
+    //
+    // THE BEARER WINS. The board owner's cookie is sent on every request the
+    // page makes, so preferring it meant the partner's copy was filed under
+    // the OWNER's account - the exact misattribution this feature exists to
+    // prevent, and silent, because both uploads returned 201 and the owner's
+    // history simply grew a match they had already recorded.
+    //
+    // The order is the right way round on the merits too: a cookie is ambient,
+    // while a bearer token is an explicit statement of whose darts these are.
+    const user = userForBearer(req) || ctx.user;
+    if (!user) throw unauthorized("Sign in to save this match.");
     const body = await readJsonBody(req);
-    const { id, duplicate } = insertMatch(ctx.user.id, body.match);
+    const { id, duplicate } = insertMatch(user.id, body.match);
 
     // Achievements are only evaluated for a match that was actually stored. A
     // duplicate from the retry queue must not re-announce anything, and cannot
     // earn anything new - the statistics are unchanged by definition.
-    const unlocked = duplicate ? [] : awardAchievements(ctx.user.id, id);
+    const unlocked = duplicate ? [] : awardAchievements(user.id, id);
 
     // 200 rather than 201 for a duplicate: nothing was created, and the client
     // treats both as "safe to drop from the queue".

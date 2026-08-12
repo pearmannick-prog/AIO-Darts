@@ -22,8 +22,12 @@ import {
   describeBermudaResult, BERMUDA_ROUNDS,
 } from "./bermuda.js";
 import { createRecorder } from "./matchrecorder.js";
-import { recordMatch, getState as accountState } from "./accountstore.js";
-import { onMatchReady, reportMatchOver, pushMatchState } from "./lobbyclient.js";
+import {
+  recordMatch, recordMatchForPartner, getState as accountState,
+} from "./accountstore.js";
+import {
+  onMatchReady, reportMatchOver, pushMatchState, setPartner,
+} from "./lobbyclient.js";
 import { getPref, setPref, VISIT_HOLD_MS } from "./prefs.js";
 import {
   createCountUpPlayer, resolveCountUpThrow, applyCountUpResult,
@@ -76,6 +80,20 @@ const online = {
   // scoreboard has always said that, and history says the same rather than
   // inventing a name.
   oppName: "Opponent",
+  // ---- Local doubles (docs/team-play.md section 0) ----
+  // Two people sharing THIS board, against two sharing theirs. Each end of the
+  // connection is a pair, so the peer layer does not change at all: it is still
+  // one connection between two boards, and a side is still a side.
+  //
+  // My partner's name, typed on the setup screen, and theirs, learned from
+  // their hello/match_config. Null means that end is one person.
+  partnerName: null,
+  oppPartnerName: null,
+  // Partners is on only when BOTH ends are pairs. A 2 v 1 is a real variant
+  // (see section 5) but it is not this one, and quietly playing it when only
+  // one side filled the box would mean the two ends disagreed about how many
+  // seats the match has - which is a desync, not a feature.
+  teams: false,
   // The lobby's code for this match, when it started from a challenge. Null for
   // an invite-code match, which nobody can be watching.
   lobbyCode: null,
@@ -108,6 +126,8 @@ const el = {
 
   statusLabel: document.getElementById("online-status-label"),
   meBox: document.getElementById("online-me-box"),
+  meLabel: document.getElementById("online-me-label"),
+  oppLabel: document.getElementById("online-opp-label"),
   oppBox: document.getElementById("online-opp-box"),
   meScore: document.getElementById("online-me-score"),
   oppScore: document.getElementById("online-opp-score"),
@@ -440,11 +460,41 @@ const onlineMedleyBuilder = createMedleyBuilder({
   preset: el.formatSelect,
   bull: document.getElementById("online-bull-mode"),
   chips: document.getElementById("online-format-chips"),
+  // No Freeze Rule online. This side scores with resolveThrow and never
+  // resolvePartnersThrow, and online doubles shares one total, so the rule has
+  // nothing to act on here - offering it would put "· freeze" in the match bar
+  // of a match that plays without it.
+  freeze: false,
 });
 
 function selectedOnlineLegs() {
   return onlineMedleyBuilder.getLegs().map(normalizeLeg);
 }
+
+// Read once, when the match is about to start, rather than watched: the setup
+// panel stays in the DOM behind the game and a rematch does not go back to it,
+// so a match must not be able to change shape halfway through because somebody
+// tidied the form. Same rule game.js follows for its Partners toggle.
+const elPartner = document.getElementById("online-partner");
+
+function readPartnerName() {
+  online.partnerName = cleanPartnerName(elPartner?.value);
+  return online.partnerName;
+}
+
+// Tell the lobby who is standing here, so a pair shows as a pair BEFORE they
+// have challenged anybody. That is the whole reason the partner reaches the
+// lobby at all: pairs need to be able to find pairs, and challenging someone
+// who is playing alone gets you a singles match rather than the game you were
+// looking for.
+//
+// The partner is a bare name, never a user id, because in local doubles they
+// are at your board - no account, no connection, nothing for the lobby to
+// link to. Inviting a REMOTE partner is a different feature and needs remote
+// doubles first; see docs/team-play.md section 0.
+elPartner?.addEventListener("change", () => {
+  setPartner(readPartnerName() || "");
+});
 
 // Same cricket board component as local play, so the two modes can't drift.
 wireCricketBoard(el.cricketBoard, (segment) => {
@@ -795,6 +845,7 @@ el.checkPanel.addEventListener("toggle", () => {
 
 // ---------- Create / Join ----------
 el.createBtn.addEventListener("click", async () => {
+  readPartnerName();
   await ensurePeerLinkLoaded();
   rememberSignalingOverride();
   peerLink = new PeerLink(currentSignalingUrl(), iceServers);
@@ -1040,6 +1091,10 @@ async function refineSignalingNotice(shown) {
 // The one thing carried over is the opponent's name, which the lobby already
 // knows - so the saved match names them even if the peer's hello is late.
 onMatchReady(async ({ code, role, opponent }) => {
+  // A lobby challenge reaches the board by the same peer path an invite code
+  // does, so it needs the same reading of the setup panel - and the panel is
+  // above the lobby precisely so it is filled in before a challenge is sent.
+  readPartnerName();
   await ensurePeerLinkLoaded();
   rememberSignalingOverride();
   peerLink = new PeerLink(currentSignalingUrl(), iceServers);
@@ -1076,6 +1131,7 @@ el.joinBtn.addEventListener("click", async () => {
   const code = el.joinInput.value.trim();
   if (!code) return;
 
+  readPartnerName();
   await ensurePeerLinkLoaded();
   rememberSignalingOverride();
   peerLink = new PeerLink(currentSignalingUrl(), iceServers);
@@ -1356,6 +1412,10 @@ function wirePeerLink() {
       // Only the host answers this, and only once.
       if (peerLink.role !== "host" || online.active) return;
       setOpponentName(msg.name);
+      // Their end's second player, if they have one. Read BEFORE the match is
+      // built, because whether this is a doubles match decides how many seats
+      // the recorder is given.
+      online.oppPartnerName = cleanPartnerName(msg.partner);
       const legs = selectedOnlineLegs();
       // Only the HOST records this. The guest adopts whatever format it is
       // sent, so remembering it would fill their recents with other people's
@@ -1363,7 +1423,9 @@ function wirePeerLink() {
       recordFormatUsed(legs);
       // The host's own name goes back with the config, so both sides end up
       // knowing each other without a message of their own.
-      peerLink.sendGameMessage({ type: "match_config", legs, name: myDisplayName() });
+      peerLink.sendGameMessage({
+        type: "match_config", legs, name: myDisplayName(), partner: online.partnerName,
+      });
       startOnlineGame("host", legs);
       renderOnline();
       return;
@@ -1372,6 +1434,7 @@ function wirePeerLink() {
     if (msg.type === "match_config") {
       if (online.active) return;
       setOpponentName(msg.name);
+      online.oppPartnerName = cleanPartnerName(msg.partner);
       startOnlineGame("guest", msg.legs);
       renderOnline();
       return;
@@ -1468,7 +1531,9 @@ function sendHelloUntilStarted(attempt = 0) {
   clearTimeout(helloTimer);
   if (online.active || !peerLink) return;
 
-  peerLink.sendGameMessage({ type: "hello", name: myDisplayName() });
+  peerLink.sendGameMessage({
+    type: "hello", name: myDisplayName(), partner: online.partnerName,
+  });
 
   if (attempt < HELLO_RETRIES) {
     helloTimer = setTimeout(() => sendHelloUntilStarted(attempt + 1), HELLO_RETRY_MS);
@@ -1641,7 +1706,7 @@ function showNotice(message) {
     el.statusLabel.style.color = "";
     el.statusLabel.textContent = online.gameOver
       ? statusText("connected")
-      : online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+      : turnText();
   }, 2200);
 }
 
@@ -1657,8 +1722,62 @@ function myDisplayName() {
 }
 
 // The recorder stores absolute seats, the game logic thinks in "me"/"opp".
-function seatOf(side) {
-  return side === "me" ? online.myIndex : online.oppIndex;
+//
+// SEATS ALTERNATE, exactly as they do in local doubles (teams.js): one end of
+// the connection holds seats 0 and 2, the other 1 and 3. Sharing that
+// convention is what lets a doubles match recorded online and one recorded at
+// a single board read back identically - and the alternating order is what
+// makes the turn sequence A1 B1 A2 B2 come out right from a plain side flip.
+//
+// In singles the second seat simply never exists and this returns what it
+// always did.
+function seatOf(side, throwerIndex = throwerIndexOf(side)) {
+  const base = side === "me" ? online.myIndex : online.oppIndex;
+  return online.teams ? base + throwerIndex * 2 : base;
+}
+
+// "Your turn" is not enough in local doubles: both people on this end are
+// "you", and the one thing they need to know is which of them is throwing.
+// Named rather than positional, because a pair standing at one board decide
+// whose go it is by looking at the screen.
+function turnText(side = online.activeSide) {
+  if (online.teams) return `${throwerName(side)} to throw`;
+  return side === "me" ? "Your turn" : "Opponent's turn";
+}
+
+function throwerIndexOf(side) {
+  return online[side]?.throwerIndex ?? 0;
+}
+
+// The names on one end, in throwing order. One entry in singles, two in local
+// doubles.
+function throwersOf(side) {
+  const s = online[side];
+  return s?.throwers?.length ? s.throwers : [sideLabel(side)];
+}
+
+// Who is AT THE OCHE on that end right now.
+function throwerName(side) {
+  const names = throwersOf(side);
+  return names[throwerIndexOf(side) % names.length];
+}
+
+// What to call that end as a whole: one name, or both joined. "Team 1" would
+// be worse - a scoreboard is read by people who know each other's names.
+function sideName(side) {
+  return throwersOf(side).join(" & ");
+}
+
+function sideLabel(side) {
+  return side === "me" ? (myDisplayName() || "You") : online.oppName;
+}
+
+// A partner name off the wire is someone else's typing, so it is bounded and
+// trimmed here rather than trusted - the same treatment the opponent's own
+// name already gets. Empty means "that end is one person".
+function cleanPartnerName(name) {
+  const clean = String(name || "").trim().slice(0, 40);
+  return clean || null;
 }
 
 function setOpponentName(name) {
@@ -1690,14 +1809,40 @@ function startOnlineGame(role, legs) {
   online.role = role;
   online.myIndex = role === "host" ? 0 : 1;
   online.oppIndex = 1 - online.myIndex;
+  // BOTH ends must be pairs, or this is singles. Checked here, on both sides,
+  // off the rosters they have just exchanged - so the two agree without either
+  // being told, in the same way they already agree about who throws first.
+  online.teams = Boolean(online.partnerName) && Boolean(online.oppPartnerName);
+
+  // Still 2, because a side IS a team here. This is what makes local doubles
+  // nearly free online: the leg tally, "best of five", the clinch and the draw
+  // have always counted sides, and a side having two people in it changes
+  // nothing about any of them.
   online.match = createMatch(legs, 2);
   online.log = [];
 
-  // Seats are absolute and identical on both sides - host 0, guest 1 - so the
-  // two recordings of the same match agree about who did what.
+  // Seats are absolute and identical on both sides - one end holds 0 and 2,
+  // the other 1 and 3 - so the two recordings of the same match agree about
+  // who did what. See seatOf.
   const players = [];
-  players[online.myIndex] = { displayName: myDisplayName() || "Me", isSelf: true };
-  players[online.oppIndex] = { displayName: online.oppName, isSelf: false };
+  players[online.myIndex] = {
+    displayName: myDisplayName() || "Me", isSelf: true,
+    team: online.teams ? online.myIndex : null,
+  };
+  players[online.oppIndex] = {
+    displayName: online.oppName, isSelf: false,
+    team: online.teams ? online.oppIndex : null,
+  };
+  if (online.teams) {
+    // A partner is NOT "you", however friendly the arrangement: their darts
+    // are theirs, and marking the seat isSelf would put them in your averages.
+    players[online.myIndex + 2] = {
+      displayName: online.partnerName, isSelf: false, team: online.myIndex,
+    };
+    players[online.oppIndex + 2] = {
+      displayName: online.oppPartnerName, isSelf: false, team: online.oppIndex,
+    };
+  }
   online.recorder = createRecorder({ mode: "online", format: legs, players });
 
   stopConnectWatchdog();
@@ -1721,6 +1866,23 @@ function startOnlineLeg() {
   online.opp = buildOnlinePlayer("Opponent", leg);
   online.me.dartsThisTurn = [];
   online.opp.dartsThisTurn = [];
+
+  // The people on each end, and which of them is at the oche. The SCORE stays
+  // on the side, which is the whole reason this variant is cheap online: both
+  // partners throw into one 501, or one set of Cricket marks, exactly as the
+  // side always has. Only "who threw that" gains a second answer.
+  //
+  // Reset per leg along with everything else, so each leg opens with the same
+  // partner throwing on both ends rather than continuing a rotation the other
+  // side cannot see.
+  online.me.throwers = online.teams
+    ? [myDisplayName() || "You", online.partnerName]
+    : [myDisplayName() || "You"];
+  online.opp.throwers = online.teams
+    ? [online.oppName, online.oppPartnerName]
+    : [online.oppName];
+  online.me.throwerIndex = 0;
+  online.opp.throwerIndex = 0;
   // Undo must never reach back into a finished leg - the same rule game.js
   // applies locally, and here it would also be rewinding a leg the other side
   // has already banked.
@@ -1770,15 +1932,28 @@ function finishOnlineLeg(side) {
   // not a feature.
   if (online.match.over && online.iWon) cueWin();
 
-  online.recorder?.endLeg(winnerIndex);
+  // A side index IS a team index in a doubles match - one end, one team - so
+  // the same number serves both, and the seat is who actually checked out.
+  // They are different questions and are recorded as such: the seat marks the
+  // visit as a checkout, the team is what the leg belongs to.
+  online.recorder?.endLeg(
+    online.teams ? (side === null ? null : seatOf(side)) : winnerIndex,
+    { winnerTeam: online.teams ? winnerIndex : null },
+  );
   broadcastMatchState();
 
   if (online.match.over && online.recorder) {
     const document = online.recorder.endMatch({
-      winnerSeat: online.match.winnerIndex ?? null,
+      // In doubles the match was won by a pair, so no single seat won it.
+      winnerSeat: online.teams ? null : (online.match.winnerIndex ?? null),
+      winnerTeam: online.teams ? (online.match.winnerIndex ?? null) : null,
       drawn: Boolean(online.match.drawn),
     });
     recordMatch(document);
+    // The partner standing at THIS board gets their own copy, filed under
+    // their account. Their seat is known exactly here - it is the second seat
+    // on this end - so unlike local play there is no name to match.
+    if (online.teams) recordMatchForPartner(document, online.myIndex + 2).catch(() => {});
     online.recorder = null;
   }
 }
@@ -2874,6 +3049,17 @@ function commitTurn(side, { busted = false } = {}) {
       && online.gameType !== "bermuda") {
     s.startOfTurn = s.remaining;
   }
+  // The next visit on THIS end belongs to the other partner. Advancing here,
+  // beside the side flip, is what produces the standard doubles order
+  // A1 B1 A2 B2 - each end simply alternates its own two, and the sides
+  // alternate as they always did.
+  //
+  // Both ends run this for both sides off the same messages, so neither has to
+  // be told whose turn it is within the other pair: it is the determinism
+  // guarantee doing the same work it already does for the score.
+  if (online.teams) {
+    s.throwerIndex = (s.throwerIndex + 1) % (s.throwers?.length || 1);
+  }
   online.activeSide = side === "me" ? "opp" : "me";
   broadcastMatchState();
 }
@@ -2904,6 +3090,22 @@ function renderOnline() {
   } else {
     el.meScore.textContent = online.me.remaining;
     el.oppScore.textContent = online.opp.remaining;
+  }
+
+  // In local doubles the score belongs to the PAIR and the turn belongs to one
+  // of them, so the label carries both: the pair's names, and who is at the
+  // oche. Taken from the reference machines, which name the thrower large over
+  // the team small - it is the one piece of information a doubles scoreboard
+  // has that a singles one does not, and it costs no layout.
+  if (el.meLabel) {
+    el.meLabel.textContent = online.teams
+      ? `${throwerName("me")} · ${sideName("me")}`
+      : "You";
+  }
+  if (el.oppLabel) {
+    el.oppLabel.textContent = online.teams
+      ? `${throwerName("opp")} · ${sideName("opp")}`
+      : online.oppName;
   }
 
   const myTurn = online.activeSide === "me" && !online.gameOver;
@@ -2958,13 +3160,15 @@ function renderOnline() {
     // Count Up can end level - iWon is null in that case.
     el.turnLabel.textContent = online.iWon === null
       ? "Leg drawn."
-      : online.iWon ? "You win the leg! 🎯" : "Opponent takes the leg.";
+      : online.teams
+        ? `${online.iWon ? sideName("me") : sideName("opp")} take the leg`
+        : online.iWon ? "You win the leg! 🎯" : "Opponent takes the leg.";
   } else if (bermuda) {
     // The current target is the whole state of a Bermuda turn - without it on
     // screen there is nothing to aim at. Shown for whoever is throwing, since
     // the two players are on their own rounds and can be on different targets.
     const p = online.activeSide === "me" ? online.me : online.opp;
-    const who = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+    const who = turnText();
     const target = bermudaTarget(p.round);
     el.turnLabel.textContent =
       `${who} · round ${Math.min(p.round + 1, BERMUDA_ROUNDS)} of ${BERMUDA_ROUNDS}` +
@@ -2974,11 +3178,11 @@ function renderOnline() {
     // practice game.
     const rounds = online.legConfig?.rounds ?? DEFAULT_ROUNDS;
     const p = online.activeSide === "me" ? online.me : online.opp;
-    const who = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+    const who = turnText();
     el.turnLabel.textContent =
       `${who} · round ${Math.min(p.roundsPlayed + 1, rounds)} of ${rounds} · avg ${formatAverage(p)}`;
   } else {
-    el.turnLabel.textContent = online.activeSide === "me" ? "Your turn" : "Opponent's turn";
+    el.turnLabel.textContent = turnText();
   }
 
   // The hold, said plainly. Without a countdown a ten second pause reads as
@@ -3041,18 +3245,31 @@ function renderOnlineMatchBar() {
 
 function onlineBannerText() {
   const match = online.match;
+  // The leg tally is indexed by SIDE, and a side is a pair in local doubles -
+  // so it is named as one. "You" stays for singles, where it is still true.
   const names = [];
-  names[online.myIndex] = "You";
-  names[online.oppIndex] = "Opponent";
+  names[online.myIndex] = online.teams ? sideName("me") : "You";
+  names[online.oppIndex] = online.teams ? sideName("opp") : "Opponent";
 
   if (match?.over) {
     if (match.drawn) return `Match drawn · ${matchScoreText(match, names)}`;
     const iWonMatch = match.winnerIndex === online.myIndex;
     if (match.legs.length > 1) {
-      return `${iWonMatch ? "🏆 You win the match" : "Opponent wins the match"} · ${matchScoreText(match, names)}`;
+      const who = online.teams
+        ? `${names[iWonMatch ? online.myIndex : online.oppIndex]} win the match`
+        : (iWonMatch ? "You win the match" : "Opponent wins the match");
+      return `${iWonMatch ? "🏆 " : ""}${who} · ${matchScoreText(match, names)}`;
+    }
+    if (online.teams) {
+      return iWonMatch
+        ? `🏆 ${names[online.myIndex]} win!`
+        : `${names[online.oppIndex]} win this one.`;
     }
     return iWonMatch ? "🏆 You win!" : "Opponent wins this one.";
   }
 
-  return `${online.iWon ? "You take" : "Opponent takes"} leg ${match.currentLeg + 1} · ${matchScoreText(match, names)}`;
+  const taker = online.teams
+    ? `${names[online.iWon ? online.myIndex : online.oppIndex]} take`
+    : (online.iWon ? "You take" : "Opponent takes");
+  return `${taker} leg ${match.currentLeg + 1} · ${matchScoreText(match, names)}`;
 }

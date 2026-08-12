@@ -43,14 +43,26 @@ export const MATCH_PRESETS = {
 };
 
 export function normalizeLeg(leg) {
+  // Legacy bare strings, turned into leg objects and then normalized by the
+  // SAME code below rather than by a parallel set of returns.
+  //
+  // They used to return finished descriptors of their own, and that quietly
+  // broke the moment x01 grew a field: a "501" leg came back without the
+  // freeze keys while an equivalent object leg had them, so two legs that are
+  // the same game disagreed about their own shape depending on which build
+  // had written them down. Anything added to x01 from here on lands on both
+  // paths because there is only one.
   if (typeof leg === "string") {
     if (leg === "cricket") return { game: "cricket", bull: "split" };
     if (leg === "bermuda") return { game: "bermuda", bull: "split" };
-    if (leg === "countup") return { game: "countup", rounds: DEFAULT_ROUNDS, bull: "split" };
+    if (leg === "countup") return normalizeLeg({ game: "countup", rounds: DEFAULT_ROUNDS });
     const score = Number(leg);
-    return { game: "x01", score: Number.isFinite(score) && score > 0 ? score : 501, rules: "double", bull: "split" };
+    return normalizeLeg({
+      game: "x01",
+      score: Number.isFinite(score) && score > 0 ? score : 501,
+    });
   }
-  if (!leg || typeof leg !== "object") return { game: "x01", score: 501, rules: "double", bull: "split" };
+  if (!leg || typeof leg !== "object") return normalizeLeg({ game: "x01", score: 501 });
   // Cricket is always split-bull: outer is one mark, inner is two. Full bull
   // isn't a Cricket variant, so the leg pins itself to split rather than
   // inheriting the match setting. That makes applyBullMode a no-op here
@@ -69,10 +81,28 @@ export function normalizeLeg(leg) {
       bull,
     };
   }
+  // The Freeze Rule, and what happens when a frozen player reaches zero.
+  //
+  // These sit BESIDE `rules` rather than inside it because `rules` is a string
+  // key into X01_RULES - "double", "master-open" and so on - not an object
+  // with room for another field. docs/team-play.md assumed otherwise; this is
+  // the shape the code actually has.
+  //
+  // The freeze is a partners rule and does nothing in a singles leg, but it is
+  // normalized unconditionally all the same: an absent key must mean the
+  // default rather than undefined behaviour, and a leg descriptor that
+  // describes itself fully is what lets a saved match be read back without
+  // knowing which mode recorded it.
   return {
     game: "x01",
     score: Number(leg.score) > 0 ? Number(leg.score) : 501,
     rules: leg.rules || "double",
+    freeze: leg.freeze === true,
+    // "loss" is the sourced behaviour - reaching zero while frozen hands the
+    // leg to the opposition - and therefore the default. "bust" is the gentler
+    // house reading: the score is restored and the turn passes, exactly like
+    // any other bust.
+    frozenFinish: leg.frozenFinish === "bust" ? "bust" : "loss",
     bull,
   };
 }
@@ -86,7 +116,14 @@ export function gameLabel(leg) {
   if (l.game === "countup") return `Count Up · ${l.rounds} rounds${bull}`;
   // "501 · Double out" - the variant matters as much as the number, so it's
   // always shown rather than only when it's unusual.
-  return `${l.score} · ${rulesLabel(l.rules)}${bull}`;
+  //
+  // The freeze is named only when it is on, like full bull: it applies to
+  // partners games alone, so mentioning it on every singles leg would be noise
+  // on the format most people play.
+  const freeze = l.freeze
+    ? ` · freeze${l.frozenFinish === "bust" ? " (bust)" : ""}`
+    : "";
+  return `${l.score} · ${rulesLabel(l.rules)}${freeze}${bull}`;
 }
 
 export function createMatch(legGames, playerCount) {

@@ -55,11 +55,23 @@ export function createRecorder({ mode, format, players }) {
     // it was set up even after the format presets change.
     format: JSON.parse(JSON.stringify(format ?? [])),
     winnerSeat: null,
+    // The winning TEAM in a partners match, null in singles. Kept beside
+    // winnerSeat rather than replacing it: a singles match genuinely has a
+    // winning seat, and collapsing both into one field would mean every reader
+    // having to know which kind of index it was looking at.
+    winnerTeam: null,
     drawn: false,
     players: (players ?? []).map((p, seat) => ({
       seat,
       displayName: p.displayName,
       isSelf: Boolean(p.isSelf),
+      // Which team this seat plays for, or null in singles. Carried even
+      // though nothing derives statistics from it yet, because the alternative
+      // - inferring partners from seat parity when the time comes - is a rule
+      // that would then live in the recorder, the stats engine, the
+      // leaderboards and both controllers at once. One field, written by
+      // whoever knows the answer. See docs/team-play.md.
+      team: Number.isInteger(p.team) ? p.team : null,
       legsWon: 0,
       setsWon: 0, // see the schema: sets don't exist in this app yet
     })),
@@ -70,6 +82,12 @@ export function createRecorder({ mode, format, players }) {
   let leg = null;
   let turn = null;
   let turnCounter = 0;
+  // Set when a QUICK TOTAL has already finalised the visit, cleared the moment
+  // a new one opens. endTurn needs it to tell two states apart that look
+  // identical from here - "no open turn because all three darts missed", which
+  // must be recorded, and "no open turn because the visit is already closed",
+  // which must not be recorded again. See endTurn.
+  let closedByQuick = false;
 
   // Cricket's running MPR needs marks and completed rounds per seat, which is
   // per-leg state rather than something a single visit knows. Kept here so the
@@ -86,6 +104,7 @@ export function createRecorder({ mode, format, players }) {
   // threw - and inventing one would mean two places to keep in step.
   function openTurn(seat, remainingBefore, entry) {
     if (turn && turn.seat === seat) return turn;
+    closedByQuick = false;
     turn = {
       turnIndex: turnCounter++,
       seat,
@@ -285,6 +304,16 @@ export function createRecorder({ mode, format, players }) {
       closeTurn();
       cricketTally = new Map();
       turnCounter = 0;
+      // Per-LEG state, and this flag is per-visit state that can outlive its
+      // leg. Checking out with a quick total goes quickTotal -> finishLeg ->
+      // endLeg, which never passes through the endTurn that would clear it, so
+      // it was still set when the next leg began. The first visit of that leg
+      // in which nobody entered a dart - all three missed, "End turn" pressed -
+      // then looked exactly like the double-count endTurn guards against, and
+      // was silently dropped: the visit vanished from the MPR and average
+      // denominators, which is the failure the seat argument to endTurn exists
+      // to prevent. Cleared here because endTurn cannot read it without a leg.
+      closedByQuick = false;
       leg = {
         legIndex,
         game,
@@ -293,6 +322,7 @@ export function createRecorder({ mode, format, players }) {
         bull: bull ?? null,
         rounds: rounds ?? null,
         winnerSeat: null,
+        winnerTeam: null,
         turns: [],
       };
       doc.legs.push(leg);
@@ -365,6 +395,7 @@ export function createRecorder({ mode, format, players }) {
       t.bust = Boolean(bust);
       t.isCheckout = Boolean(isCheckout);
       closeTurn();
+      closedByQuick = true;
     },
 
     // A VISIT IS THREE DARTS. Ending a turn asserts the visit is over, and the
@@ -388,6 +419,17 @@ export function createRecorder({ mode, format, players }) {
     // from the denominator and their MPR goes UP for missing.
     endTurn(seat) {
       if (!leg) return;
+      // A quick total has already recorded the whole visit and closed it, so
+      // there is nothing left to end. Without this the controllers' ordinary
+      // "the visit is over" call landed on an empty recorder and the
+      // all-missed rule below invented a SECOND visit for the same three
+      // darts - scoring zero, counting three darts, and halving every average
+      // of anyone who scores by whole-turn totals. It read as a plausible
+      // record of someone who missed every other visit.
+      if (!turn && closedByQuick) {
+        closedByQuick = false;
+        return;
+      }
       if (!turn && seat !== null && seat !== undefined) openTurn(seat, null, "dart");
       if (turn && !turn.isCheckout) turn.darts = Math.max(turn.darts || 0, DARTS_PER_VISIT);
       closeTurn();
@@ -396,22 +438,44 @@ export function createRecorder({ mode, format, players }) {
     // The dart that wins a leg does not go through endTurn - the controllers
     // finish the leg then and there - so this closes whatever is open and
     // marks the winning visit as the checkout.
-    endLeg(winnerSeat) {
+    //
+    // `winnerSeat` is the person who threw the finishing dart, and it is NOT
+    // the same question as who won the leg once teams exist:
+    //
+    //   - In a partners leg the leg belongs to a TEAM, so `winnerTeam` is what
+    //     decides legsWon, and both partners get it.
+    //   - A leg can be won with no finishing dart at all. Reaching zero while
+    //     frozen hands the leg to the opposition (see scoring.js), so
+    //     winnerSeat is null while winnerTeam is set - and the player who did
+    //     reach zero must not be credited with a checkout for it, which the
+    //     seat comparison below already handles because the two differ.
+    endLeg(winnerSeat, { winnerTeam = null } = {}) {
       if (!leg) return;
       if (turn && winnerSeat !== null && winnerSeat !== undefined && turn.seat === winnerSeat) {
         turn.isCheckout = true;
       }
       closeTurn();
       leg.winnerSeat = winnerSeat ?? null;
-      if (winnerSeat !== null && winnerSeat !== undefined && doc.players[winnerSeat]) {
-        doc.players[winnerSeat].legsWon += 1;
+      leg.winnerTeam = Number.isInteger(winnerTeam) ? winnerTeam : null;
+
+      // Credit the side, whichever kind of side this match has. Singles is the
+      // one-player case of the same statement rather than a separate branch.
+      const winners = leg.winnerTeam === null
+        ? (Number.isInteger(leg.winnerSeat) ? [doc.players[leg.winnerSeat]] : [])
+        : doc.players.filter((p) => p.team === leg.winnerTeam);
+      for (const player of winners) {
+        if (player) player.legsWon += 1;
       }
       leg = null;
     },
 
-    endMatch({ winnerSeat = null, drawn = false } = {}) {
+    // winnerTeam is the match result in a partners game, where winnerSeat has
+    // nothing to say - a match is won by a pair, and naming one of them would
+    // be the same silent half-credit the leg tally used to give.
+    endMatch({ winnerSeat = null, drawn = false, winnerTeam = null } = {}) {
       closeTurn();
       doc.winnerSeat = winnerSeat ?? null;
+      doc.winnerTeam = Number.isInteger(winnerTeam) ? winnerTeam : null;
       doc.drawn = Boolean(drawn);
       doc.endedAt = new Date().toISOString();
       doc.durationMs = Date.now() - startedAt;
@@ -443,6 +507,7 @@ export function createRecorder({ mode, format, players }) {
         turnCount: leg ? leg.turns.length : 0,
         turnCounter,
         turn: turn ? { ...turn, throws: turn.throws.slice() } : null,
+        closedByQuick,
         cricket: [...cricketTally.entries()].map(([seat, v]) => [seat, { ...v }]),
       };
     },
@@ -454,6 +519,7 @@ export function createRecorder({ mode, format, players }) {
       if (leg) leg.turns.length = Math.min(leg.turns.length, snap.turnCount);
       turnCounter = snap.turnCounter;
       turn = snap.turn ? { ...snap.turn, throws: snap.turn.throws.slice() } : null;
+      closedByQuick = Boolean(snap.closedByQuick);
       cricketTally = new Map(snap.cricket.map(([seat, v]) => [seat, { ...v }]));
     },
   };

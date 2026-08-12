@@ -170,3 +170,93 @@ test("a checkout keeps the darts it actually used", () => {
   assert.equal(doc.legs[0].turns[0].darts, 1, "one dart finished it");
   assert.equal(doc.legs[0].turns[0].isCheckout, true);
 });
+
+// ---------------------------------------------------------------------------
+// A quick total is ONE visit, not two
+//
+// The controllers record a whole-turn total and then, as they do for every
+// visit, announce that the turn is over. Those are two calls about one visit,
+// and the recorder used to treat the second as a fresh one: quickTotal closes
+// the visit, endTurn found nothing open, and the all-three-missed rule - which
+// exists precisely because a visit that registers nothing must still count -
+// invented a second visit scoring zero off three darts.
+//
+// It is the worst shape a statistics bug can take. Nothing looks wrong: the
+// scoreboard is right, the leg is right, the winner is right. Only the
+// averages are wrong, by a factor of two, and only for players who score by
+// whole-turn totals - which is the fastest way to enter a game and therefore
+// what a lot of people use for every visit.
+
+test("a quick total records one visit, not one plus a phantom", () => {
+  const recorder = createRecorder({
+    mode: "local", format: [], players: [{ displayName: "Me", isSelf: true }],
+  });
+  recorder.startLeg({ legIndex: 0, game: "x01", x01Start: 501, rules: "double" });
+
+  recorder.quickTotal(0, { total: 140, remainingBefore: 501, remainingAfter: 361 });
+  recorder.endTurn(0);   // exactly what game.js and online.js do next
+
+  const doc = recorder.endMatch({ winnerSeat: 0 });
+  const turns = doc.legs[0].turns;
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].scored, 140);
+  assert.equal(turns[0].darts, 3);
+  assert.equal(turns[0].entry, "quick");
+});
+
+test("three quick totals are three visits and nine darts", () => {
+  // The arithmetic the bug broke: 420 off nine darts is a 140 average. Counted
+  // twice it becomes 420 off eighteen, which is 70 - a good player reported as
+  // an average one.
+  const recorder = createRecorder({
+    mode: "local", format: [], players: [{ displayName: "Me", isSelf: true }],
+  });
+  recorder.startLeg({ legIndex: 0, game: "x01", x01Start: 501, rules: "double" });
+
+  let remaining = 501;
+  for (let i = 0; i < 3; i++) {
+    recorder.quickTotal(0, { total: 140, remainingBefore: remaining, remainingAfter: remaining - 140 });
+    remaining -= 140;
+    recorder.endTurn(0);
+  }
+
+  const turns = recorder.endMatch({ winnerSeat: 0 }).legs[0].turns;
+  assert.equal(turns.length, 3);
+  assert.equal(turns.reduce((sum, t) => sum + t.darts, 0), 9);
+  assert.equal(turns.reduce((sum, t) => sum + t.scored, 0), 420);
+});
+
+test("an all-missed visit is STILL recorded - the rule the fix must not break", () => {
+  // endTurn with nothing thrown is a real visit that registers nothing, and it
+  // has to count or a player who misses everything has the round dropped from
+  // their denominator and their average goes UP for missing.
+  const recorder = createRecorder({
+    mode: "local", format: [], players: [{ displayName: "Me", isSelf: true }],
+  });
+  recorder.startLeg({ legIndex: 0, game: "x01", x01Start: 501, rules: "double" });
+
+  recorder.endTurn(0);
+
+  const turns = recorder.endMatch({ winnerSeat: 0 }).legs[0].turns;
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].scored, 0);
+  assert.equal(turns[0].darts, 3);
+});
+
+test("a quick total does not suppress the NEXT visit's all-missed record", () => {
+  // The flag has to be one visit deep. If it survived, the missed visit after
+  // a quick total would vanish - trading one bug for its mirror image.
+  const recorder = createRecorder({
+    mode: "local", format: [], players: [{ displayName: "Me", isSelf: true }],
+  });
+  recorder.startLeg({ legIndex: 0, game: "x01", x01Start: 501, rules: "double" });
+
+  recorder.quickTotal(0, { total: 100, remainingBefore: 501, remainingAfter: 401 });
+  recorder.endTurn(0);
+  recorder.endTurn(0);   // the next visit: all three missed
+
+  const turns = recorder.endMatch({ winnerSeat: 0 }).legs[0].turns;
+  assert.equal(turns.length, 2);
+  assert.equal(turns[1].scored, 0);
+  assert.equal(turns[1].darts, 3);
+});

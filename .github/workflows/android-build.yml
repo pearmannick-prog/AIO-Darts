@@ -85,7 +85,7 @@ jobs:
                    prefs.js theme.js customize.js ocheview.js checkout.js checkouthint.js audio.js \
                    accountstore.js lobbyclient.js matchrecorder.js charts.js statsengine.js \
                    granboard.js boardlink.js dartnotation.js scorerlink.js webrtc.js \
-                   scoring.js cricket.js countup.js bermuda.js medley.js rating.js botplayer.js \
+                   scoring.js cricket.js countup.js bermuda.js medley.js teams.js sequencer.js rating.js botplayer.js \
                    dartboard.js cricketboard.js quickentry.js medleybuilder.js \
                    stats/x01stats.js stats/cricketstats.js stats/countupstats.js stats/bermudastats.js; do
             test -f "www/$f" || { echo "MISSING: www/$f"; FAIL=1; }

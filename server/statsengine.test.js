@@ -15,7 +15,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeStats } from "../statsengine.js";
+import { computeStats, leaderboardByKey } from "../statsengine.js";
 
 // ---------------------------------------------------------------------------
 // Builders - so a test reads as the match it describes
@@ -317,4 +317,192 @@ test("no matches at all produces zeroes, not a crash", () => {
   assert.equal(stats.matchesCounted, 0);
   assert.equal(stats.career.raw.played, 0);
   assert.deepEqual(stats.games, []);
+});
+
+// ---------------------------------------------------------------------------
+// Partners play: darts in, wins out
+// ---------------------------------------------------------------------------
+// The rule, from docs/team-play.md question 2: doubles darts are real darts
+// thrown at a real board, so they feed your averages; a doubles win belongs to
+// two people, so it must not become a singles win.
+//
+// This is the first PARTIAL split in the engine - practice matches are removed
+// whole, at the door - and partial is the hard kind, because the same match has
+// to be counted for one thing and skipped for another. Getting it wrong in
+// either direction is invisible on screen: too generous and everyone who plays
+// doubles has an inflated record, too strict and their darts vanish.
+
+// A four-handed partners match. Seats 0 and 2 are one team, 1 and 3 the other,
+// and `winnerTeam` decides it - there is no winning seat, because a pair won.
+function doublesMatch({ uuid = "d1", winnerTeam = 0, turns = [], drawn = false,
+                        endedAt = "2026-02-01T20:00:00.000Z" } = {}) {
+  return {
+    clientUuid: uuid, mode: "local",
+    startedAt: endedAt, endedAt, durationMs: 600000,
+    format: [], winnerSeat: null, winnerTeam, drawn,
+    players: [0, 1, 2, 3].map((seat) => ({
+      seat,
+      displayName: `P${seat}`,
+      isSelf: seat === 0,
+      team: seat % 2,
+      legsWon: seat % 2 === winnerTeam ? 1 : 0,
+      setsWon: 0,
+    })),
+    legs: [{
+      legIndex: 0, game: "x01", x01Start: 501, rules: "double", bull: "split",
+      rounds: null, winnerSeat: null, winnerTeam, turns,
+    }],
+  };
+}
+
+const nineDarter = (seat) => [
+  turn(seat, 0, [
+    dart(60, { multiplier: 3, remainingBefore: 501, remainingAfter: 441 }),
+    dart(60, { multiplier: 3, remainingBefore: 441, remainingAfter: 381 }),
+    dart(60, { multiplier: 3, remainingBefore: 381, remainingAfter: 321 }),
+  ]),
+];
+
+const careerRaw = (stats) => stats.career.raw;
+
+// A Cricket visit of three darts into a 20 that is already closed and dead:
+// every mark overflows and nothing is scored, which is exactly what "points
+// prevented" measures when the OPPOSITION throws it.
+const deadMarks = (seat) => [
+  turn(seat, 0, [0, 1, 2].map(() => dart(60, {
+    multiplier: 3, section: "20",
+    extra: { target: "20", marks: 3, marksApplied: 0, points: 0 },
+  }))),
+];
+
+const cricketLeg = (turns, winnerTeam) => ({
+  legIndex: 0, game: "cricket", x01Start: null, rules: null, bull: "split",
+  rounds: null, winnerSeat: winnerTeam === undefined ? 0 : null,
+  winnerTeam: winnerTeam ?? null, turns,
+});
+
+const cricketSingles = (turns) => ({
+  ...match({ winnerSeat: 0 }), legs: [cricketLeg(turns)],
+});
+
+const cricketDoubles = (turns) => ({
+  ...doublesMatch({ winnerTeam: 0 }), legs: [cricketLeg(turns, 0)],
+});
+
+const preventedIn = (doc) => computeStats([doc]).games
+  .find((g) => g.key === "cricket")
+  .metrics.find((m) => m.key === "pointsPrevented").value;
+
+test("doubles darts count toward your totals and averages", () => {
+  const stats = computeStats([doublesMatch({ turns: nineDarter(0) })]);
+  // Three darts, 180 scored. The match is doubles, but the darts were thrown.
+  assert.equal(careerRaw(stats).darts, 3);
+  assert.equal(x01Of(stats).threeDart, 180);
+});
+
+test("a doubles win is NOT a singles win", () => {
+  // Seat 0 is on team 0, and team 0 won. Every win-based career figure must
+  // still read zero.
+  const stats = computeStats([doublesMatch({ winnerTeam: 0, turns: nineDarter(0) })]);
+  const raw = careerRaw(stats);
+  assert.equal(raw.won, 0);
+  assert.equal(raw.longest, 0);
+  assert.equal(raw.current, 0);
+});
+
+test("doubles is excluded from the win-percentage denominator, not just the numerator", () => {
+  // One singles win and one doubles win. Counting the doubles match in
+  // `played` but never in `won` would report 50% - punishing someone for
+  // playing doubles at all. The denominator is the matches that could be won
+  // as an individual.
+  const stats = computeStats([
+    match({ uuid: "s1", winnerSeat: 0, turns: nineDarter(0) }),
+    doublesMatch({ uuid: "d1", winnerTeam: 0, turns: nineDarter(0) }),
+  ]);
+  const raw = careerRaw(stats);
+  assert.equal(raw.played, 2);      // you played both
+  assert.equal(raw.decided, 1);     // only one could be won alone
+  assert.equal(raw.doubles, 1);
+  assert.equal(raw.won, 1);
+  const winPct = stats.career.metrics.find((m) => m.key === "winPct").value;
+  assert.equal(winPct, 100);
+});
+
+test("a doubles match does not BREAK a win streak", () => {
+  // It is not a win, but it is not a defeat either. Treating it as one would
+  // mean a night of doubles with a friend cost you a streak you never lost.
+  const stats = computeStats([
+    match({ uuid: "s1", winnerSeat: 0, endedAt: "2026-03-01T20:00:00.000Z", turns: nineDarter(0) }),
+    doublesMatch({ uuid: "d1", winnerTeam: 1, endedAt: "2026-03-02T20:00:00.000Z", turns: nineDarter(0) }),
+    match({ uuid: "s2", winnerSeat: 0, endedAt: "2026-03-03T20:00:00.000Z", turns: nineDarter(0) }),
+  ]);
+  const raw = careerRaw(stats);
+  assert.equal(raw.won, 2);
+  assert.equal(raw.longest, 2);
+  assert.equal(raw.current, 2);
+});
+
+test("a doubles LEG is won by both partners, so per-game legs won counts it", () => {
+  // The leg-level question is different from the match-level one: a leg your
+  // team won is a leg you won, and the x01 module reads it through the same
+  // side test.
+  const won = computeStats([doublesMatch({ winnerTeam: 0, turns: nineDarter(0) })]);
+  const lost = computeStats([doublesMatch({ winnerTeam: 1, turns: nineDarter(0) })]);
+  assert.equal(x01Of(won).legsWon, 1);
+  assert.equal(x01Of(lost).legsWon, 0);
+});
+
+test("the partner's seat is not mistaken for the opponent's", () => {
+  // Seat 2 is seat 0's PARTNER. Their darts belong to them, not to "me" - so
+  // "my" darts must stay at three even though four visits were recorded.
+  const stats = computeStats([doublesMatch({
+    turns: [...nineDarter(0), ...nineDarter(2), ...nineDarter(1), ...nineDarter(3)],
+  })]);
+  assert.equal(careerRaw(stats).darts, 3);
+});
+
+// Two things ENGINE_VERSION 9 changed on the stats page and did not change in
+// the places reading the same figures. Both are the drift the version number
+// exists to catch, and both are invisible from the screen they are wrong on.
+test("the win-percentage LEADERBOARD uses the same denominator as the stats page", () => {
+  // 10 wins from 20 singles, plus 10 doubles matches. The page divides by the
+  // matches that could be won as an individual; the board divided by every
+  // match played, so one history read as 50% in one place and 33.3% in the
+  // other - under the identical label.
+  const raw = { played: 30, won: 10, decided: 20, doubles: 10 };
+  const board = leaderboardByKey("career-winpct");
+  assert.equal(board.value(raw), 50);
+
+  // The qualification counts the same matches for the same reason: on `played`
+  // it could be met entirely with doubles, putting someone who has won their
+  // one and only singles match at the top of the board on 100%.
+  assert.equal(board.minimum.test(raw), true);
+  assert.equal(board.minimum.test({ played: 21, won: 1, decided: 1, doubles: 20 }), false);
+});
+
+test("your PARTNER is not one of the opponents", () => {
+  // Points prevented counts opponent marks that scored nothing because you had
+  // closed the number. "Every turn that is not mine" swept the partner in, so
+  // your own side's darts into a dead number were credited to you as defence.
+  //
+  // Four visits of three darts, each dart three overflow marks on a closed 20:
+  // 3 x 3 x 20 = 180 a visit. Mine never count, so singles sees three opposing
+  // visits (540) and doubles must see two (360) - the partner's 180 dropped.
+  const deadTurns = [deadMarks(0), deadMarks(1), deadMarks(2), deadMarks(3)].flat();
+  assert.equal(preventedIn(cricketSingles(deadTurns)), 540);
+  assert.equal(preventedIn(cricketDoubles(deadTurns)), 360);
+});
+
+test("singles matches are untouched by any of this", () => {
+  // The regression that matters: every match already recorded has no team at
+  // all, and must read exactly as it did before sides existed.
+  const stats = computeStats([match({ winnerSeat: 0, turns: nineDarter(0) })]);
+  const raw = careerRaw(stats);
+  assert.equal(raw.won, 1);
+  assert.equal(raw.decided, 1);
+  assert.equal(raw.doubles, 0);
+  assert.equal(raw.longest, 1);
+  assert.equal(stats.career.metrics.find((m) => m.key === "winPct").value, 100);
+  // And the doubles metric is not shown at all when there are none.
+  assert.equal(stats.career.metrics.some((m) => m.key === "doubles"), false);
 });

@@ -19,6 +19,7 @@ import {
   fetchBoardCatalogue, fetchLeaderboard, fetchFriends, searchPlayers,
   friendAction, createClub, joinClub, leaveClub,
   queuedMatchCount, queuedMatches, flushQueue, takeUnlocks,
+  signInPartner, signOutPartner, getPartner,
 } from "./accountstore.js";
 import { gameLabel } from "./medley.js";
 import { lineChart, barChart, chartTable } from "./charts.js";
@@ -1465,3 +1466,217 @@ export function rankBadge(rating) {
   badge.append(letters, value);
   return badge;
 }
+
+
+// ---------------------------------------------------------------------------
+// Partner sign-in
+// ---------------------------------------------------------------------------
+// The second person at one board, signing in so their darts reach their own
+// account. Wired here rather than in game.js or online.js because it is an
+// ACCOUNT concern and both setup panels carry the same control - two copies of
+// this logic is two places for it to drift.
+//
+// Every block is found by data attribute and wired identically, so adding a
+// third one is markup and nothing else.
+function wirePartnerAccounts() {
+  const blocks = [...document.querySelectorAll("[data-partner-account]")];
+  if (!blocks.length) return;
+
+  const paint = () => {
+    const partner = getPartner();
+    for (const block of blocks) {
+      const btn = block.querySelector("[data-partner-signin]");
+      const who = block.querySelector("[data-partner-who]");
+      const form = block.querySelector("[data-partner-form]");
+      // textContent, never markup: a display name is typed by a person.
+      who.textContent = partner ? `Signed in as ${partner.displayName}` : "";
+      btn.textContent = partner ? "Partner: sign out" : "Partner: sign in";
+      if (partner) form.classList.add("hidden");
+      block.querySelector("[data-partner-seat-row]")?.classList.toggle("hidden", !partner);
+    }
+    bindOnlinePartnerField(partner);
+  };
+
+  for (const block of blocks) {
+    const btn = block.querySelector("[data-partner-signin]");
+    const form = block.querySelector("[data-partner-form]");
+    const note = block.querySelector("[data-partner-note]");
+    const email = block.querySelector("[data-partner-email]");
+    const password = block.querySelector("[data-partner-password]");
+
+    btn.addEventListener("click", () => {
+      if (getPartner()) {
+        signOutPartner();
+        note.textContent = "";
+        paint();
+        return;
+      }
+      form.classList.toggle("hidden");
+      if (!form.classList.contains("hidden")) email.focus();
+    });
+
+    block.querySelector("[data-partner-seat]")?.addEventListener("change", (event) => {
+      event.target.dataset.touched = "1";
+      warnIfSeatLooksWrong(block);
+    });
+
+    block.querySelector("[data-partner-cancel]").addEventListener("click", () => {
+      form.classList.add("hidden");
+      note.textContent = "";
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      note.textContent = "Signing in…";
+      try {
+        const partner = await signInPartner(email.value.trim(), password.value);
+        // The password never stays on screen on a board other people are
+        // standing at.
+        password.value = "";
+        email.value = "";
+        note.textContent = "Their darts will be saved to their account.";
+        // Their own name is the one that should appear as the partner, so the
+        // two cannot disagree about who is standing here.
+        fillPartnerName(partner.displayName, block);
+        paint();
+      } catch (err) {
+        note.textContent = err?.message || "Could not sign in.";
+      }
+    });
+  }
+
+  // Only offered when there is an accounts API behind it, exactly like the
+  // account tab and the header chip.
+  subscribe(({ available }) => {
+    for (const block of blocks) block.classList.toggle("hidden", !available);
+    paint();
+  });
+  refreshPartnerSeats();
+  paint();
+}
+
+// ONLINE'S PARTNER FIELD IS BOUND TO THE SESSION, not merely pre-filled from
+// it. There is exactly one partner seat online - `online.myIndex + 2`, the
+// second seat at this end - so the name in the box does not decide where the
+// darts go; the partner's TOKEN does. Filling the box only when it was empty
+// therefore left the two free to disagree: type "Dave", sign in as Sarah, and
+// seat 2 was recorded as Dave and uploaded to Sarah's account. Nothing on
+// screen said so, and both uploads returned 201.
+//
+// Local play solves the same problem with an explicit seat picker (see
+// partnerSeat and warnIfSeatLooksWrong). This is its online equivalent: one
+// person is signed in, the field says who, and it is read-only until they are
+// signed out. A partner who is NOT signed in - a guest whose darts nobody is
+// filing - types whatever they like, exactly as before.
+function bindOnlinePartnerField(partner) {
+  const field = document.getElementById("online-partner");
+  if (!field) return;
+
+  if (!partner) {
+    field.readOnly = false;
+    field.title = "";
+    return;
+  }
+  if (field.value !== partner.displayName) {
+    field.value = partner.displayName;
+    // online.js reads this on `change`, so the lobby learns about the pair the
+    // same way it would if somebody had typed it.
+    field.dispatchEvent(new Event("change"));
+  }
+  field.readOnly = true;
+  field.title = "The signed-in partner's name - sign them out to change it";
+}
+
+// The partner's name, wherever it is asked for. Local play takes the names from
+// the player rows, so the partner's name is put into the seat they are bound to
+// rather than overwriting anything somebody typed elsewhere. The online field
+// is not touched here - bindOnlinePartnerField owns it, because two places
+// setting one value is how it came to disagree with the session in the first
+// place.
+function fillPartnerName(displayName, block) {
+  // Local play: put their name on the seat they are BOUND to, rather than
+  // hunting for a spare row and hoping the two agree later.
+  const seat = partnerSeat(block);
+  if (seat === null) return;
+  const rows = [...document.querySelectorAll("#player-inputs .player-input")];
+  const row = rows[seat];
+  if (row && (!row.value.trim() || row.value === `Player ${seat + 1}`)) {
+    row.value = displayName;
+  }
+}
+
+// The seat the signed-in partner occupies, read from the picker. Null when
+// this block has none (the online panel, where the seat is exact) or when
+// nobody is signed in.
+// The binding is a seat, so it CAN point at somebody else - and if it does,
+// that person's darts would be filed under the partner's account, which is
+// worse than the missing upload this replaced. It cannot be prevented (the
+// seat is the player's to choose), so it is said out loud instead: the picker
+// already shows the name, and this says plainly that the two disagree.
+function warnIfSeatLooksWrong(block) {
+  const note = block?.querySelector("[data-partner-note]");
+  const select = block?.querySelector("[data-partner-seat]");
+  const partner = getPartner();
+  if (!note || !select || !partner) return;
+
+  const seat = Number(select.value);
+  const name = [...document.querySelectorAll("#player-inputs .player-input")][seat]?.value.trim();
+  if (!name) return;
+  if (name.toLowerCase() === partner.displayName.trim().toLowerCase()) {
+    note.textContent = "Their darts will be saved to their account.";
+    note.classList.remove("partner-note-warn");
+  } else {
+    note.textContent =
+      `That seat is "${name}", not ${partner.displayName} - their darts would be saved as ${partner.displayName}'s.`;
+    note.classList.add("partner-note-warn");
+  }
+}
+
+export function partnerSeat(block = document.querySelector('[data-partner-scope="local"]')) {
+  const select = block?.querySelector("[data-partner-seat]");
+  if (!select) return null;
+  const seat = Number(select.value);
+  return Number.isInteger(seat) ? seat : null;
+}
+
+// Rebuilt from the player rows whenever they change, so the options always
+// name the people actually in the match. The current choice survives a rebuild
+// where it still exists - retyping a name must not silently move the binding.
+export function refreshPartnerSeats() {
+  const block = document.querySelector('[data-partner-scope="local"]');
+  const select = block?.querySelector("[data-partner-seat]");
+  const row = block?.querySelector("[data-partner-seat-row]");
+  if (!select) return;
+
+  const names = [...document.querySelectorAll("#player-inputs .player-input")]
+    .map((input, i) => input.value.trim() || `Player ${i + 1}`);
+  const previous = select.value;
+
+  select.innerHTML = "";
+  names.forEach((name, seat) => {
+    // Seat 0 is the account holder's own seat by convention, so it is not
+    // offered: a partner who is you is not a partner.
+    if (seat === 0) return;
+    const option = document.createElement("option");
+    option.value = String(seat);
+    option.textContent = `Player ${seat + 1} - ${name}`;
+    select.appendChild(option);
+  });
+
+  // A choice the player actually made is kept. A default is re-derived, so
+  // adding players after signing a partner in does not leave the binding on
+  // whichever seat happened to exist at the time - which is how it ended up
+  // defaulting to seat 2 when there were only two rows on screen.
+  const chosen = select.dataset.touched === "1"
+    && [...select.options].some((o) => o.value === previous);
+  // Seat 3 (index 2) is the natural partner of seat 1 under the alternating
+  // convention - 1 and 3 are one team - so it is the default when it exists.
+  const fallback = [...select.options].find((o) => o.value === "2")?.value
+    ?? select.options[0]?.value ?? "";
+  select.value = chosen ? previous : fallback;
+
+  row?.classList.toggle("hidden", !getPartner());
+  warnIfSeatLooksWrong(block);
+}
+
+wirePartnerAccounts();

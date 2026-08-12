@@ -58,13 +58,19 @@ function notify() {
 // a future change that makes these cross-origin would break it silently.
 export class ApiUnavailable extends Error {}
 
-async function apiFetch(path, { method = "GET", body } = {}) {
+async function apiFetch(path, { method = "GET", body, bearer = null } = {}) {
   let response;
   try {
     response = await fetch(path, {
       method,
       credentials: "same-origin",
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      headers: {
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        // A partner's token, for the one route that accepts one. It rides in a
+        // header rather than the cookie because the cookie is HttpOnly and
+        // there is one per browser - see POST /api/auth/partner.
+        ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
@@ -196,6 +202,10 @@ export async function logout() {
     await apiFetch("/api/auth/logout", { method: "POST" });
   } finally {
     state.user = null;
+    // The owner of the board leaving takes their guest with them. Leaving a
+    // partner signed in after the person who let them in has gone is the one
+    // outcome nobody would expect.
+    partnerSession = null;
     notify();
   }
 }
@@ -316,6 +326,72 @@ export function recordMatch(document) {
   // wait on a network round trip.
   flushQueue().catch(() => {});
   return document.clientUuid;
+}
+
+// ---------------------------------------------------------------------------
+// The partner at your board
+// ---------------------------------------------------------------------------
+// IN MEMORY ONLY, and that is the point rather than a shortcut. A partner is a
+// guest at somebody else's board: persisting their token would leave them
+// signed in on hardware they do not own, and a reload, a tab close or the
+// owner signing out all correctly end it.
+//
+// It is not part of `state` and is never notified to the UI as an account,
+// because it is NOT a second signed-in user - the app has one of those. It is
+// a capability to file one person's darts under one person's name.
+let partnerSession = null;
+
+export function getPartner() {
+  return partnerSession ? { ...partnerSession, token: undefined } : null;
+}
+
+export async function signInPartner(email, password) {
+  const { user, token } = await apiFetch("/api/auth/partner", {
+    method: "POST", body: { email, password },
+  });
+  partnerSession = { userId: user.id, displayName: user.displayName, token };
+  return getPartner();
+}
+
+export function signOutPartner() {
+  partnerSession = null;
+}
+
+// The partner's own copy of a finished match.
+//
+// The SAME document, with isSelf moved to their seat - which is exactly what
+// an online match already does, where both players record their own copy of
+// the same darts and neither is the authority. client_uuid is scoped per user,
+// so the two rows are each legitimately their own rather than a duplicate.
+//
+// Best-effort and NOT queued: the offline queue lives in localStorage, and
+// queuing this would mean writing a credential to disk to retry it later. A
+// partner whose upload fails is told, and can throw again another day; that is
+// a better trade than persisting somebody else's session on your board.
+export async function recordMatchForPartner(document, seat) {
+  if (!partnerSession) return { uploaded: false, reason: "no-partner" };
+
+  // The seat is named after the ACCOUNT this copy is being filed under, not
+  // after whatever was typed into a name box. The token decides where these
+  // darts land, so anything else on that seat is a label that can disagree with
+  // its own destination - and did: a partner signed in as one person while the
+  // name box still held another produced a match in their history whose "self"
+  // seat carried somebody else's name.
+  const theirs = {
+    ...document,
+    players: (document.players ?? []).map((p) => (p.seat === seat
+      ? { ...p, isSelf: true, displayName: partnerSession.displayName || p.displayName }
+      : { ...p, isSelf: false })),
+  };
+
+  try {
+    await apiFetch("/api/matches", {
+      method: "POST", body: { match: theirs }, bearer: partnerSession.token,
+    });
+    return { uploaded: true };
+  } catch (err) {
+    return { uploaded: false, reason: err?.message || "failed" };
+  }
 }
 
 let flushing = false;

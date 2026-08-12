@@ -17,10 +17,11 @@ Tests are `node --test` over the files in `server/`, and what they cover is chos
 rather than sampled: the **arithmetic and the parsing**, never the UI. That is the
 whole principle — a scoring bug shows up immediately on a board you are looking at,
 but a checkout percentage that is five points too high looks exactly like one that
-is right, for months. So `statsengine`, `checkout` and `matchrecorder` test numbers
-whose wrongness is invisible, and `dartnotation` and `scorerlink` test input from
-hardware nobody has to hand. Everything a human would notice in one leg is left to
-the human.
+is right, for months. So `statsengine`, `checkout`, `freeze` and `matchrecorder`
+test numbers whose wrongness is invisible; `dartnotation` and `scorerlink` test
+input from hardware nobody has to hand; `sequencer` tests an ordering guarantee
+that only breaks under a race. Everything a human would notice in one leg is left
+to the human.
 
 ## Commands
 
@@ -871,8 +872,34 @@ it is on `main`, because Dependabot reads its config from the default branch.
 
 Three, and it matters which is which:
 
-- **`aio-darts.onrender.com`** — production, deploys from `main`. Has no disk, so
-  it must not carry accounts until one is attached.
+- **`aiodarts.com`** — production, deploys from `main`, served by the Render
+  service `aio-darts` (`aio-darts.onrender.com` still answers and is the same
+  service, not a fourth deployment). It **carries accounts, statistics and the
+  lobby**: they landed on `main` in PRs #16 and #17, so the long-standing split
+  where production was the darts and the dev build was the accounts is over.
+  Still on the free tier, so the filesystem is ephemeral and persistence rests
+  entirely on Litestream restoring from R2 on boot — the same arrangement the
+  dev build proved out, now load-bearing for real accounts rather than test
+  ones. **The boot log is the only place that says which state it is in**: the
+  entrypoint prints either `replication : R2 bucket …` or `replication : off
+  (R2_BUCKET unset - the database is NOT backed up)`, and the second one is
+  silent everywhere else, because an empty database serves darts perfectly and
+  reports `accounts:true`. All five `R2_*` variables are set here (confirmed 9
+  August 2026), so it is the first. Production and the dev build **must not
+  share `R2_PATH`** — one bucket, two prefixes — or each restores and
+  overwrites the other's database. They don't: production replicates under
+  `prod`, the test build under `dev`. That pair is worth re-checking whenever a
+  service is recreated, because the failure is mutual destruction of both
+  databases and it looks like ordinary operation until someone cannot sign in.
+
+  Two other things are live here that are optional everywhere else, and both
+  are easy to forget when reasoning about the code's fallback paths. **TURN is
+  on**, via Cloudflare Realtime (`TURN_KEY_ID` + `TURN_KEY_API_TOKEN`), which
+  mints a credential per session rather than holding a static pair. And
+  **password reset actually sends mail** — `EMAIL_API_KEY`, `EMAIL_FROM` and
+  `PUBLIC_URL` are all set, so `server/email.js` posts to Resend instead of
+  taking the log-the-link path. That path is still the one that runs locally
+  and in tests.
 - **`aio-darts-dev.onrender.com`** — the test build, deploys from `accounts-stats`,
   gated by `SITE_PASSWORD`. Render deploys one branch per service, which is what
   keeps the two apart. Free tier: the filesystem still resets on every deploy AND
@@ -880,7 +907,9 @@ Three, and it matters which is which:
   it, because Litestream restores the database from R2 on boot. Verified: a
   redeploy wiped the disk and the session survived. That holds only while the
   `R2_*` variables are set; without them the old behaviour is back and the reset
-  is silent.
+  is silent. Note that since the merge this branch is level with `main`, so the
+  two deployments are currently running the same code and the dev build is
+  earning its keep only when there is unmerged work on it.
 - **GitHub Pages** — was serving `main` as a static-only copy. Disabled; noted here
   because it is easy to re-enable by accident and it publishes the front-end with
   no server behind it.

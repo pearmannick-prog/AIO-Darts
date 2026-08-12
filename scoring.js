@@ -183,3 +183,92 @@ export function resolveThrow(remainingBefore, segment, options = {}) {
 
   return { after, isBust, isWin, opened: true, ignored: false };
 }
+
+// ---------------------------------------------------------------------------
+// The Freeze Rule - partners x01 only
+// ---------------------------------------------------------------------------
+// "A player may go out and win only if their partners score is equal to or
+// less than the combined score of the opposing team."
+//   - CAP Amusement, https://www.capamusement.com/article.cfm?ArticleNumber=38
+//
+// This lives here rather than in a partners module because it is x01 rule
+// arithmetic, which is what this file is - the same reason highestCheckout()
+// and isOneDartFinish() are here rather than in checkout.js.
+//
+// THE COMPARISON IGNORES YOUR OWN SCORE, which is the thing that surprises
+// everyone including the author. Whether *you* may finish is decided by your
+// PARTNER's remaining against the opposing team's COMBINED remaining. You can
+// be on a double, unfrozen a moment ago, and be frozen by your opponents
+// scoring - because their total falling is what closes the gap.
+//
+// The rule only exists in the FREEZE VERSION of partners x01, which is also
+// the version where all four players carry separate scores. In the other
+// version the two partners share one total and there is nothing to compare.
+// See docs/team-play.md.
+
+// The combined score is passed already summed rather than as two opponents.
+// That keeps this total over a team of any size, and puts the one place that
+// knows how many opponents there are in the caller instead of in the rule.
+//
+// NON-FINITE INPUTS FAIL OPEN - an unknown freeze state reports NOT frozen.
+// Both failure directions are bad and this is the less bad one: wrongly
+// allowing a finish is a scoring error the players can see and correct,
+// whereas wrongly freezing hands the leg to the opposition (see
+// resolvePartnersThrow) and there is no undoing that in a way anyone accepts.
+export function isFrozen(partnerRemaining, opponentsCombined) {
+  if (!Number.isFinite(partnerRemaining)) return false;
+  if (!Number.isFinite(opponentsCombined)) return false;
+  return partnerRemaining > opponentsCombined;
+}
+
+// resolveThrow, plus the freeze. Composes rather than duplicates - every
+// existing x01 rule (the in/out matrix, bust on stranded 1, darts that score
+// nothing before opening) is decided by resolveThrow exactly as it always was,
+// and this only ever reinterprets a WIN.
+//
+// That ordering matters: a dart that reaches zero without a legal finishing
+// segment is already a bust, and being frozen must not upgrade it into a
+// conceded leg. So the freeze is asked about only after isWin is true.
+//
+// options: everything resolveThrow takes, plus
+//   freeze            - is this the freeze version at all?   (default false)
+//   partnerRemaining  - your partner's score
+//   opponentsCombined - both opponents' scores, added up
+//   frozenFinish      - "loss" | "bust"                      (default "loss")
+//
+// frozenFinish is a per-leg setting because the penalty is severe enough that
+// houses differ on it. "loss" is the sourced behaviour and therefore the
+// default, on the same principle that keeps X01_RULES matching the machines
+// rather than matching taste; "bust" is the gentler reading and costs nothing,
+// because it reuses the bust path whole.
+//
+// Adds two fields to resolveThrow's result:
+//   frozen   - was the thrower frozen when this dart was thrown? Reported
+//              whenever freeze is on, win or not, because the UI wants to warn
+//              a player BEFORE they throw at a double they cannot use.
+//   concedes - this leg is over and the OPPOSING team has won it. The only
+//              place in this codebase where reaching zero is a defeat, so it
+//              cannot be folded into isBust: a bust restores the score and
+//              passes the turn, this ends the leg.
+export function resolvePartnersThrow(remainingBefore, segment, options = {}) {
+  const base = resolveThrow(remainingBefore, segment, options);
+
+  const {
+    freeze = false,
+    partnerRemaining,
+    opponentsCombined,
+    frozenFinish = "loss",
+  } = options;
+
+  if (!freeze) return { ...base, frozen: false, concedes: false };
+
+  const frozen = isFrozen(partnerRemaining, opponentsCombined);
+  if (!frozen || !base.isWin) return { ...base, frozen, concedes: false };
+
+  // Reaching zero while frozen. The win is taken away either way; what the
+  // setting decides is who, if anyone, gets the leg.
+  if (frozenFinish === "bust") {
+    return { ...base, isWin: false, isBust: true, frozen, concedes: false };
+  }
+  return { ...base, isWin: false, isBust: false, frozen, concedes: true };
+}

@@ -71,17 +71,48 @@ function hashToken(token) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function createSession(userId, userAgent) {
+// A PARTNER SESSION is hours, not thirty days.
+//
+// It exists so the second person at one board can have their own darts land in
+// their own account, and it is fundamentally different from a sign-in on your
+// own device: the board is shared, the person is a guest at it, and nobody
+// intends to stay signed in there. Long enough for an evening of darts, short
+// enough that a forgotten one is dead by morning.
+const PARTNER_SESSION_HOURS = 12;
+
+// The two kinds of session, and the whole of the difference between them.
+//
+// `full` is a sign-in: the cookie, thirty days, everything the account can do.
+// `partner` is the guest at somebody else's board: a bearer token, twelve
+// hours, and exactly one thing it is allowed to do.
+//
+// This is a COLUMN rather than a convention because the restriction has to be
+// something the queries test. It used to be neither - a partner token was an
+// ordinary session row, so it satisfied the cookie lookup as happily as the
+// bearer one, and the "one capability, not a session" promise held only for as
+// long as nobody tried. HttpOnly stops a page script reading the session
+// cookie; it does not stop one writing it, so anybody with the raw token could
+// paste it into `document.cookie` and be that user outright. See
+// migrations/007_session_scope.sql.
+export const SCOPE_FULL = "full";
+export const SCOPE_PARTNER = "partner";
+
+export function createSession(userId, userAgent, { hours = null, scope = SCOPE_FULL } = {}) {
   const token = randomBytes(TOKEN_BYTES).toString("hex");
   const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 86400_000);
+  const expires = new Date(now.getTime()
+    + (hours ? hours * 3600_000 : SESSION_DAYS * 86400_000));
 
   getDatabase()
     .prepare(
-      `INSERT INTO sessions (token, user_id, created_at, expires_at, user_agent)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO sessions (token, user_id, created_at, expires_at, user_agent, scope)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(hashToken(token), userId, now.toISOString(), expires.toISOString(), (userAgent || "").slice(0, 200));
+    .run(
+      hashToken(token), userId, now.toISOString(), expires.toISOString(),
+      (userAgent || "").slice(0, 200),
+      scope === SCOPE_PARTNER ? SCOPE_PARTNER : SCOPE_FULL,
+    );
 
   // The RAW token goes back to the caller, and from there into the cookie. It
   // is never written down here.
@@ -91,6 +122,12 @@ export function createSession(userId, userAgent) {
 // Resolves a request's cookie to a user row, or null. Expiry is checked in SQL
 // rather than in JS so an expired session is never even returned - there is no
 // window where a caller could forget to check.
+//
+// The scope check is there for the same reason and belongs in the same place. A
+// partner token in the cookie must not authenticate ANYTHING, and this is the
+// one function every cookie-authenticated surface goes through - the /api/*
+// context in api.js and the lobby socket in lobby.js alike - so refusing it
+// here refuses it everywhere at once, including whatever gets written next.
 export function userForRequest(req) {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (!token) return null;
@@ -99,9 +136,47 @@ export function userForRequest(req) {
     .prepare(
       `SELECT u.* FROM sessions s
        JOIN users u ON u.id = s.user_id
-       WHERE s.token = ? AND s.expires_at > ?`
+       WHERE s.token = ? AND s.expires_at > ? AND s.scope = ?`
     )
-    .get(hashToken(token), new Date().toISOString());
+    .get(hashToken(token), new Date().toISOString(), SCOPE_FULL);
+
+  return row || null;
+}
+
+export { PARTNER_SESSION_HOURS };
+
+// Resolves a BEARER token to a user row, or null.
+//
+// This is the partner's path, and it is separate from userForRequest for one
+// reason: the cookie is HttpOnly, one per browser, so a second person signing
+// in on the same machine would sign the first one out. Their token therefore
+// travels in a header the page can set, which means the page can also read it
+// - so it is deliberately NOT a general-purpose way to authenticate.
+//
+// Only the match upload honours it (see api.js). A partner is at this board to
+// throw darts, and the one thing they need from the server is for those darts
+// to be counted; they cannot read anyone's statistics, change a password, or
+// touch the lobby with it. Widening this later is a decision to make on
+// purpose, not by adding a second caller.
+//
+// It requires scope = 'partner', which is the other half of the restriction
+// userForRequest now enforces: a full sign-in cookie's token is not accepted
+// here either. That direction matters less - anyone holding it already has the
+// cookie it came from - but the two being exact opposites is what makes the
+// rule one sentence rather than two overlapping ones, and it means a token can
+// never be quietly promoted by being sent through the other door.
+export function userForBearer(req) {
+  const header = String(req.headers.authorization || "");
+  const match = /^Bearer\s+([A-Za-z0-9]+)$/.exec(header.trim());
+  if (!match) return null;
+
+  const row = getDatabase()
+    .prepare(
+      `SELECT u.* FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token = ? AND s.expires_at > ? AND s.scope = ?`
+    )
+    .get(hashToken(match[1]), new Date().toISOString(), SCOPE_PARTNER);
 
   return row || null;
 }
