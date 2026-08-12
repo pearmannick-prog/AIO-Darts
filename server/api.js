@@ -27,7 +27,7 @@ import { leaderboardCatalogue } from "../statsengine.js";
 import {
   hashPassword, verifyPassword, createSession, destroySession,
   userForRequest, userForBearer, sessionCookie, clearedCookie,
-  PARTNER_SESSION_HOURS,
+  PARTNER_SESSION_HOURS, SCOPE_PARTNER,
 } from "./auth.js";
 import { sendPasswordReset } from "./email.js";
 import { randomBytes, createHash } from "node:crypto";
@@ -319,7 +319,11 @@ const routes = {
   //
   //   It buys one capability, not a session. Only POST /api/matches accepts
   //   the token (see userForBearer), so a partner can have their darts counted
-  //   and can do nothing else at all with it.
+  //   and can do nothing else at all with it. That is enforced by the session's
+  //   SCOPE, which userForRequest refuses - it was a comment for a while, and a
+  //   comment is not a restriction: the token was an ordinary session row, so
+  //   pasting it into document.cookie made the guest's whole account available
+  //   to whoever was standing at the board.
   //
   // Throttled on the same counter as login, deliberately: this is a second
   // password-checking surface on the same accounts, and leaving it open would
@@ -350,6 +354,7 @@ const routes = {
     attempts.delete(key);
     const { token } = createSession(user.id, req.headers["user-agent"], {
       hours: PARTNER_SESSION_HOURS,
+      scope: SCOPE_PARTNER,
     });
     sendJson(res, 200, { user: publicUser(user), token, expiresInHours: PARTNER_SESSION_HOURS });
   },

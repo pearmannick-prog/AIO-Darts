@@ -984,6 +984,29 @@ are deliberate:
   — not read statistics, not change a password, not touch the lobby. Widening
   that is a decision to make on purpose rather than by adding a caller.
 
+  **That was a description of the callers, not a restriction, and for a while
+  it was simply false.** A partner session was an ordinary row in `sessions`
+  with nothing marking it, so it satisfied the cookie lookup exactly as well as
+  the bearer one. `HttpOnly` stops a page script *reading* the session cookie;
+  nothing stops one *writing* it — so `document.cookie = "aiodarts_session=" +
+  token` turned the guest's twelve-hour darts credential into twelve hours of
+  their whole account, for the board's owner or for any script on the page,
+  which is where `accountstore.js` holds it. The person it hands the account to
+  is the one person guaranteed to be standing there.
+
+  It is now a `scope` column (`migrations/007_session_scope.sql`), and
+  `userForRequest` and `userForBearer` are exact opposites: the cookie lookup
+  requires `full`, the bearer lookup requires `partner`. `userForRequest` is
+  the single door for every cookie-authenticated surface — the `/api/*` context
+  and the lobby socket both — so the refusal covers whatever is written next.
+  Pre-existing rows are backfilled by duration, which identifies them exactly
+  rather than approximately: `createSession` is only ever called two ways, so
+  "expires less than a day after it was created" is precisely the partner
+  tokens. `server/auth.test.js` asserts both directions, and the lesson is the
+  one worth keeping — a restriction that lives in a comment is a description of
+  today's callers, and the sentence above stayed true of the code and false of
+  the token for as long as nobody tried it.
+
 It is throttled on the same counter as login, because it is a second
 password-checking surface on the same accounts and leaving it open would make
 the throttle on the first one decorative. Signing in as the account already
